@@ -8,30 +8,32 @@
  * https://github.com/facebook/react-native
  */
 
-import React, { Component } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import React, {Component} from 'react';
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  TouchableHighlight,
+} from 'react-native';
 import NiSdk from 'react-native-ni-sdk';
 
-export default class App extends Component<{}> {
-  state = {
-    status: 'starting',
-    message: '--'
-  };
-  componentDidMount() {
-    NiSdk.sampleMethod('Testing', 123, (message) => {
-      this.setState({
-        status: 'native callback received',
-        message
-      });
+const orderResponse = {};
+
+export default class App extends Component {
+  onClickPay = () => {
+    NiSdk.initiateCardPaymentUI(orderResponse, (status) => {
+      console.log(status);
     });
-  }
+  };
+
   render() {
     return (
       <View style={styles.container}>
-        <Text style={styles.welcome}>☆NiSdk example☆</Text>
-        <Text style={styles.instructions}>STATUS: {this.state.status}</Text>
-        <Text style={styles.welcome}>☆NATIVE CALLBACK MESSAGE☆</Text>
-        <Text style={styles.instructions}>{this.state.message}</Text>
+        <Text style={styles.welcome}>NISdk React Native</Text>
+        <TouchableHighlight onPressOut={this.onClickPay}>
+          <Text>Pay now</Text>
+        </TouchableHighlight>
       </View>
     );
   }

@@ -1,5 +1,7 @@
 #import <React/RCTBridgeModule.h>
 
-@interface NiSdk : NSObject <RCTBridgeModule>
+@import NISdk;
+
+@interface NiSdk : NSObject <RCTBridgeModule, CardPaymentDelegate>
 
 @end
