@@ -2,7 +2,7 @@
   "name": "react-native-ni-sdk",
   "title": "React Native Ni Sdk",
   "version": "1.0.0",
-  "description": "TODO",
+  "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "files": [
     "README.md",
