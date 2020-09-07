@@ -1,5 +1,7 @@
 # react-native-ni-sdk
 
+![Banner](assets/banner.jpg)
+
 ## Getting started
 
 `$ npm install react-native-ni-sdk --save`
