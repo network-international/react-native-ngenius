@@ -1,7 +1,7 @@
 {
-  "name": "react-native-ngenius",
+  "name": "@network-international/react-native-ngenius",
   "title": "React Native NGenius Sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "files": [
@@ -11,21 +11,30 @@
     "ios",
     "react-native-ni-sdk.podspec"
   ],
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "publishConfig": {
+    "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/github_account/react-native-ni-sdk.git",
-    "baseUrl": "https://github.com/github_account/react-native-ni-sdk"
+    "url": "git+https://github.com/network-international/react-native-ngenius",
+    "baseUrl": "https://github.com/network-international/react-native-ngenius"
   },
   "keywords": [
-    "react-native"
+    "react-native",
+    "N-Genius",
+    "payment-gateway-sdk",
+    "ngenius"
   ],
-  "author": {
-    "name": "Your Name",
-    "email": "yourname@email.com"
-  },
+  "contributors": [
+    {
+      "name": "Johnny Peter",
+      "email": "jpeter@equalexperts.com"
+    },
+    {
+      "name": "Anvesh Bandi",
+      "email": "abandi@equalexperts.com"
+    }
+  ],
   "license": "MIT",
   "licenseFilename": "LICENSE",
   "readmeFilename": "README.md",
