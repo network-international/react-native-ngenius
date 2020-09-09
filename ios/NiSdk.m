@@ -8,12 +8,6 @@
 
 RCT_EXPORT_MODULE()
 
-RCT_EXPORT_METHOD(sampleMethod:(NSString *)stringArgument numberParameter:(nonnull NSNumber *)numberArgument callback:(RCTResponseSenderBlock)callback)
-{
-    // TODO: Implement some actually useful functionality
-    callback(@[[NSString stringWithFormat: @"numberArgument: %@ stringArgument: %@", numberArgument, stringArgument]]);
-}
-
 + (BOOL)requiresMainQueueSetup {
   return YES;
 }
@@ -37,24 +31,17 @@ RCT_EXPORT_METHOD(initiateCardPaymentUI:(NSDictionary *)orderResponse cardPayRes
 
 - (void)paymentDidCompleteWith:(enum PaymentStatus)status {
     if(status == PaymentStatusPaymentSuccess) {
-//        NSLog(@"Success");
         if(self.cardResponseCallback != nil) {
             self.cardResponseCallback(@[@"Success"]);
         }
-        // [self resetSelection];
-        // [self showAlertWithTitle: @"Payment Successfull" andMessage: @"Your Payment was successfull."];
     } else if(status == PaymentStatusPaymentFailed) {
         if(self.cardResponseCallback != nil) {
             self.cardResponseCallback(@[@"Failed"]);
         }
-//        NSLog(@"Failed");
-        // [self showAlertWithTitle: @"Payment Failed" andMessage: @"Your Payment could not be completed."];
     } else if(status == PaymentStatusPaymentCancelled) {
-//        NSLog(@"Cancelled");  
         if(self.cardResponseCallback != nil) {
             self.cardResponseCallback(@[@"Aborted"]);
         }
-        // [self showAlertWithTitle: @"Payment Aborted" andMessage: @"You cancelled the payment request. You can try again!"];
     }
 }
 

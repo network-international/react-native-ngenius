@@ -22,6 +22,14 @@
         </intent-filter>
       </activity>
       <activity android:name="com.facebook.react.devsupport.DevSettingsActivity" />
+        <meta-data
+            android:name="debug_mode"
+            android:value="Y" />
+        <meta-data
+            android:name="spay_debug_api_key"
+            android:value="your spay debug api key" />
+        <meta-data
+            android:name="spay_sdk_api_level"
+            android:value="2.12" />
     </application>
-
 </manifest>

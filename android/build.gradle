@@ -12,7 +12,7 @@
 
 def DEFAULT_COMPILE_SDK_VERSION = 28
 def DEFAULT_BUILD_TOOLS_VERSION = '28.0.3'
-def DEFAULT_MIN_SDK_VERSION = 16
+def DEFAULT_MIN_SDK_VERSION = 19
 def DEFAULT_TARGET_SDK_VERSION = 28
 
 def safeExtGet(prop, fallback) {
@@ -66,6 +66,9 @@ repositories {
         // Android JSC is installed from npm
         url "$rootDir/../node_modules/jsc-android/dist"
     }
+    maven {
+        url 'https://jitpack.io'
+    }
     google()
     jcenter()
 }
@@ -73,6 +76,17 @@ repositories {
 dependencies {
     //noinspection GradleDynamicVersion
     implementation 'com.facebook.react:react-native:+'  // From node_modules
+
+    // Required For NI SDK
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-core:1.0.5'
+
+    // For card payment
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk:1.0.5'
+
+    //For samsung payment
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-samsungpay:1.0.5'
+
+    implementation 'com.google.code.gson:gson:2.8.6'
 }
 
 def configureReactNativePom(def pom) {
