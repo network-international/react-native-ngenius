@@ -6,7 +6,7 @@ import {
   TouchableHighlight,
   ActivityIndicator,
 } from 'react-native';
-import { initiateCardPayment, initiateSamsungPay } from 'react-native-ni-sdk';
+import { initiateCardPayment, initiateSamsungPay } from '@network-international/react-native-ngenius';
 
 import { createToken, createOrder } from './ngenius-apis';
 

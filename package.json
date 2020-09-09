@@ -1,7 +1,7 @@
 {
   "name": "@network-international/react-native-ngenius",
   "title": "React Native NGenius Sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "files": [
@@ -25,11 +25,11 @@
     "payment-gateway-sdk",
     "ngenius"
   ],
+  "author": {
+    "name": "Johnny Peter",
+    "email": "jpeter@equalexperts.com"
+  },
   "contributors": [
-    {
-      "name": "Johnny Peter",
-      "email": "jpeter@equalexperts.com"
-    },
     {
       "name": "Anvesh Bandi",
       "email": "abandi@equalexperts.com"
