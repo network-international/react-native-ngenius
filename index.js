@@ -1,4 +1,5 @@
-import { NativeModules } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
+// import { SHIPPING_CONTACT_FIELDS, MERCHANT_CAPABILITIES, BILLING_CONTACT_FIELDS } from './apple-pay-constants';
 
 const { NiSdk } = NativeModules;
 
@@ -20,11 +21,71 @@ const initiateCardPayment = (order) => {
 
 const initiateSamsungPay = (order, merchantName, serviceId) => {
   return new Promise((resolve, reject) => {
-    return NiSdk.initiateSamsungPay(
-      order,
-      merchantName,
-      serviceId,
-      (status, errorStr) => {
+    if (Platform.OS === 'android') {
+      if (!merchantName) {
+        reject({ status: 'Error', error: 'Merchant name is not found' });
+        return;
+      }
+      if (!serviceId) {
+        reject({ status: 'Error', error: 'ServiceId is not found' });
+        return;
+      }
+      return NiSdk.initiateSamsungPay(
+        order,
+        merchantName,
+        serviceId,
+        (status, errorStr) => {
+          switch (status) {
+            case "Success":
+              resolve({ status });
+              break;
+            case "Failed":
+            default:
+              reject({ status, error: errorStr });
+          }
+        },
+      );
+    } else {
+      reject({ status: 'Failed', error: 'Unsupported platform' });
+    }
+  });
+}
+
+/**
+ * @typedef {Object} applePayConfig 
+ * @property {string} merchantIdentifier
+ * @property {string} countryCode
+ * */
+
+/**
+ * Use this to initiate an Apple Pay transaction. 
+ * @param order - order info received from NGenius
+ * @param {applePayConfig} applePayConfig  - config for Apple Pay
+ * */
+
+const initiateApplePay = (order, applePayConfig) => {
+  return new Promise((resolve, reject) => {
+    if (Platform.OS === 'ios') {
+      const _applePayConfig = { ...applePayConfig };
+      if (!order) {
+        reject({ status: 'Error', error: 'Order not found' });
+        return;
+      }
+      if (!order.amount || !order.amount.value || !order.amount.currencyCode) {
+        reject({ status: 'Error', error: 'Order amount is missing' });
+        return;
+      }
+      if (!applePayConfig.merchantIdentifier) {
+        reject({ status: 'Error', error: 'Merchant identifier is not found' });
+        return;
+      }
+      if (!applePayConfig.countryCode) {
+        reject({ status: 'Error', error: 'Country code is not found' });
+        return;
+      }
+      _applePayConfig.totalAmount = order.amount.value / 100;
+      _applePayConfig.currencyCode = order.amount.currencyCode;
+      return NiSdk.initiateApplePay(order, _applePayConfig, (status, errorStr) => {
         switch (status) {
           case "Success":
             resolve({ status });
@@ -33,9 +94,47 @@ const initiateSamsungPay = (order, merchantName, serviceId) => {
           default:
             reject({ status, error: errorStr });
         }
-      },
-    );
+      });
+    } else {
+      reject({ status: 'Not Supported', error: 'Apple pay is not supported in this platform' });
+    }
   });
+};
+
+const isSamsungPaySupported = () => {
+  return new Promise((resolve, reject) => {
+    if (Platform.OS === 'android') {
+      // Native impl
+    } else {
+      reject({ status: 'Not Supported', error: 'Samsung pay is not supported in this platform' });
+    }
+  });
+};
+
+const isApplePaySupported = () => {
+  return new Promise((resolve, reject) => {
+    if (Platform.OS === 'ios') {
+      // Native impl
+      NiSdk.isApplePaySupported((isSupported) => {
+        resolve(isSupported);
+      });
+    } else {
+      reject({ status: 'Not Supported', error: 'Apple pay is not supported in this platform' });
+    }
+  });
+};
+
+const setLocale = (language) => {
+  NiSdk.setLocale(language);
 }
 
-export { initiateCardPayment, initiateSamsungPay };
+
+// export * from './apple-pay-constants';
+export {
+  initiateCardPayment,
+  initiateSamsungPay,
+  initiateApplePay,
+  isSamsungPaySupported,
+  isApplePaySupported,
+  setLocale,
+};
