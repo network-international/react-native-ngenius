@@ -1,84 +1,165 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   TouchableHighlight,
   ActivityIndicator,
+  Switch,
+  Platform
 } from 'react-native';
-import { initiateCardPayment, initiateSamsungPay } from '@network-international/react-native-ngenius';
+import {
+  initiateCardPayment,
+  initiateSamsungPay,
+  initiateApplePay,
+  isApplePaySupported,
+  isSamsungPaySupported,
+  setLocale,
+} from '@network-international/react-native-ngenius';
 
 import { createToken, createOrder } from './ngenius-apis';
 
 const App = () => {
-  const [loading, setLoading] = useState(false);
-  const [samsungPayStart, setSamsungPayStart] = useState(false);
+  const [isEnglish, setIsEnglish] = useState(true);
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [walletStart, setWalletStart] = useState(false);
+  const [showWallet, setShowWallet] = useState(false);
 
+  // Use this effect to get the status of Samsung Pay and Apple Pay availability
+  const getWalletStatus = useCallback(async () => {
+    if (Platform.OS === 'ios') {
+      const isApplePayEnabled = await isApplePaySupported();
+      setShowWallet(isApplePayEnabled);
+    } else if (Platform.OS === 'android') {
+      const isSamsungPayEnabled = await isSamsungPaySupported();
+      setShowWallet(isSamsungPayEnabled);
+    }
+  }, []);
+
+  useEffect(() => {
+    getWalletStatus();
+  }, []);
+
+  // Use this effect to switch the locale of the SDK
+  useEffect(() => {
+    setLocale(isEnglish ? 'en' : 'ar');
+  }, [isEnglish]);
+
+  // Create an order with value of 0.3 AED
   const createFixedOrder = useCallback(async () => {
     const token = await createToken();
     const order = await createOrder(token, 30);
     return order;
   }, []);
 
+
+  // When card is selected as mode of payment
   const onClickPay = async () => {
     try {
-      setLoading(true);
+      setCreatingOrder(true);
       const order = await createFixedOrder();
       const resp = await initiateCardPayment(order);
-      console.log({ resp });
     } catch (err) {
       console.log({ err });
     } finally {
-      setLoading(false);
+      setCreatingOrder(false);
     }
   };
 
+  // When Samsung pay is selected as mode of payment
   const onClickSamsungPay = useCallback(async () => {
     // Create order
     try {
-      setLoading(true);
+      setCreatingOrder(true);
       const order = await createFixedOrder();
-      setSamsungPayStart(true);
+      setWalletStart(true);
       // Attempt Samsung Pay
       await initiateSamsungPay(
         order,
-        'Merchant Name',
-        '69b734a0a86645329e6144',
+        '', // Merchant name here
+        '', //Your service id here
       );
     } catch (err) {
-      setLoading(false);
+      setCreatingOrder(false);
     } finally {
-      setLoading(false);
-      setSamsungPayStart(false);
+      setCreatingOrder(false);
+      setWalletStart(false);
     }
   }, [createFixedOrder]);
 
+  // When Apple pay is selected as mode of payment
+  const onClickApplePay = useCallback(async () => {
+    // Create order
+    try {
+      setCreatingOrder(true);
+      const order = await createFixedOrder();
+      setWalletStart(true);
+      // Attempt Apple Pay
+      await initiateApplePay(
+        order,
+        {
+          merchantIdentifier: '', // Merchant ID created in Apple's portal
+          countryCode: 'AE' // Country code of the order
+        },
+      );
+    } catch (err) {
+      console.log(err);
+      setCreatingOrder(false);
+    } finally {
+      setCreatingOrder(false);
+      setWalletStart(false);
+    }
+  });
+
   const disabledStyle = useMemo(
-    () => ({ backgroundColor: loading ? 'gray' : 'black' }),
-    [loading],
+    () => ({ backgroundColor: creatingOrder ? 'gray' : 'black' }),
+    [creatingOrder],
   );
+
+  const toggleSwitch = () => {
+    setIsEnglish(prev => !prev);
+  }
+
+  const walletStartMessage = useMemo(() => {
+    if (Platform.OS === 'android') {
+      return 'Starting Samsung Pay...';
+    }
+    return 'Starting Apple Pay...';
+  }, []);
 
   return (
     <View style={styles.container}>
       <Text style={styles.welcome} testID="Label">
-        NISdk Samsung Pay
+        NGenius React native SDK
       </Text>
       <TouchableHighlight
-        disabled={loading}
+        disabled={creatingOrder}
         style={StyleSheet.compose(styles.button, disabledStyle)}
         onPressOut={onClickPay}>
         <Text style={styles.buttonLabel}>Pay 0.3 AED using Card</Text>
       </TouchableHighlight>
-      <TouchableHighlight
-        disabled={loading}
+      {showWallet && <TouchableHighlight
+        disabled={creatingOrder}
         style={StyleSheet.compose(styles.button, disabledStyle)}
-        onPressOut={onClickSamsungPay}>
-        <Text style={styles.buttonLabel}>Pay 0.3 AED using Samsung Pay</Text>
-      </TouchableHighlight>
+        onPressOut={Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay}>
+        <Text style={styles.buttonLabel}>
+          {`Pay 0.3 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'} Pay`}
+        </Text>
+      </TouchableHighlight>}
+      <Text style={{ paddingVertical: 20 }}>
+        {isEnglish ? "English" : "Arabic"}
+      </Text>
+      <Switch
+        trackColor={{ false: "#FFFFFF", true: "#000000" }}
+        thumbColor={isEnglish ? "#FFFFFF" : "#FFFFFF"}
+        ios_backgroundColor="#FFFFFF"
+        onValueChange={toggleSwitch}
+        value={isEnglish}
+      />
       <Text style={styles.loadingText}>
-        {loading
-          ? samsungPayStart
-            ? 'Starting SamsungPay...'
+        {creatingOrder
+          ? walletStart
+            ? walletStartMessage
             : 'Creating Order...'
           : ''}
       </Text>
@@ -86,7 +167,7 @@ const App = () => {
         size="large"
         color="black"
         style={styles.loader}
-        animating={loading}
+        animating={creatingOrder}
       />
     </View>
   );
