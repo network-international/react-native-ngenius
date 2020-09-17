@@ -9,19 +9,17 @@ Pod::Spec.new do |s|
   s.description  = <<-DESC
                   react-native-ni-sdk
                    DESC
-  s.homepage     = "https://github.com/github_account/react-native-ni-sdk"
+  s.homepage     = "https://github.com/network-international/react-native-ngenius"
   # brief license entry:
   s.license      = "MIT"
-  # optional - use expanded license entry instead:
-  # s.license    = { :type => "MIT", :file => "LICENSE" }
-  s.authors      = { "Your Name" => "yourname@email.com" }
+  s.authors      = { "Johnny Peter" => "jpeter@equalexperts.com" }
   s.platforms    = { :ios => "11.0" }
-  s.source       = { :git => "https://github.com/github_account/react-native-ni-sdk.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/network-international/react-native-ngenius", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,c,m,swift}"
   s.requires_arc = true
 
   s.dependency "React"
-  s.dependency "NISdk"
+  s.dependency "NISdk", "3.0.10"
 end
 
