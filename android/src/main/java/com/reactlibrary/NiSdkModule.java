@@ -3,7 +3,6 @@ package com.reactlibrary;
 import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
-import android.telecom.Call;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.BaseActivityEventListener;
@@ -13,16 +12,15 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
-import com.google.gson.Gson;
 
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 
 import payment.sdk.android.PaymentClient;
+import payment.sdk.android.SDKConfig;
 import payment.sdk.android.core.Order;
 import payment.sdk.android.cardpayment.CardPaymentData;
 import payment.sdk.android.cardpayment.CardPaymentRequest;
@@ -91,6 +89,12 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                 .code(authCode)
                 .build();
         paymentClient.launchCardPayment(cardPaymentRequest, CARD_ACTIVITY_REQUEST_CODE);
+    }
+
+    @ReactMethod
+    public void configureSDK(ReadableMap config) {
+        Boolean shouldShowOrderAmount = config.getBoolean("shouldShowOrderAmount");
+        SDKConfig.INSTANCE.shouldShowOrderAmount(shouldShowOrderAmount);
     }
 
     @ReactMethod
