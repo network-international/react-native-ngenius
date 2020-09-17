@@ -3,11 +3,11 @@ require "json"
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
 Pod::Spec.new do |s|
-  s.name         = "react-native-ni-sdk"
+  s.name         = "react-native-ngenius"
   s.version      = package["version"]
   s.summary      = package["description"]
   s.description  = <<-DESC
-                  react-native-ni-sdk
+                  react-native-ngenius
                    DESC
   s.homepage     = "https://github.com/network-international/react-native-ngenius"
   # brief license entry:
