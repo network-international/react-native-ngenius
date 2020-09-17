@@ -24,6 +24,14 @@ const App = () => {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [walletStart, setWalletStart] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
+  const [showAmount, setShowAmount] = useState(true);
+
+  useEffect(() => {
+    configureSDK({
+      language: isEnglish ? 'en' : 'ar',
+      shouldShowOrderAmount: showAmount
+    });
+  }, []);
 
   // Use this effect to get the status of Samsung Pay and Apple Pay availability
   const getWalletStatus = useCallback(async () => {
@@ -40,18 +48,12 @@ const App = () => {
     getWalletStatus();
   }, []);
 
-  // Use this effect to switch the locale of the SDK
-  useEffect(() => {
-    configureSDK({ language: isEnglish ? 'en' : 'ar' })
-  }, [isEnglish]);
-
   // Create an order with value of 0.3 AED
   const createFixedOrder = useCallback(async () => {
     const token = await createToken();
     const order = await createOrder(token, 30);
     return order;
   }, []);
-
 
   // When card is selected as mode of payment
   const onClickPay = async () => {
@@ -117,7 +119,17 @@ const App = () => {
   );
 
   const toggleSwitch = () => {
-    setIsEnglish(prev => !prev);
+    setIsEnglish(prev => {
+      configureSDK({ language: !prev ? 'en' : 'ar' });
+      return !prev
+    });
+  }
+
+  const toggleAmount = () => {
+    setShowAmount(prev => {
+      configureSDK({ shouldShowOrderAmount: !prev });
+      return !prev
+    });
   }
 
   const walletStartMessage = useMemo(() => {
@@ -146,16 +158,31 @@ const App = () => {
           {`Pay 0.3 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'} Pay`}
         </Text>
       </TouchableHighlight>}
-      <Text style={{ paddingVertical: 20 }}>
-        {isEnglish ? "English" : "Arabic"}
-      </Text>
-      <Switch
-        trackColor={{ false: "#FFFFFF", true: "#000000" }}
-        thumbColor={isEnglish ? "#FFFFFF" : "#FFFFFF"}
-        ios_backgroundColor="#FFFFFF"
-        onValueChange={toggleSwitch}
-        value={isEnglish}
-      />
+      {Platform.OS === 'ios' &&
+        <>
+          <Text style={{ paddingVertical: 20 }}>
+            {isEnglish ? "English" : "Arabic"}
+          </Text>
+          <Switch
+            trackColor={{ false: "#FFFFFF", true: "#000000" }}
+            thumbColor={isEnglish ? "#FFFFFF" : "#FFFFFF"}
+            ios_backgroundColor="#FFFFFF"
+            onValueChange={toggleSwitch}
+            value={isEnglish}
+          />
+        </>}
+      {Platform.OS === 'android' &&
+        <>
+          <Text style={{ paddingVertical: 20 }}>
+            {showAmount ? "Show amount in pay button" : "Hide amount in pay button"}
+          </Text>
+          <Switch
+            trackColor={{ false: "#808080", true: "#000000" }}
+            thumbColor={showAmount ? "#FFFFFF" : "#FFFFFF"}
+            onValueChange={toggleAmount}
+            value={showAmount}
+          />
+        </>}
       <Text style={styles.loadingText}>
         {creatingOrder
           ? walletStart

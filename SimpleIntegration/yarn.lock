@@ -1008,6 +1008,10 @@
     "@types/yargs" "^15.0.0"
     chalk "^4.0.0"
 
+"@network-international/react-native-ngenius@link:..":
+  version "0.0.0"
+  uid ""
+
 "@react-native-community/cli-debugger-ui@^4.9.0":
   version "4.9.0"
   resolved "https://registry.yarnpkg.com/@react-native-community/cli-debugger-ui/-/cli-debugger-ui-4.9.0.tgz#4177764ba69243c97aa26829d59d9501acb2bd71"
@@ -5489,10 +5493,6 @@ react-is@^16.12.0, react-is@^16.8.1, react-is@^16.8.4, react-is@^16.8.6:
   version "16.13.1"
   resolved "https://registry.yarnpkg.com/react-is/-/react-is-16.13.1.tgz#789729a4dc36de2999dc156dd6c1d9c18cea56a4"
   integrity sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==
-
-"react-native-ni-sdk@link:..":
-  version "0.0.0"
-  uid ""
 
 react-native@0.62.2:
   version "0.62.2"
