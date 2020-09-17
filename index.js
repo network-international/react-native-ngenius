@@ -124,10 +124,28 @@ const isApplePaySupported = () => {
   });
 };
 
-const setLocale = (language) => {
-  NiSdk.setLocale(language);
-}
+// A normalised sdk config function
+const configureSDK = (config) => {
+  if (!config) {
+    return;
+  }
 
+  // Supported configs for android platform
+  if (Platform.OS === 'android') {
+    if ('shouldShowOrderAmount' in config) {
+      NiSdk.configureSDK({
+        shouldShowOrderAmount: config.shouldShowOrderAmount
+      });
+    }
+  }
+
+  // Supported configs on iOS
+  if (Platform.OS === 'ios') {
+    if ('language' in config) {
+      NiSdk.setLocale(config.language);
+    }
+  }
+}
 
 // export * from './apple-pay-constants';
 export {
@@ -136,5 +154,5 @@ export {
   initiateApplePay,
   isSamsungPaySupported,
   isApplePaySupported,
-  setLocale,
+  configureSDK,
 };
