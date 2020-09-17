@@ -14,7 +14,7 @@ import {
   initiateApplePay,
   isApplePaySupported,
   isSamsungPaySupported,
-  setLocale,
+  configureSDK,
 } from '@network-international/react-native-ngenius';
 
 import { createToken, createOrder } from './ngenius-apis';
@@ -42,7 +42,7 @@ const App = () => {
 
   // Use this effect to switch the locale of the SDK
   useEffect(() => {
-    setLocale(isEnglish ? 'en' : 'ar');
+    configureSDK({ language: isEnglish ? 'en' : 'ar' })
   }, [isEnglish]);
 
   // Create an order with value of 0.3 AED
