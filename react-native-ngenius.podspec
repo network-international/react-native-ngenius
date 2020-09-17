@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.license      = "MIT"
   s.authors      = { "Johnny Peter" => "jpeter@equalexperts.com" }
   s.platforms    = { :ios => "11.0" }
-  s.source       = { :git => "https://github.com:network-international/react-native-ngenius.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/network-international/react-native-ngenius.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,c,m,swift}"
   s.requires_arc = true
