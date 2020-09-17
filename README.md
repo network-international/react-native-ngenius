@@ -12,11 +12,11 @@
 npm i @network-international/react-native-ngenius
 ```
 
-Note: If your project is using iOS deployment target 10, you need to increase it to 11.
+**Note:** If your project is using iOS deployment target 10, you need to increase it to 11.
 
 In order to increase change the versions in the following files
-- `your-project/ios/Podfile` - Change the iOS deployment version as follows `platform :ios, '11.0'`  
-- Open the `.xcworkspacefile` inside the following directory `your-project/ios/yourproject.xcworkspace` and change the deployment target to 11.
+- Change the iOS deployment version in `your-project/ios/Podfile` as follows `platform :ios, '11.0'`  
+- Open the `.xcworkspacefile` inside the following directory `your-project/ios/yourproject.xcworkspace` and change the deployment target to 11.0.
 
 ## Basic usage example
 ```javascript
