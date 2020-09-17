@@ -1,7 +1,7 @@
 {
   "name": "@network-international/react-native-ngenius",
   "title": "React Native NGenius Sdk",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "files": [
@@ -9,7 +9,7 @@
     "android",
     "index.js",
     "ios",
-    "react-native-ni-sdk.podspec"
+    "react-native-ngenius.podspec"
   ],
   "publishConfig": {
     "access": "public"
