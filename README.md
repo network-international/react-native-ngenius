@@ -2,18 +2,60 @@
 
 ![Banner](assets/banner.jpg)
 
+## Requirements
+- Reat-native `v0.60+`
+- iOS version `11+`
+- Android minSDK version `19`
+
 ## Getting started
+```bash
+npm i @network-international/react-native-ngenius
+```
 
-`$ npm install react-native-ni-sdk --save`
+Note: If your project is using iOS deployment target 10, you need to increase it to 11.
 
-### Mostly automatic installation
+In order to increase change the versions in the following files
+- `your-project/ios/Podfile` - Change the iOS deployment version as follows `platform :ios, '11.0'`  
+- Open the `.xcworkspacefile` inside the following directory `your-project/ios/yourproject.xcworkspace` and change the deployment target to 11.
 
-`$ react-native link react-native-ni-sdk`
-
-## Usage
+## Basic usage example
 ```javascript
-import NiSdk from 'react-native-ni-sdk';
+import {
+  initiateCardPayment,
+  initiateSamsungPay,
+  initiateApplePay,
+} from '@network-international/react-native-ngenius';
 
-// TODO: What to do with the module?
-NiSdk;
+// order is the order response received from NGenius create order API
+const makeCardPayment = async () => {
+    try {
+      const resp = await initiateCardPayment(order);
+    } catch (err) {
+      console.log({ err });
+    }
+};
+
+// order is the order response received from NGenius create order API
+// merchantName is the name of merchant's establishment
+// serviceId is the serviceId that is generated in the Samsung Pay developer portal
+const makeSamsungPayPayment = async () => {
+    try {
+      const resp = await initiateSamsungPay(order, merchantName, serviceId);
+    } catch (err) {
+      console.log({ err });
+    }
+};
+
+// order is the order response received from NGenius create order API
+// mid is the merchant ID that is generated in the Apple developer portal
+// countryCode is the country code of the transaction country Eg: AE for UAE
+const makeApplePayPayment = async () => {
+    try {
+      const resp = await initiateApplePay(order, mid, countryCode);
+    } catch (err) {
+      console.log({ err });
+    }
+};
+
+
 ```
