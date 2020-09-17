@@ -9,7 +9,7 @@
     "android",
     "index.js",
     "ios",
-    "react-native-ngenius.podspec"
+    "react-native-ni-sdk.podspec"
   ],
   "publishConfig": {
     "access": "public"
