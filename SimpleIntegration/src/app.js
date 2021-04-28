@@ -6,6 +6,7 @@ import {
   TouchableHighlight,
   ActivityIndicator,
   Switch,
+  Alert,
   Platform
 } from 'react-native';
 import {
@@ -61,8 +62,24 @@ const App = () => {
       setCreatingOrder(true);
       const order = await createFixedOrder();
       const resp = await initiateCardPayment(order);
+      Alert.alert(
+        "Success",
+        "Payment was successful",
+        [
+          { text: "OK", onPress: () => console.log("OK Pressed") }
+        ],
+        { cancelable: false }
+      );
     } catch (err) {
-      console.log({ err });
+      console.log(err);
+      Alert.alert(
+        "Error",
+        "Payment was not successful",
+        [
+          { text: "OK", onPress: () => console.log("OK Pressed") }
+        ],
+        { cancelable: false }
+      );
     } finally {
       setCreatingOrder(false);
     }

@@ -1,4 +1,4 @@
-package com.reactlibrary;
+package ae.network;
 
 import android.app.Activity;
 import android.content.Intent;

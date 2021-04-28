@@ -14,12 +14,9 @@ export const createToken = async () => {
       method: 'post',
       url: IDENTITY_API_URL,
       headers: {
+        Accept: 'application/vnd.ni-identity.v1+json',
         'Content-Type': 'application/vnd.ni-identity.v1+json',
         Authorization: `Basic ${API_KEY}`,
-      },
-      data: {
-        grant_type: 'client_credentials',
-        realm: REALM,
       },
     });
     const { access_token } = data;
