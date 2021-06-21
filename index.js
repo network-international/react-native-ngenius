@@ -85,6 +85,9 @@ const initiateApplePay = (order, applePayConfig) => {
       }
       _applePayConfig.totalAmount = order.amount.value / 100;
       _applePayConfig.currencyCode = order.amount.currencyCode;
+      if(!_applePayConfig.merchantName) {
+        _applePayConfig.merchantName = 'Total';
+      }
       return NiSdk.initiateApplePay(order, _applePayConfig, (status, errorStr) => {
         switch (status) {
           case "Success":

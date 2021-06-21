@@ -50,7 +50,7 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
         
         NSMutableArray<PKPaymentSummaryItem *> *summaryItems = [[NSMutableArray alloc] initWithCapacity: 1];
         [summaryItems addObject: [PKPaymentSummaryItem
-                                         summaryItemWithLabel: @"Total"
+                                         summaryItemWithLabel: applePayConfig[@"merchantName"]
                                          amount: [[NSDecimalNumber alloc] initWithFloat: [applePayConfig[@"totalAmount"] floatValue]]]];
         applePayRequest.paymentSummaryItems = summaryItems;
     
