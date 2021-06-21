@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   Switch,
   Alert,
-  Platform
+  Platform,
 } from 'react-native';
 import {
   initiateCardPayment,
@@ -30,9 +30,9 @@ const App = () => {
   useEffect(() => {
     configureSDK({
       language: isEnglish ? 'en' : 'ar',
-      shouldShowOrderAmount: showAmount
+      shouldShowOrderAmount: showAmount,
     });
-  }, []);
+  }, [isEnglish, showAmount]);
 
   // Use this effect to get the status of Samsung Pay and Apple Pay availability
   const getWalletStatus = useCallback(async () => {
@@ -47,7 +47,7 @@ const App = () => {
 
   useEffect(() => {
     getWalletStatus();
-  }, []);
+  }, [getWalletStatus]);
 
   // Create an order with value of 0.3 AED
   const createFixedOrder = useCallback(async () => {
@@ -61,24 +61,20 @@ const App = () => {
     try {
       setCreatingOrder(true);
       const order = await createFixedOrder();
-      const resp = await initiateCardPayment(order);
+      await initiateCardPayment(order);
       Alert.alert(
-        "Success",
-        "Payment was successful",
-        [
-          { text: "OK", onPress: () => console.log("OK Pressed") }
-        ],
-        { cancelable: false }
+        'Success',
+        'Payment was successful',
+        [{ text: 'OK', onPress: () => console.log('OK Pressed') }],
+        { cancelable: false },
       );
     } catch (err) {
       console.log(err);
       Alert.alert(
-        "Error",
-        "Payment was not successful",
-        [
-          { text: "OK", onPress: () => console.log("OK Pressed") }
-        ],
-        { cancelable: false }
+        'Error',
+        'Payment was not successful',
+        [{ text: 'OK', onPress: () => console.log('OK Pressed') }],
+        { cancelable: false },
       );
     } finally {
       setCreatingOrder(false);
@@ -114,13 +110,11 @@ const App = () => {
       const order = await createFixedOrder();
       setWalletStart(true);
       // Attempt Apple Pay
-      await initiateApplePay(
-        order,
-        {
-          merchantIdentifier: '', // Merchant ID created in Apple's portal
-          countryCode: 'AE' // Country code of the order
-        },
-      );
+      await initiateApplePay(order, {
+        merchantIdentifier: 'com.xyz.a', // Merchant ID created in Apple's portal
+        countryCode: 'AE', // Country code of the order
+        merchantName: 'Test Merchant', // name of the merchant to be shown in Apple Pay button
+      });
     } catch (err) {
       console.log(err);
       setCreatingOrder(false);
@@ -128,7 +122,7 @@ const App = () => {
       setCreatingOrder(false);
       setWalletStart(false);
     }
-  });
+  }, [createFixedOrder]);
 
   const disabledStyle = useMemo(
     () => ({ backgroundColor: creatingOrder ? 'gray' : 'black' }),
@@ -136,18 +130,18 @@ const App = () => {
   );
 
   const toggleSwitch = () => {
-    setIsEnglish(prev => {
+    setIsEnglish((prev) => {
       configureSDK({ language: !prev ? 'en' : 'ar' });
-      return !prev
+      return !prev;
     });
-  }
+  };
 
   const toggleAmount = () => {
-    setShowAmount(prev => {
+    setShowAmount((prev) => {
       configureSDK({ shouldShowOrderAmount: !prev });
-      return !prev
+      return !prev;
     });
-  }
+  };
 
   const walletStartMessage = useMemo(() => {
     if (Platform.OS === 'android') {
@@ -167,39 +161,49 @@ const App = () => {
         onPressOut={onClickPay}>
         <Text style={styles.buttonLabel}>Pay 0.3 AED using Card</Text>
       </TouchableHighlight>
-      {showWallet && <TouchableHighlight
-        disabled={creatingOrder}
-        style={StyleSheet.compose(styles.button, disabledStyle)}
-        onPressOut={Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay}>
-        <Text style={styles.buttonLabel}>
-          {`Pay 0.3 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'} Pay`}
-        </Text>
-      </TouchableHighlight>}
-      {Platform.OS === 'ios' &&
+      {showWallet && (
+        <TouchableHighlight
+          disabled={creatingOrder}
+          style={StyleSheet.compose(styles.button, disabledStyle)}
+          onPressOut={
+            Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay
+          }>
+          <Text style={styles.buttonLabel}>
+            {`Pay 0.3 AED using ${
+              Platform.OS === 'android' ? 'Samsung' : 'Apple'
+            } Pay`}
+          </Text>
+        </TouchableHighlight>
+      )}
+      {Platform.OS === 'ios' && (
         <>
           <Text style={{ paddingVertical: 20 }}>
-            {isEnglish ? "English" : "Arabic"}
+            {isEnglish ? 'English' : 'Arabic'}
           </Text>
           <Switch
-            trackColor={{ false: "#FFFFFF", true: "#000000" }}
-            thumbColor={isEnglish ? "#FFFFFF" : "#FFFFFF"}
+            trackColor={{ false: '#FFFFFF', true: '#000000' }}
+            thumbColor={isEnglish ? '#FFFFFF' : '#FFFFFF'}
             ios_backgroundColor="#FFFFFF"
             onValueChange={toggleSwitch}
             value={isEnglish}
           />
-        </>}
-      {Platform.OS === 'android' &&
+        </>
+      )}
+      {Platform.OS === 'android' && (
         <>
           <Text style={{ paddingVertical: 20 }}>
-            {showAmount ? "Show amount in pay button" : "Hide amount in pay button"}
+            {showAmount
+              ? 'Show amount in pay button'
+              : 'Hide amount in pay button'}
           </Text>
           <Switch
-            trackColor={{ false: "#808080", true: "#000000" }}
-            thumbColor={showAmount ? "#FFFFFF" : "#FFFFFF"}
+            trackColor={{ false: '#808080', true: '#000000' }}
+            thumbColor={showAmount ? '#FFFFFF' : '#FFFFFF'}
             onValueChange={toggleAmount}
             value={showAmount}
           />
-        </>}
+        </>
+      )}
       <Text style={styles.loadingText}>
         {creatingOrder
           ? walletStart
