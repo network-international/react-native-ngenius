@@ -51,7 +51,11 @@ const makeSamsungPayPayment = async () => {
 // countryCode is the country code of the transaction country Eg: AE for UAE
 const makeApplePayPayment = async () => {
     try {
-      const resp = await initiateApplePay(order, mid, countryCode);
+      const resp = await initiateApplePay(order, { // order is the order response after creating an order
+        merchantIdentifier: '', // Merchant ID created in Apple's portal
+        countryCode: '', // Country code of the order Eg, AE
+        merchantName: '', // name of the merchant to be shown in Apple Pay button
+      });
     } catch (err) {
       console.log({ err });
     }
