@@ -43,6 +43,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                     CardPaymentData cardPaymentData = CardPaymentData.getFromIntent(data);
                     switch (cardPaymentData.getCode()) {
                         case CardPaymentData.STATUS_PAYMENT_AUTHORIZED:
+                        case CardPaymentData.STATUS_PAYMENT_PURCHASED:
                         case CardPaymentData.STATUS_PAYMENT_CAPTURED:
                             // Payment succeeded
                             cardPayResponseCallback.invoke("Success");
