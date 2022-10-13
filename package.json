@@ -1,7 +1,7 @@
 {
   "name": "@network-international/react-native-ngenius",
   "title": "React Native NGenius Sdk",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "files": [
