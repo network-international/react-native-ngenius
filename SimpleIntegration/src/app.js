@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   initiateCardPayment,
   initiateSamsungPay,
@@ -16,9 +17,36 @@ import {
   isApplePaySupported,
   isSamsungPaySupported,
   configureSDK,
+  executeThreeDSTwo,
 } from '@network-international/react-native-ngenius';
 
-import { createToken, createOrder } from './ngenius-apis';
+import {
+  createToken,
+  createOrder,
+  getOrder,
+  makePayment,
+} from './ngenius-apis';
+import SavedCardFrame from './save-card-frame';
+
+const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
+const storeData = async (key, value) => {
+  try {
+    const jsonValue = JSON.stringify(value);
+    await AsyncStorage.setItem(key, jsonValue);
+    return 1;
+  } catch (e) {
+    return 0;
+  }
+};
+
+const getStoredData = async (key) => {
+  try {
+    const jsonValue = await AsyncStorage.getItem(key);
+    return jsonValue != null ? JSON.parse(jsonValue) : null;
+  } catch (e) {
+    return null;
+  }
+};
 
 const App = () => {
   const [isEnglish, setIsEnglish] = useState(true);
@@ -26,6 +54,8 @@ const App = () => {
   const [walletStart, setWalletStart] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
   const [showAmount, setShowAmount] = useState(true);
+  const [shouldSaveCard, setShouldSaveCard] = useState(false);
+  const [savedCard, setSavedCard] = useState(null);
 
   useEffect(() => {
     configureSDK({
@@ -33,6 +63,18 @@ const App = () => {
       shouldShowOrderAmount: showAmount,
     });
   }, [isEnglish, showAmount]);
+
+  const fetchOnAppBoot = async () => {
+    const savedCardDetailsFromStorage = await getStoredData(SAVE_CARD_KEY);
+    if (savedCardDetailsFromStorage !== null) {
+      setSavedCard(savedCardDetailsFromStorage);
+      setShouldSaveCard(true);
+    }
+  };
+
+  useEffect(() => {
+    fetchOnAppBoot();
+  }, []);
 
   // Use this effect to get the status of Samsung Pay and Apple Pay availability
   const getWalletStatus = useCallback(async () => {
@@ -50,18 +92,48 @@ const App = () => {
   }, [getWalletStatus]);
 
   // Create an order with value of 0.3 AED
-  const createFixedOrder = useCallback(async () => {
-    const token = await createToken();
-    const order = await createOrder(token, 30);
-    return order;
-  }, []);
+  const createFixedOrder = useCallback(
+    async (token, savedCardDetails = null) => {
+      const order = await createOrder(token, 30, savedCardDetails);
+      return order;
+    },
+    [],
+  );
 
   // When card is selected as mode of payment
   const onClickPay = async () => {
     try {
       setCreatingOrder(true);
-      const order = await createFixedOrder();
+      const tk = await createToken();
+      const order = await createFixedOrder(tk, savedCard);
+      if (savedCard !== null) {
+        // use saved card for payment
+        const paymentUrl =
+          order._embedded.payment[0]._links['payment:saved-card'].href;
+        const { cardholderName, expiry, cardToken } = savedCard;
+        const paymentResponse = await makePayment(tk, paymentUrl, {
+          cardholderName,
+          cardToken,
+          expiry,
+          cvv: '111',
+        });
+        await executeThreeDSTwo(paymentResponse);
+        Alert.alert(
+          'Success',
+          'Payment was successful',
+          [{ text: 'OK', onPress: () => console.log('OK Pressed') }],
+          { cancelable: false },
+        );
+        return;
+      }
       await initiateCardPayment(order);
+      if (shouldSaveCard) {
+        const token = await createToken();
+        const paidOrder = await getOrder(token, order.reference);
+        const cardTokenDetails = paidOrder?._embedded?.payment[0]?.savedCard;
+        storeData(SAVE_CARD_KEY, cardTokenDetails);
+        setSavedCard(cardTokenDetails);
+      }
       Alert.alert(
         'Success',
         'Payment was successful',
@@ -86,7 +158,8 @@ const App = () => {
     // Create order
     try {
       setCreatingOrder(true);
-      const order = await createFixedOrder();
+      const tk = await createToken();
+      const order = await createFixedOrder(tk);
       setWalletStart(true);
       // Attempt Samsung Pay
       await initiateSamsungPay(
@@ -107,7 +180,8 @@ const App = () => {
     // Create order
     try {
       setCreatingOrder(true);
-      const order = await createFixedOrder();
+      const tk = await createToken();
+      const order = await createFixedOrder(tk);
       setWalletStart(true);
       // Attempt Apple Pay
       await initiateApplePay(order, {
@@ -143,6 +217,12 @@ const App = () => {
     });
   };
 
+  const toggleSaveCard = () => {
+    setShouldSaveCard((prev) => {
+      return !prev;
+    });
+  };
+
   const walletStartMessage = useMemo(() => {
     if (Platform.OS === 'android') {
       return 'Starting Samsung Pay...';
@@ -155,6 +235,7 @@ const App = () => {
       <Text style={styles.welcome} testID="Label">
         NGenius React native SDK
       </Text>
+      {savedCard && <SavedCardFrame cardDetails={savedCard} />}
       <TouchableHighlight
         disabled={creatingOrder}
         style={StyleSheet.compose(styles.button, disabledStyle)}
@@ -175,6 +256,15 @@ const App = () => {
           </Text>
         </TouchableHighlight>
       )}
+      <Text style={{ paddingVertical: 20 }}>
+        {shouldSaveCard ? 'Saving card' : 'Not saving card'}
+      </Text>
+      <Switch
+        trackColor={{ false: '#808080', true: '#000000' }}
+        thumbColor={shouldSaveCard ? '#FFFFFF' : '#FFFFFF'}
+        onValueChange={toggleSaveCard}
+        value={shouldSaveCard}
+      />
       {Platform.OS === 'ios' && (
         <>
           <Text style={{ paddingVertical: 20 }}>

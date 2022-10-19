@@ -10,10 +10,11 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@network-international/react-native-ngenius": "link:../",
+    "@react-native-async-storage/async-storage": "^1.17.10",
     "axios": "^0.19.2",
     "react": "16.11.0",
-    "react-native": "0.62.2",
-    "@network-international/react-native-ngenius": "link:../"
+    "react-native": "0.62.2"
   },
   "devDependencies": {
     "@babel/core": "^7.10.3",

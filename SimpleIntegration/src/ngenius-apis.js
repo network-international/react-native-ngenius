@@ -4,9 +4,8 @@ const REALM = 'ni'; // add your realm
 const OUTLET_ID = ''; // add your outletId
 const API_KEY = ''; // add your api key
 const IDENTITY_API_URL =
-  'https://api-gateway-dev.ngenius-payments.com/identity/auth/access-token';
-const GATEWAY_API_URL =
-  `https://api-gateway-dev.ngenius-payments.com/transactions/outlets/${OUTLET_ID}/orders`;
+  'https://api-gateway.sandbox.ngenius-payments.com/identity/auth/access-token';
+const GATEWAY_API_URL = `https://api-gateway.sandbox.ngenius-payments.com/transactions/outlets/${OUTLET_ID}/orders`;
 
 export const createToken = async () => {
   try {
@@ -26,28 +25,45 @@ export const createToken = async () => {
   }
 };
 
-export const createOrder = async (accessToken, amount) => {
-  try {
-    const { data } = await axios.post(
-      GATEWAY_API_URL,
-      {
-        action: 'SALE',
-        amount: {
-          currencyCode: 'AED',
-          value: amount,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/vnd.ni-payment.v2+json',
-          Accept: 'application/vnd.ni-payment.v2+json',
-        },
-      },
-    );
-    return data;
-  } catch (err) {
-    console.log(err);
-    return err;
+export const createOrder = async (accessToken, amount, savedCard = null) => {
+  const body = {
+    action: 'SALE',
+    amount: {
+      currencyCode: 'AED',
+      value: amount,
+    },
+  };
+  if (savedCard) {
+    body.savedCard = savedCard;
   }
+  const { data } = await axios.post(GATEWAY_API_URL, body, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/vnd.ni-payment.v2+json',
+      Accept: 'application/vnd.ni-payment.v2+json',
+      },
+  });
+  return data;
+};
+
+export const makePayment = async (accessToken, paymentUrl, body) => {
+  const { data } = await axios.put(paymentUrl, body, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/vnd.ni-payment.v2+json',
+      Accept: 'application/vnd.ni-payment.v2+json',
+    },
+  });
+  return data;
+};
+
+export const getOrder = async (accessToken, orderId) => {
+  const { data } = await axios.get(`${GATEWAY_API_URL}/${orderId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/vnd.ni-payment.v2+json',
+      Accept: 'application/vnd.ni-payment.v2+json',
+    },
+  });
+  return data;
 };
