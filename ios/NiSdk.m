@@ -78,6 +78,25 @@ RCT_EXPORT_METHOD(setLocale:(NSString *) language) {
     [sdkInstance setSDKLanguageWithLanguage: language];
 }
 
+RCT_EXPORT_METHOD(executeThreeDSTwo:(NSDictionary *)paymentResponseDict
+                  threeDSTwoResponse:(RCTResponseSenderBlock)threeDSTwoResponse) {
+    self.paymentResponseCallback = threeDSTwoResponse;
+
+    NSError *error;
+    NSData *paymentResponseJsonData = [NSJSONSerialization dataWithJSONObject: paymentResponseDict options: 0 error:&error];
+    if (!paymentResponseJsonData) {
+        NSLog(@"Got an error: %@", error);
+    } else {
+        PaymentResponse *paymentResponse = [PaymentResponse decodeFromData: paymentResponseJsonData error: nil];
+        dispatch_async(dispatch_get_main_queue(), ^(void){
+            UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
+            NISdk *sdkInstance = [NISdk sharedInstance];
+            [sdkInstance executeThreeDSTwoWithCardPaymentDelegate:self overParent:rootViewController for:paymentResponse];
+        });
+    }
+
+}
+
 - (void)paymentDidCompleteWith:(enum PaymentStatus)status {
     if(status == PaymentStatusPaymentSuccess) {
         if(self.paymentResponseCallback != nil) {
