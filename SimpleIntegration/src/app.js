@@ -20,6 +20,7 @@ import {
   executeThreeDSTwo,
 } from '@network-international/react-native-ngenius';
 
+
 import {
   createToken,
   createOrder,
@@ -250,9 +251,8 @@ const App = () => {
             Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay
           }>
           <Text style={styles.buttonLabel}>
-            {`Pay 0.3 AED using ${
-              Platform.OS === 'android' ? 'Samsung' : 'Apple'
-            } Pay`}
+            {`Pay 0.3 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'
+              } Pay`}
           </Text>
         </TouchableHighlight>
       )}

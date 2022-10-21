@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-const OUTLET_ID = 'dcc27267-8c42-423c-b86c-fbf93792e45a'; // add your outletId
+const OUTLET_ID = ''; // add your outletId
 const API_KEY =
-  'ZjUwYTYyN2YtZGI2Yi00ZTczLWI0NDQtMTE3ZTIyODBhZmM0OjM3MDAzY2M3LTliNzEtNGQwZC05MGFmLWVlOTM0YTRiZWYxNw=='; // add your api key
+  ''; // add your api key
 const IDENTITY_API_URL =
   'https://api-gateway.sandbox.ngenius-payments.com/identity/auth/access-token';
 const GATEWAY_API_URL = `https://api-gateway.sandbox.ngenius-payments.com/transactions/outlets/${OUTLET_ID}/orders`;
