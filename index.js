@@ -85,7 +85,7 @@ const initiateApplePay = (order, applePayConfig) => {
       }
       _applePayConfig.totalAmount = order.amount.value / 100;
       _applePayConfig.currencyCode = order.amount.currencyCode;
-      if(!_applePayConfig.merchantName) {
+      if (!_applePayConfig.merchantName) {
         _applePayConfig.merchantName = 'Total';
       }
       return NiSdk.initiateApplePay(order, _applePayConfig, (status, errorStr) => {
@@ -150,6 +150,22 @@ const configureSDK = (config) => {
   }
 }
 
+const executeThreeDSTwo = (paymentResponse) => {
+  return new Promise((resolve, reject) => {
+    return NiSdk.executeThreeDSTwo(paymentResponse, (status) => {
+      switch (status) {
+        case "Success":
+          resolve({ status });
+          break;
+        case "Failed":
+        case "Aborted":
+        default:
+          reject({ status });
+      }
+    });
+  })
+}
+
 // export * from './apple-pay-constants';
 export {
   initiateCardPayment,
@@ -158,4 +174,5 @@ export {
   isSamsungPaySupported,
   isApplePaySupported,
   configureSDK,
+  executeThreeDSTwo
 };

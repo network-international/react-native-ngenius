@@ -20,7 +20,6 @@ def safeExtGet(prop, fallback) {
 }
 
 apply plugin: 'com.android.library'
-apply plugin: 'maven'
 
 buildscript {
     // The Android Gradle plugin is only required when opening the android folder stand-alone.
@@ -39,7 +38,6 @@ buildscript {
 }
 
 apply plugin: 'com.android.library'
-apply plugin: 'maven'
 
 android {
     compileSdkVersion safeExtGet('compileSdkVersion', DEFAULT_COMPILE_SDK_VERSION)
@@ -52,6 +50,10 @@ android {
     }
     lintOptions {
         abortOnError false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
@@ -78,13 +80,13 @@ dependencies {
     implementation 'com.facebook.react:react-native:+'  // From node_modules
 
     // Required For NI SDK
-    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-core:2.0.4'
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-core:3.0.0'
 
     // For card payment
-    implementation 'com.github.network-international.payment-sdk-android:payment-sdk:2.0.4'
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk:3.0.0'
 
     //For samsung payment
-    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-samsungpay:2.0.4'
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-samsungpay:3.0.0'
 
     implementation 'com.google.code.gson:gson:2.8.6'
 }
@@ -117,47 +119,3 @@ def configureReactNativePom(def pom) {
     }
 }
 
-afterEvaluate { project ->
-    // some Gradle build hooks ref:
-    // https://www.oreilly.com/library/view/gradle-beyond-the/9781449373801/ch03.html
-    task androidJavadoc(type: Javadoc) {
-        source = android.sourceSets.main.java.srcDirs
-        classpath += files(android.bootClasspath)
-        classpath += files(project.getConfigurations().getByName('compile').asList())
-        include '**/*.java'
-    }
-
-    task androidJavadocJar(type: Jar, dependsOn: androidJavadoc) {
-        classifier = 'javadoc'
-        from androidJavadoc.destinationDir
-    }
-
-    task androidSourcesJar(type: Jar) {
-        classifier = 'sources'
-        from android.sourceSets.main.java.srcDirs
-        include '**/*.java'
-    }
-
-    android.libraryVariants.all { variant ->
-        def name = variant.name.capitalize()
-        def javaCompileTask = variant.javaCompileProvider.get()
-
-        task "jar${name}"(type: Jar, dependsOn: javaCompileTask) {
-            from javaCompileTask.destinationDir
-        }
-    }
-
-    artifacts {
-        archives androidSourcesJar
-        archives androidJavadocJar
-    }
-
-    task installArchives(type: Upload) {
-        configuration = configurations.archives
-        repositories.mavenDeployer {
-            // Deploy to react-native-event-bridge/maven, ready to publish to npm
-            repository url: "file://${projectDir}/../android/maven"
-            configureReactNativePom pom
-        }
-    }
-}
