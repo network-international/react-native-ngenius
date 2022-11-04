@@ -83,8 +83,12 @@ const App = () => {
       const isApplePayEnabled = await isApplePaySupported();
       setShowWallet(isApplePayEnabled);
     } else if (Platform.OS === 'android') {
-      const isSamsungPayEnabled = await isSamsungPaySupported();
-      setShowWallet(isSamsungPayEnabled);
+      try {
+        const isSamsungPayEnabled = await isSamsungPaySupported("61458396ab0c44738b7670");
+        setShowWallet(isSamsungPayEnabled);
+      } catch {
+        setShowWallet(false);
+      }
     }
   }, []);
 

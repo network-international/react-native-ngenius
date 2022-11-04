@@ -14,6 +14,7 @@ import com.facebook.react.bridge.ReadableMap;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.util.List;
 import java.util.Objects;
 
 import payment.sdk.android.PaymentClient;
@@ -32,16 +33,17 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     private Callback cardPayResponseCallback;
     private Callback samsungPayResponseCallback;
     private Callback executeThreeDSTwoCallback;
+    private Callback isSamsungPayEnabledCallback;
 
     private final ActivityEventListener cardActivityEventListener = new BaseActivityEventListener() {
 
         @Override
         public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
-            if((requestCode == CARD_ACTIVITY_REQUEST_CODE && cardPayResponseCallback != null) ||
-            (requestCode == EXECUTE_THREE_DS_TWO_ACTIVITY_REQUEST_CODE && executeThreeDSTwoCallback != null)) {
+            if ((requestCode == CARD_ACTIVITY_REQUEST_CODE && cardPayResponseCallback != null) ||
+                    (requestCode == EXECUTE_THREE_DS_TWO_ACTIVITY_REQUEST_CODE && executeThreeDSTwoCallback != null)) {
                 Callback cb = requestCode == CARD_ACTIVITY_REQUEST_CODE ? cardPayResponseCallback : executeThreeDSTwoCallback;
                 // This is the card payment intent
-                if(resultCode == Activity.RESULT_OK) {
+                if (resultCode == Activity.RESULT_OK) {
                     CardPaymentData cardPaymentData = CardPaymentData.getFromIntent(data);
                     switch (cardPaymentData.getCode()) {
                         case CardPaymentData.STATUS_PAYMENT_AUTHORIZED:
@@ -57,7 +59,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                             cb.invoke("Failed");
                             break;
                     }
-                } else if(resultCode == Activity.RESULT_CANCELED) {
+                } else if (resultCode == Activity.RESULT_CANCELED) {
                     // User aborted
                     cb.invoke("Aborted");
                 }
@@ -78,7 +80,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
 
     @ReactMethod
     public void initiateCardPaymentUI(ReadableMap orderResponse, Callback cardPayResponseCallback) {
-        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()),"");
+        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()), "");
         ReadableMap links = orderResponse.getMap("_links");
         String paymentAuthorizationLink = links.getMap("payment-authorization").getString("href");
         String paymentLink = links.getMap("payment").getString("href");
@@ -110,23 +112,43 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
 
     @ReactMethod
     public void initiateSamsungPay(ReadableMap orderResponse, String merchantName, String serviceId, Callback samsungPayResponseCallback) {
-        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()),serviceId);
+        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()), serviceId);
         Order order = Utils.constructOrderFromReadableMap(orderResponse);
         this.samsungPayResponseCallback = samsungPayResponseCallback;
         paymentClient.launchSamsungPay(order, merchantName, this);
+    }
 
+    private final PaymentClient.SupportedPaymentTypesListener supportedPaymentTypesListeners =
+            new PaymentClient.SupportedPaymentTypesListener() {
+                @Override
+                public void onReady(@NotNull List<? extends PaymentClient.PaymentType> list) {
+                    boolean samsungPayEnabled = false;
+                    for (PaymentClient.PaymentType type : list) {
+                        if (type == PaymentClient.PaymentType.SAMSUNG_PAY) {
+                            samsungPayEnabled = true;
+                        }
+                    }
+                    isSamsungPayEnabledCallback.invoke(samsungPayEnabled);
+                }
+            };
+
+    @ReactMethod
+    public void isSamsungPayEnabled(String serviceId, Callback isSamsungPayEnabledCallback) {
+        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()), serviceId);
+        this.isSamsungPayEnabledCallback = isSamsungPayEnabledCallback;
+        paymentClient.getSupportedPaymentMethods(supportedPaymentTypesListeners);
     }
 
     @Override
     public void onFailure(@NotNull String s) {
-        if(this.samsungPayResponseCallback != null) {
+        if (this.samsungPayResponseCallback != null) {
             this.samsungPayResponseCallback.invoke("Failed", s);
         }
     }
 
     @Override
     public void onSuccess() {
-        if(this.samsungPayResponseCallback != null) {
+        if (this.samsungPayResponseCallback != null) {
             this.samsungPayResponseCallback.invoke("Success");
         }
     }
