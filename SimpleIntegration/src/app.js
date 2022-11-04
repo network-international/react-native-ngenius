@@ -120,7 +120,6 @@ const App = () => {
           cardholderName,
           cardToken,
           expiry,
-          cvv: '111',
         });
         await executeThreeDSTwo(paymentResponse);
         Alert.alert(
@@ -224,6 +223,10 @@ const App = () => {
 
   const toggleSaveCard = () => {
     setShouldSaveCard((prev) => {
+      if (prev) {
+        setSavedCard(null);
+        storeData(SAVE_CARD_KEY, null);
+      }
       return !prev;
     });
   };

@@ -80,13 +80,13 @@ dependencies {
     implementation 'com.facebook.react:react-native:+'  // From node_modules
 
     // Required For NI SDK
-    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-core:3.0.0'
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-core:3.0.1'
 
     // For card payment
-    implementation 'com.github.network-international.payment-sdk-android:payment-sdk:3.0.0'
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk:3.0.1'
 
     //For samsung payment
-    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-samsungpay:3.0.0'
+    implementation 'com.github.network-international.payment-sdk-android:payment-sdk-samsungpay:3.0.1'
 
     implementation 'com.google.code.gson:gson:2.8.6'
 }
