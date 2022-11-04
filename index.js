@@ -52,13 +52,13 @@ const initiateSamsungPay = (order, merchantName, serviceId) => {
 }
 
 /**
- * @typedef {Object} applePayConfig 
+ * @typedef {Object} applePayConfig
  * @property {string} merchantIdentifier
  * @property {string} countryCode
  * */
 
 /**
- * Use this to initiate an Apple Pay transaction. 
+ * Use this to initiate an Apple Pay transaction.
  * @param order - order info received from NGenius
  * @param {applePayConfig} applePayConfig  - config for Apple Pay
  * */
@@ -109,9 +109,7 @@ const isSamsungPaySupported = (serviceId) => {
     if (Platform.OS === 'android') {
       // Native impl
       NiSdk.isSamsungPayEnabled(serviceId, (status) => {
-        if(status) {
-          resolve(status);
-        }
+        resolve(status);
       });
     } else {
       reject({ status: 'Not Supported', error: 'Samsung pay is not supported in this platform' });
