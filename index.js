@@ -104,10 +104,15 @@ const initiateApplePay = (order, applePayConfig) => {
   });
 };
 
-const isSamsungPaySupported = () => {
+const isSamsungPaySupported = (serviceId) => {
   return new Promise((resolve, reject) => {
     if (Platform.OS === 'android') {
       // Native impl
+      NiSdk.isSamsungPayEnabled(serviceId, (status) => {
+        if(status) {
+          resolve(status);
+        }
+      });
     } else {
       reject({ status: 'Not Supported', error: 'Samsung pay is not supported in this platform' });
     }
