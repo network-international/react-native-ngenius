@@ -75,9 +75,7 @@ PODS:
   - glog (0.3.5)
   - hermes-engine (0.70.3)
   - libevent (2.1.12)
-  - NI-Three-DS-Two-iOS-SDK (1.0.0)
-  - NISdk (4.0.5):
-    - NI-Three-DS-Two-iOS-SDK (~> 1.0.0)
+  - NISdk (5.0.1)
   - OpenSSL-Universal (1.1.1100)
   - RCT-Folly (2021.07.22.00):
     - boost
@@ -305,8 +303,8 @@ PODS:
   - React-jsinspector (0.70.3)
   - React-logger (0.70.3):
     - glog
-  - react-native-ni-sdk (1.2.1):
-    - NISdk (= 4.0.5)
+  - react-native-ni-sdk (2.0.3):
+    - NISdk (= 5.0.1)
     - React
   - React-perflogger (0.70.3)
   - React-RCTActionSheet (0.70.3):
@@ -458,7 +456,6 @@ SPEC REPOS:
     - FlipperKit
     - fmt
     - libevent
-    - NI-Three-DS-Two-iOS-SDK
     - NISdk
     - OpenSSL-Universal
     - SocketRocket
@@ -557,8 +554,7 @@ SPEC CHECKSUMS:
   glog: 04b94705f318337d7ead9e6d17c019bd9b1f6b1b
   hermes-engine: bb344d89a0d14c2c91ad357480a79698bb80e186
   libevent: 4049cae6c81cdb3654a443be001fb9bdceff7913
-  NI-Three-DS-Two-iOS-SDK: 48c97670c746b259bcfd337c74de6ccec336482b
-  NISdk: 63f6311ee227279f3e5aa2b9b984187fabadf369
+  NISdk: 7c6ce51d1a70bd57e79ccd58c58e6d81d78f7ef5
   OpenSSL-Universal: ebc357f1e6bc71fa463ccb2fe676756aff50e88c
   RCT-Folly: 0080d0a6ebf2577475bda044aa59e2ca1f909cda
   RCTRequired: 5cf7e7d2f12699724b59f90350257a422eaa9492
@@ -575,7 +571,7 @@ SPEC CHECKSUMS:
   React-jsiexecutor: 7e2e1772ef7b97168c880eeaf3749d8c145ffd6e
   React-jsinspector: 0553c9fe7218e1f127be070bd5a4d2fc19fb8190
   React-logger: cffcc09e8aba8a3014be8d18da7f922802e9f19e
-  react-native-ni-sdk: e07e8cc2903fb3837d6b2c28ee6267a78bb7ce1c
+  react-native-ni-sdk: f9a29cdfccf12d6eb55c41716feb6591bf105738
   React-perflogger: 082b4293f0b3914ff41da35a6c06ac4490fcbcc8
   React-RCTActionSheet: 83da3030deb5dea54b398129f56540a44e64d3ae
   React-RCTAnimation: bac3a4f4c0436554d9f7fbb1352a0cdcb1fb0f1c
