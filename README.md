@@ -60,6 +60,11 @@ const makeApplePayPayment = async () => {
       console.log({ err });
     }
 };
-
-
 ```
+
+## Quick Links
+
+* [Basic Usage](https://github.com/network-international/react-native-ngenius/wiki/Basic-Usage)
+* [Samsung Pay](https://github.com/network-international/react-native-ngenius/wiki/Samsung-Pay)
+* [Samsung Pay FAQ & Troubleshooting](https://github.com/network-international/react-native-ngenius/wiki/Samsung-Pay#faq--troubleshooting)
+* [Apple Pay](https://github.com/network-international/react-native-ngenius/wiki/Apple-Pay)
