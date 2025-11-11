@@ -24,6 +24,7 @@ import {
   initiateCardPayment,
   initiateSamsungPay,
   initiateApplePay,
+  initiateGooglePay,
 } from '@network-international/react-native-ngenius';
 
 // order is the order response received from NGenius create order API
@@ -60,6 +61,19 @@ const makeApplePayPayment = async () => {
       console.log({ err });
     }
 };
+
+const makeGooglePayPayment = async () => {
+    try {
+      const resp = await initiateGooglePay(order, {
+        merchantName: '', // name of the merchant
+        gateway: '', // gateway name
+        gatewayMerchantId: '', // gateway merchant ID
+        environment: 'TEST', // 'TEST' or 'PRODUCTION'
+      });
+    } catch (err) {
+      console.log({ err });
+    }
+};
 ```
 
 ## Quick Links
@@ -68,3 +82,4 @@ const makeApplePayPayment = async () => {
 * [Samsung Pay](https://github.com/network-international/react-native-ngenius/wiki/Samsung-Pay)
 * [Samsung Pay FAQ & Troubleshooting](https://github.com/network-international/react-native-ngenius/wiki/Samsung-Pay#faq--troubleshooting)
 * [Apple Pay](https://github.com/network-international/react-native-ngenius/wiki/Apple-Pay)
+* [Google Pay](https://github.com/network-international/react-native-ngenius/wiki/Google-Pay)
