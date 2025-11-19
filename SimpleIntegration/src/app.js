@@ -14,8 +14,10 @@ import {
   initiateCardPayment,
   initiateSamsungPay,
   initiateApplePay,
+  initiateGooglePay,
   isApplePaySupported,
   isSamsungPaySupported,
+  isGooglePaySupported,
   configureSDK,
   executeThreeDSTwo,
 } from '@network-international/react-native-ngenius';
@@ -26,10 +28,13 @@ import {
   createOrder,
   getOrder,
   makePayment,
+  getGooglePayConfig,
+  acceptGooglePay,
 } from './ngenius-apis';
 import SavedCardFrame from './save-card-frame';
 
 const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
+
 const storeData = async (key, value) => {
   try {
     const jsonValue = JSON.stringify(value);
@@ -54,6 +59,8 @@ const App = () => {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [walletStart, setWalletStart] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
+  const [showGooglePay, setShowGooglePay] = useState(false);
+  const [googlePayConfig, setGooglePayConfig] = useState(null);
   const [showAmount, setShowAmount] = useState(true);
   const [shouldSaveCard, setShouldSaveCard] = useState(false);
   const [savedCard, setSavedCard] = useState(null);
@@ -77,7 +84,7 @@ const App = () => {
     fetchOnAppBoot();
   }, []);
 
-  // Use this effect to get the status of Samsung Pay and Apple Pay availability
+  // Use this effect to get the status of Samsung Pay, Apple Pay, and Google Pay availability
   const getWalletStatus = useCallback(async () => {
     if (Platform.OS === 'ios') {
       const isApplePayEnabled = await isApplePaySupported();
@@ -89,6 +96,13 @@ const App = () => {
       } catch {
         setShowWallet(false);
       }
+      // Check Google Pay availability
+      try {
+        const isGooglePayEnabled = await isGooglePaySupported({ environment: 'TEST' });
+        setShowGooglePay(isGooglePayEnabled);
+      } catch (e) {
+        setShowGooglePay(false);
+      }
     }
   }, []);
 
@@ -96,10 +110,10 @@ const App = () => {
     getWalletStatus();
   }, [getWalletStatus]);
 
-  // Create an order with value of 0.3 AED
+  // Create an order with value of 250234 AED
   const createFixedOrder = useCallback(
     async (token, savedCardDetails = null) => {
-      const order = await createOrder(token, 30, savedCardDetails);
+      const order = await createOrder(token, 25023400, savedCardDetails); // 250234 AED = 25023400 fils
       return order;
     },
     [],
@@ -125,7 +139,7 @@ const App = () => {
         Alert.alert(
           'Success',
           'Payment was successful',
-          [{ text: 'OK', onPress: () => console.log('OK Pressed') }],
+          [{ text: 'OK' }],
           { cancelable: false },
         );
         return;
@@ -141,15 +155,14 @@ const App = () => {
       Alert.alert(
         'Success',
         'Payment was successful',
-        [{ text: 'OK', onPress: () => console.log('OK Pressed') }],
+        [{ text: 'OK' }],
         { cancelable: false },
       );
     } catch (err) {
-      console.log(err);
       Alert.alert(
         'Error',
         'Payment was not successful',
-        [{ text: 'OK', onPress: () => console.log('OK Pressed') }],
+        [{ text: 'OK' }],
         { cancelable: false },
       );
     } finally {
@@ -194,13 +207,97 @@ const App = () => {
         merchantName: 'Test Merchant', // name of the merchant to be shown in Apple Pay button
       });
     } catch (err) {
-      console.log(err);
       setCreatingOrder(false);
     } finally {
       setCreatingOrder(false);
       setWalletStart(false);
     }
   }, [createFixedOrder]);
+
+  // When Google Pay is selected as mode of payment
+  const onClickGooglePay = useCallback(async () => {
+    try {
+      setCreatingOrder(true);
+      
+      // Get token and ensure Google Pay config is loaded
+      const tk = await createToken();
+      let currentGooglePayConfig = googlePayConfig;
+      
+      if (!currentGooglePayConfig) {
+        currentGooglePayConfig = await getGooglePayConfig(tk);
+        setGooglePayConfig(currentGooglePayConfig);
+      }
+      
+      // Create order
+      const order = await createFixedOrder(tk);
+      setWalletStart(true);
+      
+      // Check if Google Pay is supported for this order (as per payment-sdk-android pattern)
+      const supportedWallets = order.paymentMethods?.wallet || [];
+      const isGooglePaySupported = supportedWallets.includes('GOOGLE_PAY');
+      
+      if (!isGooglePaySupported) {
+        throw new Error('Google Pay is not enabled for this outlet. Please enable Google Pay in the outlet configuration.');
+      }
+      
+      // Extract Google Pay accept URL from order response (as per payment-sdk-android pattern)
+      // URL is in order._embedded.payment[0]._links['payment:google_pay'].href
+      let googlePayAcceptUrl = 
+        order._embedded?.payment?.[0]?._links?.['payment:google_pay']?.href ||
+        order._embedded?.payment?.[0]?._links?.googlePayLink?.href;
+      
+      // If URL not in links, construct it manually using order structure
+      if (!googlePayAcceptUrl) {
+        const outletId = order.outletId || order._embedded?.payment?.[0]?.outletId;
+        const orderRef = order.reference;
+        const paymentRef = order._embedded?.payment?.[0]?.reference;
+        
+        if (outletId && orderRef && paymentRef) {
+          // Construct URL as per payment-sdk-android pattern
+          googlePayAcceptUrl = `https://api-gateway-dev.ngenius-payments.com/transactions/outlets/${outletId}/orders/${orderRef}/payments/${paymentRef}/google-pay/accept`;
+        } else {
+          throw new Error('Google Pay accept URL not found in order response and cannot be constructed');
+        }
+      }
+      
+      // Initiate Google Pay payment with config
+      const resp = await initiateGooglePay(order, {
+        merchantName: currentGooglePayConfig.merchantInfo?.name || 'Test Merchant',
+        gateway: currentGooglePayConfig.gatewayName || 'networkintl',
+        gatewayMerchantId: currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
+        environment: currentGooglePayConfig.environment || 'TEST',
+        merchantId: currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
+        merchantOrigin: currentGooglePayConfig.merchantOrigin || 'http://applePayChub.com',
+      });
+      
+      if (!resp.token) {
+        throw new Error('Google Pay token not received');
+      }
+      
+      // Ensure token is a string (it should be JSON string from Google Pay)
+      const tokenString = typeof resp.token === 'string' ? resp.token : JSON.stringify(resp.token);
+      
+      // Accept Google Pay payment using accept endpoint (as per payment-sdk-android pattern)
+      await acceptGooglePay(tk, googlePayAcceptUrl, tokenString);
+      
+      Alert.alert(
+        'Success',
+        'Google Pay payment was successful',
+        [{ text: 'OK' }],
+        { cancelable: false },
+      );
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        `Google Pay payment failed: ${err.error || err.message || err.status || 'Unknown error'}`,
+        [{ text: 'OK' }],
+        { cancelable: false },
+      );
+    } finally {
+      setCreatingOrder(false);
+      setWalletStart(false);
+    }
+  }, [createFixedOrder, googlePayConfig]);
 
   const disabledStyle = useMemo(
     () => ({ backgroundColor: creatingOrder ? 'gray' : 'black' }),
@@ -233,7 +330,7 @@ const App = () => {
 
   const walletStartMessage = useMemo(() => {
     if (Platform.OS === 'android') {
-      return 'Starting Samsung Pay...';
+      return 'Starting Wallet Payment...';
     }
     return 'Starting Apple Pay...';
   }, []);
@@ -248,7 +345,7 @@ const App = () => {
         disabled={creatingOrder}
         style={StyleSheet.compose(styles.button, disabledStyle)}
         onPressOut={onClickPay}>
-        <Text style={styles.buttonLabel}>Pay 0.3 AED using Card</Text>
+        <Text style={styles.buttonLabel}>Pay 250234 AED using Card</Text>
       </TouchableHighlight>
       {showWallet && (
         <TouchableHighlight
@@ -258,9 +355,17 @@ const App = () => {
             Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay
           }>
           <Text style={styles.buttonLabel}>
-            {`Pay 0.3 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'
+            {`Pay 250234 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'
               } Pay`}
           </Text>
+        </TouchableHighlight>
+      )}
+      {showGooglePay && Platform.OS === 'android' && (
+        <TouchableHighlight
+          disabled={creatingOrder}
+          style={StyleSheet.compose(styles.button, disabledStyle)}
+          onPressOut={onClickGooglePay}>
+          <Text style={styles.buttonLabel}>Pay 250234 AED using Google Pay</Text>
         </TouchableHighlight>
       )}
       <Text style={{ paddingVertical: 20 }}>

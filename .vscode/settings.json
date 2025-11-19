@@ -1,5 +1,6 @@
 {
   "files.exclude": {
     "**/node_module/**": true
-  }
+  },
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

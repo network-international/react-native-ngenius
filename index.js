@@ -136,7 +136,8 @@ const isApplePaySupported = () => {
  * @property {string} gateway
  * @property {string} gatewayMerchantId
  * @property {string} environment - 'TEST' or 'PRODUCTION'
- * @property {string} [merchantId] - Optional merchant ID
+ * @property {string} [merchantId] - Optional Google Pay merchant ID
+ * @property {string} [merchantOrigin] - Optional merchant origin URL
  * */
 
 /**

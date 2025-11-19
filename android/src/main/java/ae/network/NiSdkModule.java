@@ -44,7 +44,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     private final ReactApplicationContext reactContext;
     private final int CARD_ACTIVITY_REQUEST_CODE = 00765;
     private final int EXECUTE_THREE_DS_TWO_ACTIVITY_REQUEST_CODE = 00654;
-    private final int GOOGLE_PAY_REQUEST_CODE = 00888;
+    private final int GOOGLE_PAY_REQUEST_CODE = 888;
     private Callback cardPayResponseCallback;
     private Callback samsungPayResponseCallback;
     private Callback executeThreeDSTwoCallback;
@@ -305,6 +305,9 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
             merchantInfo.put("merchantName", googlePayConfig.getString("merchantName"));
             if (googlePayConfig.hasKey("merchantId")) {
                 merchantInfo.put("merchantId", googlePayConfig.getString("merchantId"));
+            }
+            if (googlePayConfig.hasKey("merchantOrigin")) {
+                merchantInfo.put("merchantOrigin", googlePayConfig.getString("merchantOrigin"));
             }
             paymentDataRequestJson.put("merchantInfo", merchantInfo);
 

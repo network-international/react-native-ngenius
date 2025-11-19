@@ -42,3 +42,12 @@ local.properties
 buck-out/
 \.buckd/
 *.keystore
+
+# Development scripts
+start-android-one-line.sh
+
+# SimpleIntegration - example/test app
+SimpleIntegration/
+
+# SimpleIntegration config with real credentials
+SimpleIntegration/src/config.js
