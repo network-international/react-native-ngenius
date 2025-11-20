@@ -146,12 +146,12 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
         try {
             String manufacturer = Build.MANUFACTURER;
             String model = Build.MODEL;
-            int sdkVersion = Build.VERSION.SDK_INT;
+            int osVersion = Build.VERSION.SDK_INT;
             
             WritableMap deviceInfo = Arguments.createMap();
             deviceInfo.putString("manufacturer", manufacturer);
             deviceInfo.putString("model", model);
-            deviceInfo.putInt("sdkVersion", sdkVersion);
+            deviceInfo.putInt("osVersion", osVersion);
             deviceInfo.putString("platform", "android");
             
             callback.invoke(deviceInfo);

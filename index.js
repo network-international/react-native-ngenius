@@ -3,7 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 
 const { NiSdk } = NativeModules;
 
-export const SDK_VERSION = '2.0.5';
+export const SDK_VERSION = '3.0.0';
 
 // Helper function to get device info for User-Agent
 let deviceInfoCache = null;
@@ -22,7 +22,7 @@ export const getDeviceInfo = () => {
             platform: 'android',
             manufacturer: 'unknown',
             model: 'unknown',
-            sdkVersion: 0,
+            osVersion: 0,
           });
         } else {
           deviceInfoCache = info;
@@ -35,7 +35,7 @@ export const getDeviceInfo = () => {
         platform: Platform.OS,
         manufacturer: 'unknown',
         model: 'unknown',
-        sdkVersion: 0,
+        osVersion: 0,
       });
     }
   });

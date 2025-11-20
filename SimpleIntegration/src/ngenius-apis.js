@@ -14,24 +14,31 @@ import {
 let cachedDeviceInfo = null;
 
 // Fallback SDK version if import fails
-const FALLBACK_SDK_VERSION = '2.0.5';
+const FALLBACK_SDK_VERSION = '3.0.0';
 const SDK_VER = SDK_VERSION || FALLBACK_SDK_VERSION;
 
 // Helper function to generate User-Agent header
 // Format matches payment-sdk-android: "React Native Pay Page {manufacturer}-{model} OS-{sdkVersion} SDK:{sdkVersion}"
+// For iOS: "React Native Pay Page iOS SDK:{sdkVersion}" (device info not available on iOS)
 const getUserAgent = async () => {
   try {
     if (!cachedDeviceInfo) {
       cachedDeviceInfo = await getDeviceInfo();
     }
     
-    const { manufacturer, model, sdkVersion, platform } = cachedDeviceInfo;
+    const { manufacturer, model, osVersion, platform } = cachedDeviceInfo;
+    // osVersion is Android OS SDK version (e.g., 34 for Android 14), not our SDK version
+    // SDK_VER is our React Native SDK version (e.g., 3.0.0)
     
     if (platform === 'android' && manufacturer !== 'unknown' && model !== 'unknown') {
-      // Format: "React Native Pay Page samsung-SM-S928U OS-34 SDK:2.0.5"
-      return `React Native Pay Page ${manufacturer}-${model} OS-${sdkVersion} SDK:${SDK_VER}`;
+      // Format: "React Native Pay Page samsung-SM-S928U OS-34 SDK:3.0.0"
+      // OS-34 = Android OS SDK version, SDK:3.0.0 = our SDK version
+      return `React Native Pay Page ${manufacturer}-${model} OS-${osVersion} SDK:${SDK_VER}`;
+    } else if (platform === 'ios') {
+      // iOS: device info not available from native module, use platform name
+      return `React Native Pay Page iOS SDK:${SDK_VER}`;
     } else {
-      // Fallback format if device info not available
+      // Fallback format if device info not available or platform unknown
       return `React Native Pay Page SDK:${SDK_VER}`;
     }
   } catch (err) {
@@ -154,7 +161,9 @@ export const makePayment = async (accessToken, paymentUrl, body) => {
 
 export const acceptGooglePay = async (accessToken, googlePayAcceptUrl, token) => {
   // Use google-pay/accept endpoint as per payment-sdk-android pattern
-  // Add ?isWebPayment=true parameter as per GooglePayAcceptInteractor
+  // Add ?isWebPayment=true parameter as implemented in payment-sdk-android:
+  // payment-sdk-core/src/main/java/payment/sdk/android/core/interactor/GooglePayAcceptInteractor.kt
+  // Line 11: val newUrl = "$url?isWebPayment=true"
   const url = googlePayAcceptUrl.includes('?') 
     ? `${googlePayAcceptUrl}&isWebPayment=true`
     : `${googlePayAcceptUrl}?isWebPayment=true`;
