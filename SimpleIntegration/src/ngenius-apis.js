@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
+import { getDeviceInfo, SDK_VERSION } from '@network-international/react-native-ngenius';
 import {
   OUTLET_ID,
   API_KEY,
@@ -7,6 +9,36 @@ import {
   PAYPAGE_API_URL,
   PAYPAGE_GATEWAY_URL,
 } from './config';
+
+// Cache for device info to avoid repeated native calls
+let cachedDeviceInfo = null;
+
+// Fallback SDK version if import fails
+const FALLBACK_SDK_VERSION = '2.0.5';
+const SDK_VER = SDK_VERSION || FALLBACK_SDK_VERSION;
+
+// Helper function to generate User-Agent header
+// Format matches payment-sdk-android: "React Native Pay Page {manufacturer}-{model} OS-{sdkVersion} SDK:{sdkVersion}"
+const getUserAgent = async () => {
+  try {
+    if (!cachedDeviceInfo) {
+      cachedDeviceInfo = await getDeviceInfo();
+    }
+    
+    const { manufacturer, model, sdkVersion, platform } = cachedDeviceInfo;
+    
+    if (platform === 'android' && manufacturer !== 'unknown' && model !== 'unknown') {
+      // Format: "React Native Pay Page samsung-SM-S928U OS-34 SDK:2.0.5"
+      return `React Native Pay Page ${manufacturer}-${model} OS-${sdkVersion} SDK:${SDK_VER}`;
+    } else {
+      // Fallback format if device info not available
+      return `React Native Pay Page SDK:${SDK_VER}`;
+    }
+  } catch (err) {
+    // Fallback if getDeviceInfo fails
+    return `React Native Pay Page SDK:${SDK_VER}`;
+  }
+};
 
 // Helper function to decode base64 (React Native compatible)
 const base64Decode = (str) => {
@@ -55,6 +87,7 @@ const GATEWAY_API_URL = `${GATEWAY_API_BASE_URL}/transactions/outlets/${OUTLET_I
 
 export const createToken = async () => {
   try {
+    const userAgent = await getUserAgent();
     const requestConfig = {
       method: 'post',
       url: IDENTITY_API_URL,
@@ -62,6 +95,7 @@ export const createToken = async () => {
         Accept: 'application/vnd.ni-identity.v1+json',
         'Content-Type': 'application/vnd.ni-identity.v1+json',
         Authorization: `Basic ${API_KEY}`,
+        'User-Agent': userAgent,
       },
       data: {
         grantType: 'client_credentials',
@@ -92,11 +126,13 @@ export const createOrder = async (accessToken, amount, savedCard = null) => {
   if (savedCard) {
     body.savedCard = savedCard;
   }
+  const userAgent = await getUserAgent();
   const { data } = await axios.post(GATEWAY_API_URL, body, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/vnd.ni-payment.v2+json',
       Accept: 'application/vnd.ni-payment.v2+json',
+      'User-Agent': userAgent,
     },
   });
   return data;
@@ -104,11 +140,13 @@ export const createOrder = async (accessToken, amount, savedCard = null) => {
 
 export const makePayment = async (accessToken, paymentUrl, body) => {
   // Use POST for Google Pay token payment (as per hosted-sessions-sdk pattern)
+  const userAgent = await getUserAgent();
   const { data } = await axios.post(paymentUrl, body, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/vnd.ni-payment.v2+json',
       Accept: 'application/vnd.ni-payment.v2+json',
+      'User-Agent': userAgent,
     },
   });
   return data;
@@ -127,39 +165,72 @@ export const acceptGooglePay = async (accessToken, googlePayAcceptUrl, token) =>
   // The server expects the token as a STRING, not an object
   const requestBody = { token };
   
-  const { data } = await axios.post(url, requestBody, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/vnd.ni-payment.v2+json',
-      Accept: 'application/vnd.ni-payment.v2+json',
-    },
-  });
+  const userAgent = await getUserAgent();
   
-  return data;
+  // For paypage API, we may need Access-Token and Payment-Token headers
+  // instead of or in addition to Authorization Bearer
+  // Also add X-Forwarded-For as per paypage-app pattern
+  const headers = {
+    'Content-Type': 'application/vnd.ni-payment.v2+json',
+    Accept: 'application/vnd.ni-payment.v2+json',
+    'User-Agent': userAgent,
+    'X-Forwarded-For': '1.1.1.1', // As per paypage-app pattern
+  };
+  
+  // Try both Authorization Bearer and Access-Token/Payment-Token
+  // paypage-app uses Access-Token and Payment-Token, but payment-sdk-android uses Authorization Bearer
+  if (url.includes('paypage-dev.platform.network.ae')) {
+    // PayPage API - use Access-Token and Payment-Token
+    headers['Access-Token'] = accessToken;
+    headers['Payment-Token'] = accessToken;
+  } else {
+    // Gateway API - use Authorization Bearer
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  
+  try {
+    const { data } = await axios.post(url, requestBody, {
+      headers,
+    });
+    return data;
+  } catch (err) {
+    throw err;
+  }
 };
 
 export const getOrder = async (accessToken, orderId) => {
+  const userAgent = await getUserAgent();
   const { data } = await axios.get(`${GATEWAY_API_URL}/${orderId}`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/vnd.ni-payment.v2+json',
       Accept: 'application/vnd.ni-payment.v2+json',
+      'User-Agent': userAgent,
     },
   });
   return data;
 };
 
-export const getGooglePayConfig = async (accessToken) => {
+export const getGooglePayConfig = async (accessToken, orderResponse = null) => {
   try {
     // Extract outlet from token
-    const outletIdFromToken = getOutletFromToken(accessToken);
-    const outletId = outletIdFromToken || OUTLET_ID;
+    let outletIdFromToken = getOutletFromToken(accessToken);
+    let outletId = outletIdFromToken || OUTLET_ID;
+    
+    // If order response is provided, try to use merchant reference as fallback
+    // Sometimes the merchant reference is the correct outlet ID for Google Pay
+    if (orderResponse?.merchantDetails?.reference && !outletIdFromToken) {
+      outletId = orderResponse.merchantDetails.reference;
+    }
+    
     const url = `${PAYPAGE_API_URL}/api/outlets/${outletId}/google-pay/config`;
+    const userAgent = await getUserAgent();
     const { data } = await axios.get(url, {
       headers: {
         hierarchyRef: outletId,
         'Payment-Token': accessToken,
         'Access-Token': accessToken,
+        'User-Agent': userAgent,
       },
     });
     return data;

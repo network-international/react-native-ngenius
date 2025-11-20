@@ -31,6 +31,7 @@ import {
   getGooglePayConfig,
   acceptGooglePay,
 } from './ngenius-apis';
+import { PAYPAGE_API_URL } from './config';
 import SavedCardFrame from './save-card-frame';
 
 const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
@@ -219,26 +220,26 @@ const App = () => {
     try {
       setCreatingOrder(true);
       
-      // Get token and ensure Google Pay config is loaded
+      // Get token
       const tk = await createToken();
       let currentGooglePayConfig = googlePayConfig;
       
-      if (!currentGooglePayConfig) {
-        currentGooglePayConfig = await getGooglePayConfig(tk);
-        setGooglePayConfig(currentGooglePayConfig);
-      }
-      
-      // Create order
+      // Create order first to get merchant reference
       const order = await createFixedOrder(tk);
       setWalletStart(true);
+      
+      // Get Google Pay config, passing order to try merchant reference if needed
+      if (!currentGooglePayConfig) {
+        currentGooglePayConfig = await getGooglePayConfig(tk, order);
+        setGooglePayConfig(currentGooglePayConfig);
+      }
       
       // Check if Google Pay is supported for this order (as per payment-sdk-android pattern)
       const supportedWallets = order.paymentMethods?.wallet || [];
       const isGooglePaySupported = supportedWallets.includes('GOOGLE_PAY');
       
-      if (!isGooglePaySupported) {
-        throw new Error('Google Pay is not enabled for this outlet. Please enable Google Pay in the outlet configuration.');
-      }
+      // Note: If wallet is not in paymentMethods, Google Pay may still work
+      // but the outlet needs to be configured for Google Pay on the backend
       
       // Extract Google Pay accept URL from order response (as per payment-sdk-android pattern)
       // URL is in order._embedded.payment[0]._links['payment:google_pay'].href
@@ -247,16 +248,20 @@ const App = () => {
         order._embedded?.payment?.[0]?._links?.googlePayLink?.href;
       
       // If URL not in links, construct it manually using order structure
+      // Note: This is a fallback - if Google Pay is properly configured, the URL should be in _links
       if (!googlePayAcceptUrl) {
+        // Use order.outletId (not merchant reference - merchant reference caused 404)
         const outletId = order.outletId || order._embedded?.payment?.[0]?.outletId;
         const orderRef = order.reference;
         const paymentRef = order._embedded?.payment?.[0]?.reference;
         
         if (outletId && orderRef && paymentRef) {
-          // Construct URL as per payment-sdk-android pattern
-          googlePayAcceptUrl = `https://api-gateway-dev.ngenius-payments.com/transactions/outlets/${outletId}/orders/${orderRef}/payments/${paymentRef}/google-pay/accept`;
+          // Try paypage API endpoint (as per paypage-app pattern: /api/outlets/...)
+          // paypage-app uses: /api/outlets/${outletRef}/orders/${orderRef}/payments/${paymentRef}/google-pay/accept
+          // Instead of: /transactions/outlets/... (gateway API)
+          googlePayAcceptUrl = `${PAYPAGE_API_URL}/api/outlets/${outletId}/orders/${orderRef}/payments/${paymentRef}/google-pay/accept`;
         } else {
-          throw new Error('Google Pay accept URL not found in order response and cannot be constructed');
+          throw new Error('Google Pay accept URL not found in order response and cannot be constructed. Missing outletId, orderRef, or paymentRef.');
         }
       }
       

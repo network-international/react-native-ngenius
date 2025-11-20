@@ -3,6 +3,7 @@ package ae.network;
 import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.BaseActivityEventListener;
@@ -11,6 +12,8 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.Arguments;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -136,6 +139,27 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     @Override
     public String getName() {
         return "NiSdk";
+    }
+
+    @ReactMethod
+    public void getDeviceInfo(Callback callback) {
+        try {
+            String manufacturer = Build.MANUFACTURER;
+            String model = Build.MODEL;
+            int sdkVersion = Build.VERSION.SDK_INT;
+            
+            WritableMap deviceInfo = Arguments.createMap();
+            deviceInfo.putString("manufacturer", manufacturer);
+            deviceInfo.putString("model", model);
+            deviceInfo.putInt("sdkVersion", sdkVersion);
+            deviceInfo.putString("platform", "android");
+            
+            callback.invoke(deviceInfo);
+        } catch (Exception e) {
+            WritableMap error = Arguments.createMap();
+            error.putString("error", e.getMessage());
+            callback.invoke(error);
+        }
     }
 
     @ReactMethod

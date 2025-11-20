@@ -3,6 +3,44 @@ import { NativeModules, Platform } from 'react-native';
 
 const { NiSdk } = NativeModules;
 
+export const SDK_VERSION = '2.0.5';
+
+// Helper function to get device info for User-Agent
+let deviceInfoCache = null;
+export const getDeviceInfo = () => {
+  return new Promise((resolve, reject) => {
+    if (deviceInfoCache) {
+      resolve(deviceInfoCache);
+      return;
+    }
+    
+    if (Platform.OS === 'android' && NiSdk && NiSdk.getDeviceInfo) {
+      NiSdk.getDeviceInfo((info) => {
+        if (info.error) {
+          // Fallback if native method fails
+          resolve({
+            platform: 'android',
+            manufacturer: 'unknown',
+            model: 'unknown',
+            sdkVersion: 0,
+          });
+        } else {
+          deviceInfoCache = info;
+          resolve(info);
+        }
+      });
+    } else {
+      // Fallback for iOS or if native module not available
+      resolve({
+        platform: Platform.OS,
+        manufacturer: 'unknown',
+        model: 'unknown',
+        sdkVersion: 0,
+      });
+    }
+  });
+};
+
 const initiateCardPayment = (order) => {
   return new Promise((resolve, reject) => {
     return NiSdk.initiateCardPaymentUI(order, (status) => {
@@ -266,5 +304,7 @@ export {
   isApplePaySupported,
   isGooglePaySupported,
   configureSDK,
+  SDK_VERSION,
+  getDeviceInfo,
   executeThreeDSTwo
 };
