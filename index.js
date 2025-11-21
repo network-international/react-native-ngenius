@@ -216,8 +216,13 @@ const initiateGooglePay = (order, googlePayConfig) => {
         return;
       }
 
+      // Use formattedValue from order response (as per paypage-app pattern)
+      // formattedValue is already correctly formatted for the currency (handles 2, 3, or 0 decimal places)
+      // If formattedValue is not available, fallback to dividing by 100 and formatting to 2 decimals
+      const amount = order.amount.formattedValue || (order.amount.value / 100).toFixed(2);
+      
       const orderDetails = {
-        amount: (order.amount.value / 100).toFixed(2),
+        amount: amount,
         currencyCode: order.amount.currencyCode
       };
 
