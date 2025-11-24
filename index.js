@@ -3,6 +3,44 @@ import { NativeModules, Platform } from 'react-native';
 
 const { NiSdk } = NativeModules;
 
+export const SDK_VERSION = '3.0.0';
+
+// Helper function to get device info for User-Agent
+let deviceInfoCache = null;
+export const getDeviceInfo = () => {
+  return new Promise((resolve, reject) => {
+    if (deviceInfoCache) {
+      resolve(deviceInfoCache);
+      return;
+    }
+    
+    if (Platform.OS === 'android' && NiSdk && NiSdk.getDeviceInfo) {
+      NiSdk.getDeviceInfo((info) => {
+        if (info.error) {
+          // Fallback if native method fails
+          resolve({
+            platform: 'android',
+            manufacturer: 'unknown',
+            model: 'unknown',
+            osVersion: 0,
+          });
+        } else {
+          deviceInfoCache = info;
+          resolve(info);
+        }
+      });
+    } else {
+      // Fallback for iOS or if native module not available
+      resolve({
+        platform: Platform.OS,
+        manufacturer: 'unknown',
+        model: 'unknown',
+        osVersion: 0,
+      });
+    }
+  });
+};
+
 const initiateCardPayment = (order) => {
   return new Promise((resolve, reject) => {
     return NiSdk.initiateCardPaymentUI(order, (status) => {
@@ -130,6 +168,98 @@ const isApplePaySupported = () => {
   });
 };
 
+/**
+ * @typedef {Object} googlePayConfig
+ * @property {string} merchantName
+ * @property {string} gateway
+ * @property {string} gatewayMerchantId
+ * @property {string} environment - 'TEST' or 'PRODUCTION'
+ * @property {string} [merchantId] - Optional Google Pay merchant ID
+ * @property {string} [merchantOrigin] - Optional merchant origin URL
+ * */
+
+/**
+ * Use this to initiate a Google Pay transaction.
+ * @param order - order info received from NGenius
+ * @param {googlePayConfig} googlePayConfig - config for Google Pay
+ * */
+
+const initiateGooglePay = (order, googlePayConfig) => {
+  return new Promise((resolve, reject) => {
+    if (Platform.OS === 'android') {
+      if (!NiSdk) {
+        reject({ status: 'Error', error: 'Native module NiSdk is not available' });
+        return;
+      }
+      if (!order) {
+        reject({ status: 'Error', error: 'Order not found' });
+        return;
+      }
+      if (!order.amount || !order.amount.value || !order.amount.currencyCode) {
+        reject({ status: 'Error', error: 'Order amount is missing' });
+        return;
+      }
+      if (!googlePayConfig) {
+        reject({ status: 'Error', error: 'Google Pay configuration is missing' });
+        return;
+      }
+      if (!googlePayConfig.merchantName) {
+        reject({ status: 'Error', error: 'Merchant name is not found' });
+        return;
+      }
+      if (!googlePayConfig.gateway) {
+        reject({ status: 'Error', error: 'Gateway is not found' });
+        return;
+      }
+      if (!googlePayConfig.gatewayMerchantId) {
+        reject({ status: 'Error', error: 'Gateway merchant ID is not found' });
+        return;
+      }
+
+      // Use formattedValue from order response (as per paypage-app pattern)
+      // formattedValue is already correctly formatted for the currency (handles 2, 3, or 0 decimal places)
+      // If formattedValue is not available, fallback to dividing by 100 and formatting to 2 decimals
+      const amount = order.amount.formattedValue || (order.amount.value / 100).toFixed(2);
+      
+      const orderDetails = {
+        amount: amount,
+        currencyCode: order.amount.currencyCode
+      };
+
+      return NiSdk.initiateGooglePay(googlePayConfig, orderDetails, (status, tokenOrError) => {
+        switch (status) {
+          case "Success":
+            resolve({ status, token: tokenOrError });
+            break;
+          case "Failed":
+          case "Aborted":
+          default:
+            reject({ status, error: tokenOrError });
+        }
+      });
+    } else {
+      reject({ status: 'Not Supported', error: 'Google Pay is not supported on this platform' });
+    }
+  });
+};
+
+const isGooglePaySupported = (googlePayConfig) => {
+  return new Promise((resolve, reject) => {
+    if (Platform.OS === 'android') {
+      if (!NiSdk || !NiSdk.isGooglePaySupported) {
+        reject({ status: 'Not Supported', error: 'Google Pay is not available' });
+        return;
+      }
+      const config = googlePayConfig || { environment: 'TEST' };
+      NiSdk.isGooglePaySupported(config, (isSupported) => {
+        resolve(isSupported);
+      });
+    } else {
+      reject({ status: 'Not Supported', error: 'Google Pay is not supported on this platform' });
+    }
+  });
+};
+
 // A normalised sdk config function
 const configureSDK = (config) => {
   if (!config) {
@@ -174,8 +304,12 @@ export {
   initiateCardPayment,
   initiateSamsungPay,
   initiateApplePay,
+  initiateGooglePay,
   isSamsungPaySupported,
   isApplePaySupported,
+  isGooglePaySupported,
   configureSDK,
+  SDK_VERSION,
+  getDeviceInfo,
   executeThreeDSTwo
 };

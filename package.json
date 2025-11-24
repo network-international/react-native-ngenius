@@ -1,7 +1,7 @@
 {
   "name": "@network-international/react-native-ngenius",
   "title": "React Native NGenius Sdk",
-  "version": "2.0.4",
+  "version": "3.0.0",
   "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "files": [
@@ -33,6 +33,10 @@
     {
       "name": "Anvesh Bandi",
       "email": "abandi@equalexperts.com"
+    },
+    {
+      "name": "Anzhelika Kniazeva",
+      "email": "anzhelika.kniazeva@network.global"
     }
   ],
   "license": "MIT",
