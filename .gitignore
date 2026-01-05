@@ -48,6 +48,13 @@ start-android-one-line.sh
 
 # SimpleIntegration - example/test app
 SimpleIntegration/
+# But allow testing scripts and documentation
+!SimpleIntegration/start-android.sh
+!SimpleIntegration/README.md
+!SimpleIntegration/QUICK_START.md
+!SimpleIntegration/FOR_TESTERS.md
+!SimpleIntegration/CHEATSHEET.md
+!SimpleIntegration/android/gradle.properties
 
 # SimpleIntegration config with real credentials
 SimpleIntegration/src/config.js
