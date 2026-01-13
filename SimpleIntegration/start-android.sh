@@ -12,13 +12,25 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}🚀 Starting Android application...${NC}\n"
 
+# Check if Node.js is installed
+if ! command -v node &> /dev/null; then
+  echo -e "${YELLOW}❌ Error: Node.js is not installed${NC}"
+  echo -e "${YELLOW}Please install Node.js first:${NC}"
+  echo -e "${YELLOW}  - macOS: brew install node${NC}"
+  echo -e "${YELLOW}  - Or download from: https://nodejs.org/ (LTS version recommended)${NC}"
+  echo -e "${YELLOW}  - Or use nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash${NC}"
+  echo -e "${YELLOW}After installing, restart your terminal and run this script again.${NC}"
+  exit 1
+fi
+
 # Check if npm or yarn is installed
 if ! command -v npm &> /dev/null && ! command -v yarn &> /dev/null; then
   echo -e "${YELLOW}❌ Error: npm or yarn is not installed${NC}"
-  echo -e "${YELLOW}Please install Node.js first:${NC}"
+  echo -e "${YELLOW}Node.js is installed, but package manager is missing.${NC}"
+  echo -e "${YELLOW}Please reinstall Node.js (npm comes with Node.js):${NC}"
   echo -e "${YELLOW}  - macOS: brew install node${NC}"
   echo -e "${YELLOW}  - Or download from: https://nodejs.org/${NC}"
-  echo -e "${YELLOW}  - Or use nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash${NC}"
+  echo -e "${YELLOW}After installing, restart your terminal and run this script again.${NC}"
   exit 1
 fi
 

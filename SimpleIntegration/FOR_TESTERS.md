@@ -98,16 +98,31 @@ adb pull /sdcard/test-video.mp4
 
 ## Common Issues & Quick Fixes
 
-### "npm or yarn is not installed"
+### "Node.js is not installed"
 **This means Node.js is not installed on your system.**
 
 **Solution:**
 1. **Install Node.js:**
    - **macOS:** `brew install node`
-   - **Or download:** https://nodejs.org/ (LTS version)
+   - **Or download:** https://nodejs.org/ (LTS version recommended)
    - **Or use nvm:** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`
+2. **Restart your terminal** (important!)
+3. **Verify installation:** 
+   ```bash
+   node --version
+   npm --version
+   ```
+4. **Run the script again:** `./start-android.sh`
+
+### "npm or yarn is not installed"
+**This means Node.js is installed, but package manager is missing (unusual).**
+
+**Solution:**
+1. **Reinstall Node.js** (npm comes with Node.js):
+   - **macOS:** `brew install node`
+   - **Or download:** https://nodejs.org/
 2. **Restart your terminal**
-3. **Verify installation:** `node --version` and `npm --version`
+3. **Verify:** `npm --version`
 4. **Run the script again:** `./start-android.sh`
 
 ### "react-native: command not found"
