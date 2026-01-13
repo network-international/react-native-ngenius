@@ -81,26 +81,29 @@ echo -e "${GREEN}✅ Port forwarding configured${NC}"
 # Step 3: Check/Start Metro bundler
 echo -e "\n${BLUE}📦 Step 3/4: Checking Metro bundler...${NC}"
 if curl -s http://localhost:8081/status > /dev/null 2>&1; then
-  echo -e "${GREEN}✅ Metro bundler is already running${NC}"
-else
-  echo -e "${YELLOW}⏳ Starting Metro bundler...${NC}"
-  
-  # Start Metro in background
-  $PACKAGE_MANAGER start > /tmp/metro-android.log 2>&1 &
-  METRO_PID=$!
-  
-  # Wait for Metro to be ready (max 60 seconds)
-  for i in {1..60}; do
-    if curl -s http://localhost:8081/status > /dev/null 2>&1; then
-      echo -e "${GREEN}✅ Metro bundler is ready!${NC}"
-      break
-    fi
-    sleep 1
-  done
-  
-  if ! curl -s http://localhost:8081/status > /dev/null 2>&1; then
-    echo -e "${YELLOW}⚠️  Metro might not be fully ready, but continuing...${NC}"
+  echo -e "${YELLOW}⚠️  Metro bundler is running. Stopping to restart with clean cache...${NC}"
+  # Kill existing Metro processes
+  lsof -ti:8081 | xargs kill -9 2>/dev/null || true
+  sleep 2
+fi
+
+echo -e "${YELLOW}⏳ Starting Metro bundler with clean cache...${NC}"
+
+# Start Metro in background with reset cache
+$PACKAGE_MANAGER start -- --reset-cache > /tmp/metro-android.log 2>&1 &
+METRO_PID=$!
+
+# Wait for Metro to be ready (max 60 seconds)
+for i in {1..60}; do
+  if curl -s http://localhost:8081/status > /dev/null 2>&1; then
+    echo -e "${GREEN}✅ Metro bundler is ready!${NC}"
+    break
   fi
+  sleep 1
+done
+
+if ! curl -s http://localhost:8081/status > /dev/null 2>&1; then
+  echo -e "${YELLOW}⚠️  Metro might not be fully ready, but continuing...${NC}"
 fi
 
 # Step 4: Build and install app
