@@ -12,11 +12,18 @@
      - **Or use nvm:** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`
    - After installing, restart your terminal
 
-2. **Android Studio** with Android SDK
+2. **Java Development Kit (JDK)**
+   - React Native 0.70.x requires Java 17
+   - Check your Java version: `java -version`
+   - If you have Java 17 or newer, you're good to go
+   - The script will use your system's default Java
+   - If you get Java version errors, see troubleshooting section below
+
+3. **Android Studio** with Android SDK
    - Download: https://developer.android.com/studio
    - Make sure Android SDK is installed
 
-3. **Android Emulator** created in Android Studio
+4. **Android Emulator** created in Android Studio
    - Open Android Studio → Tools → Device Manager
    - Create a new virtual device (recommended: Pixel 5, API 35)
 
@@ -124,6 +131,28 @@ adb pull /sdcard/test-video.mp4
 2. **Restart your terminal**
 3. **Verify:** `npm --version`
 4. **Run the script again:** `./start-android.sh`
+
+### "Java home supplied is invalid" or "Gradle can not use Java X"
+**This means the Java path in gradle.properties is incorrect or Java version is incompatible.**
+
+**Solution:**
+1. **Check your Java version:**
+   ```bash
+   java -version
+   ```
+2. **React Native 0.70.x requires Java 17**
+3. **If you have Java 17 or newer:**
+   - The `gradle.properties` file is already configured to use system default Java
+   - If you still see errors, make sure `org.gradle.java.home` is commented out in `SimpleIntegration/android/gradle.properties`
+4. **If you need to install Java 17:**
+   - **macOS:** `brew install openjdk@17`
+   - **Or download:** https://adoptium.net/temurin/releases/?version=17
+   - **Set JAVA_HOME:**
+     ```bash
+     export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+     ```
+   - **Add to your `~/.zshrc` or `~/.bash_profile`** to make it permanent
+   - **Restart terminal** and run script again
 
 ### "react-native: command not found"
 **This means dependencies are not installed.**
