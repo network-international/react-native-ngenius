@@ -12,6 +12,42 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}🚀 Starting Android application...${NC}\n"
 
+# Check if Node.js is installed
+if ! command -v node &> /dev/null; then
+  echo -e "${YELLOW}❌ Error: Node.js is not installed${NC}"
+  echo -e "${YELLOW}Please install Node.js first:${NC}"
+  echo -e "${YELLOW}  - macOS: brew install node${NC}"
+  echo -e "${YELLOW}  - Or download from: https://nodejs.org/ (LTS version recommended)${NC}"
+  echo -e "${YELLOW}  - Or use nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash${NC}"
+  echo -e "${YELLOW}After installing, restart your terminal and run this script again.${NC}"
+  exit 1
+fi
+
+# Check if npm or yarn is installed
+if ! command -v npm &> /dev/null && ! command -v yarn &> /dev/null; then
+  echo -e "${YELLOW}❌ Error: npm or yarn is not installed${NC}"
+  echo -e "${YELLOW}Node.js is installed, but package manager is missing.${NC}"
+  echo -e "${YELLOW}Please reinstall Node.js (npm comes with Node.js):${NC}"
+  echo -e "${YELLOW}  - macOS: brew install node${NC}"
+  echo -e "${YELLOW}  - Or download from: https://nodejs.org/${NC}"
+  echo -e "${YELLOW}After installing, restart your terminal and run this script again.${NC}"
+  exit 1
+fi
+
+# Use npm if available, otherwise yarn
+if command -v npm &> /dev/null; then
+  PACKAGE_MANAGER="npm"
+else
+  PACKAGE_MANAGER="yarn"
+fi
+
+# Check if node_modules exists, if not - install dependencies
+if [ ! -d "node_modules" ]; then
+  echo -e "${YELLOW}📦 Dependencies not found. Installing...${NC}"
+  $PACKAGE_MANAGER install
+  echo -e "${GREEN}✅ Dependencies installed${NC}\n"
+fi
+
 # Set Android SDK paths
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export PATH=$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/tools:$ANDROID_HOME/platform-tools
@@ -50,7 +86,7 @@ else
   echo -e "${YELLOW}⏳ Starting Metro bundler...${NC}"
   
   # Start Metro in background
-  npm start > /tmp/metro-android.log 2>&1 &
+  $PACKAGE_MANAGER start > /tmp/metro-android.log 2>&1 &
   METRO_PID=$!
   
   # Wait for Metro to be ready (max 60 seconds)
@@ -69,7 +105,7 @@ fi
 
 # Step 4: Build and install app
 echo -e "\n${BLUE}🏗️  Step 4/4: Building and installing app...${NC}"
-npm run android
+$PACKAGE_MANAGER run android
 
 echo -e "\n${GREEN}✅ Done! The app should open on your emulator.${NC}"
 echo -e "${BLUE}💡 Tip: If you see a red error screen, press 'R' twice to reload.${NC}"
