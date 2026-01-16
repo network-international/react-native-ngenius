@@ -309,7 +309,5 @@ export {
   isApplePaySupported,
   isGooglePaySupported,
   configureSDK,
-  SDK_VERSION,
-  getDeviceInfo,
   executeThreeDSTwo
 };

@@ -13,8 +13,13 @@ module.exports = {
     path.resolve(__dirname, '..'),
   ],
   resolver: {
+    nodeModulesPaths: [
+      path.resolve(__dirname, 'node_modules'),
+    ],
     extraNodeModules: {
       '@network-international/react-native-ngenius': path.resolve(__dirname, '..'),
+      'react': path.resolve(__dirname, 'node_modules/react'),
+      'react-native': path.resolve(__dirname, 'node_modules/react-native'),
     },
   },
   transformer: {
