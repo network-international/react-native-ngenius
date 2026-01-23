@@ -145,18 +145,31 @@ export const createOrder = async (accessToken, amount, savedCard = null) => {
   return data;
 };
 
-export const makePayment = async (accessToken, paymentUrl, body) => {
+export const makePayment = async (accessToken, paymentUrl, body, method = 'post') => {
   // Use POST for Google Pay token payment (as per hosted-sessions-sdk pattern)
+  const requestMethod = method.toLowerCase();
+  console.log('method=', requestMethod);
+
   const userAgent = await getUserAgent();
-  const { data } = await axios.post(paymentUrl, body, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/vnd.ni-payment.v2+json',
-      Accept: 'application/vnd.ni-payment.v2+json',
-      'User-Agent': userAgent,
-    },
-  });
-  return data;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/vnd.ni-payment.v2+json',
+    Accept: 'application/vnd.ni-payment.v2+json',
+    'User-Agent': userAgent,
+  };
+
+  if (requestMethod === 'post') {
+    const { data } = await axios.post(paymentUrl, body, { headers });
+    return data;
+  }
+
+  if (requestMethod === 'put') {
+    const response = await axios.put(paymentUrl, body, { headers });
+    console.log('NEW RES data = ', response.data);
+    return response.data;
+  }
+
+  throw new Error(`Unsupported HTTP method for makePayment: ${method}`);
 };
 
 export const acceptGooglePay = async (accessToken, googlePayAcceptUrl, token) => {
