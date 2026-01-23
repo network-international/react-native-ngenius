@@ -74,10 +74,19 @@ const App = () => {
   }, [isEnglish, showAmount]);
 
   const fetchOnAppBoot = async () => {
+    console.log('[fetchOnAppBoot] Loading saved card from AsyncStorage...');
     const savedCardDetailsFromStorage = await getStoredData(SAVE_CARD_KEY);
+    console.log('[fetchOnAppBoot] AsyncStorage result:', {
+      hasData: savedCardDetailsFromStorage !== null,
+      data: savedCardDetailsFromStorage,
+      keys: savedCardDetailsFromStorage ? Object.keys(savedCardDetailsFromStorage) : [],
+    });
     if (savedCardDetailsFromStorage !== null) {
       setSavedCard(savedCardDetailsFromStorage);
       setShouldSaveCard(true);
+      console.log('[fetchOnAppBoot] ✅ Saved card loaded and state updated');
+    } else {
+      console.log('[fetchOnAppBoot] No saved card found in storage');
     }
   };
 
@@ -114,7 +123,19 @@ const App = () => {
   // Create an order with value of 250234 AED
   const createFixedOrder = useCallback(
     async (token, savedCardDetails = null) => {
+      console.log('[createFixedOrder] Creating order:', {
+        amount: 25023400,
+        currency: 'AED',
+        hasSavedCardDetails: savedCardDetails !== null,
+        savedCardDetails: savedCardDetails ? {
+          hasCardToken: Boolean(savedCardDetails.cardToken),
+          hasExpiry: Boolean(savedCardDetails.expiry),
+          hasCardholderName: Boolean(savedCardDetails.cardholderName),
+          keys: Object.keys(savedCardDetails),
+        } : null,
+      });
       const order = await createOrder(token, 25023400, savedCardDetails); // 250234 AED = 25023400 fils
+      console.log('[createFixedOrder] Order response received');
       return order;
     },
     [],
@@ -124,42 +145,164 @@ const App = () => {
   const onClickPay = async () => {
     try {
       setCreatingOrder(true);
+      console.log('[onClickPay] ========== START ==========');
+      console.log('[onClickPay] Initial state:', {
+        hasSavedCard: savedCard !== null,
+        shouldSaveCard,
+        savedCardDetails: savedCard ? {
+          hasCardToken: Boolean(savedCard.cardToken),
+          hasExpiry: Boolean(savedCard.expiry),
+          hasCardholderName: Boolean(savedCard.cardholderName),
+          hasMaskedPan: Boolean(savedCard.maskedPan),
+          hasScheme: Boolean(savedCard.scheme),
+          allKeys: Object.keys(savedCard),
+        } : null,
+      });
+      
+      console.log('[onClickPay] Step 1: Creating access token...');
       const tk = await createToken();
+      console.log('[onClickPay] ✅ Token created:', {
+        tokenLength: tk?.length,
+        tokenPreview: tk ? `${tk.substring(0, 20)}...` : null,
+      });
+      
+      console.log('[onClickPay] Step 2: Creating order with savedCard:', savedCard);
       const order = await createFixedOrder(tk, savedCard);
+      console.log('[onClickPay] ✅ Order created:', {
+        orderRef: order?.reference,
+        outletId: order?.outletId,
+        amount: order?.amount,
+        currencyCode: order?.amount?.currencyCode,
+        paymentMethods: order?.paymentMethods,
+        paymentLinks: order?._embedded?.payment?.[0]?._links
+          ? Object.keys(order._embedded.payment[0]._links)
+          : [],
+        paymentLinksFull: order?._embedded?.payment?.[0]?._links,
+        paymentState: order?._embedded?.payment?.[0]?.state,
+        paymentRef: order?._embedded?.payment?.[0]?.reference,
+        hasSavedCardInOrder: Boolean(order?._embedded?.payment?.[0]?.savedCard),
+        savedCardInOrder: order?._embedded?.payment?.[0]?.savedCard,
+      });
+      
       if (savedCard !== null) {
-        // use saved card for payment
-        const paymentUrl =
-          order._embedded.payment[0]._links['payment:saved-card'].href;
+        console.log('[onClickPay] ========== SAVED CARD FLOW ==========');
+        console.log('[onClickPay] Using saved card for payment');
+        const savedCardLink = order._embedded?.payment?.[0]?._links?.['payment:saved-card'];
+        console.log('[onClickPay] Saved-card link:', {
+          exists: Boolean(savedCardLink),
+          href: savedCardLink?.href,
+        });
+        
+        if (!savedCardLink || !savedCardLink.href) {
+          throw new Error('payment:saved-card link not found in order response');
+        }
+        
+        const paymentUrl = savedCardLink.href;
+        console.log('[onClickPay] Step 3: Making payment with saved card:', {
+          paymentUrl,
+          savedCardData: {
+            cardToken: savedCard.cardToken ? `${savedCard.cardToken.substring(0, 20)}...` : null,
+            expiry: savedCard.expiry,
+            cardholderName: savedCard.cardholderName,
+            maskedPan: savedCard.maskedPan,
+            scheme: savedCard.scheme,
+          },
+        });
+        
         const { cardholderName, expiry, cardToken } = savedCard;
-        const paymentResponse = await makePayment(tk, paymentUrl, {
+        const paymentBody = {
           cardholderName,
           cardToken,
           expiry,
+        };
+        console.log('[onClickPay] Payment request body:', {
+          hasCardholderName: Boolean(cardholderName),
+          hasCardToken: Boolean(cardToken),
+          hasExpiry: Boolean(expiry),
+          cardTokenLength: cardToken?.length,
         });
-        await executeThreeDSTwo(paymentResponse);
+        
+        const paymentResponse = await makePayment(tk, paymentUrl, paymentBody, "put");
+        console.log('[onClickPay] ✅ Saved-card payment response:', {
+          paymentRef: paymentResponse?.reference,
+          state: paymentResponse?.state,
+          status: paymentResponse?.status,
+          amount: paymentResponse?.amount,
+          currencyCode: paymentResponse?.amount?.currencyCode,
+          fullResponse: paymentResponse,
+        });
+          
+        console.log('[onClickPay] Step 4: Executing 3DS2...');
+        const threeDSResult = await executeThreeDSTwo(paymentResponse);
+        console.log('[onClickPay] ✅ 3DS2 completed:', {
+          result: threeDSResult,
+        });
+        
         Alert.alert(
           'Success',
           'Payment was successful',
           [{ text: 'OK' }],
           { cancelable: false },
         );
+        console.log('[onClickPay] ========== SAVED CARD FLOW SUCCESS ==========');
         return;
       }
+      
+      console.log('[onClickPay] ========== NEW CARD FLOW ==========');
+      console.log('[onClickPay] No saved card, initiating new card payment');
+      console.log('[onClickPay] Step 3: Initiating card payment UI...');
       await initiateCardPayment(order);
+      console.log('[onClickPay] ✅ Card payment UI completed');
+      
       if (shouldSaveCard) {
+        console.log('[onClickPay] Step 4: Saving card after payment...');
         const token = await createToken();
+        console.log('[onClickPay] Token for getOrder:', {
+          tokenLength: token?.length,
+        });
+        
         const paidOrder = await getOrder(token, order.reference);
+        console.log('[onClickPay] ✅ Paid order retrieved:', {
+          orderRef: paidOrder?.reference,
+          paymentState: paidOrder?._embedded?.payment?.[0]?.state,
+          hasSavedCard: Boolean(paidOrder?._embedded?.payment?.[0]?.savedCard),
+        });
+        
         const cardTokenDetails = paidOrder?._embedded?.payment[0]?.savedCard;
-        storeData(SAVE_CARD_KEY, cardTokenDetails);
-        setSavedCard(cardTokenDetails);
+        console.log('[onClickPay] Saved-card details from paid order:', {
+          hasCardTokenDetails: Boolean(cardTokenDetails),
+          keys: cardTokenDetails ? Object.keys(cardTokenDetails) : [],
+          fullDetails: cardTokenDetails,
+        });
+        
+        if (cardTokenDetails) {
+          await storeData(SAVE_CARD_KEY, cardTokenDetails);
+          setSavedCard(cardTokenDetails);
+          console.log('[onClickPay] ✅ Card saved to AsyncStorage and state');
+        } else {
+          console.warn('[onClickPay] ⚠️ No savedCard details in paid order response');
+        }
+      } else {
+        console.log('[onClickPay] shouldSaveCard is false, skipping card save');
       }
+      
       Alert.alert(
         'Success',
         'Payment was successful',
         [{ text: 'OK' }],
         { cancelable: false },
       );
+      console.log('[onClickPay] ========== NEW CARD FLOW SUCCESS ==========');
     } catch (err) {
+      console.error('[onClickPay] ========== ERROR ==========');
+      console.error('[onClickPay] Error details:', {
+        message: err?.message,
+        status: err?.status,
+        error: err?.error,
+        response: err?.response,
+        stack: err?.stack,
+        fullError: err,
+      });
       Alert.alert(
         'Error',
         'Payment was not successful',
@@ -168,6 +311,7 @@ const App = () => {
       );
     } finally {
       setCreatingOrder(false);
+      console.log('[onClickPay] ========== END ==========');
     }
   };
 
@@ -324,10 +468,19 @@ const App = () => {
   };
 
   const toggleSaveCard = () => {
+    console.log('[toggleSaveCard] Toggling save card:', {
+      currentValue: shouldSaveCard,
+      hasSavedCard: savedCard !== null,
+    });
     setShouldSaveCard((prev) => {
       if (prev) {
+        console.log('[toggleSaveCard] Disabling save card, clearing saved card data');
         setSavedCard(null);
-        storeData(SAVE_CARD_KEY, null);
+        storeData(SAVE_CARD_KEY, null).then(() => {
+          console.log('[toggleSaveCard] ✅ Saved card cleared from AsyncStorage');
+        });
+      } else {
+        console.log('[toggleSaveCard] Enabling save card (will save after next payment)');
       }
       return !prev;
     });
