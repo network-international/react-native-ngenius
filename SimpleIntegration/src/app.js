@@ -231,13 +231,20 @@ const App = () => {
           currencyCode: paymentResponse?.amount?.currencyCode,
           fullResponse: paymentResponse,
         });
-          
-        console.log('[onClickPay] Step 4: Executing 3DS2...');
-        const threeDSResult = await executeThreeDSTwo(paymentResponse);
-        console.log('[onClickPay] ✅ 3DS2 completed:', {
-          result: threeDSResult,
-        });
-        
+
+        // Saved-card payment often completes without 3DS (e.g. CAPTURED). Only run 3DS2 when the
+        // backend indicates it is required (e.g. state not terminal success, or response has 3ds2).
+        const terminalSuccessStates = ['CAPTURED', 'PURCHASED', 'AUTHORISED'];
+        const needs3DS = paymentResponse?.state && !terminalSuccessStates.includes(paymentResponse.state)
+          && paymentResponse?.['3ds2'];
+        if (needs3DS) {
+          console.log('[onClickPay] Step 4: Executing 3DS2...');
+          await executeThreeDSTwo(paymentResponse);
+          console.log('[onClickPay] ✅ 3DS2 completed');
+        } else {
+          console.log('[onClickPay] Step 4: Skipping 3DS (payment already complete:', paymentResponse?.state, ')');
+        }
+
         Alert.alert(
           'Success',
           'Payment was successful',
