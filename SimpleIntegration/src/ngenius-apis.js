@@ -148,7 +148,6 @@ export const createOrder = async (accessToken, amount, savedCard = null) => {
 export const makePayment = async (accessToken, paymentUrl, body, method = 'post') => {
   // Use POST for Google Pay token payment (as per hosted-sessions-sdk pattern)
   const requestMethod = method.toLowerCase();
-  console.log('method=', requestMethod);
 
   const userAgent = await getUserAgent();
   const headers = {
@@ -165,7 +164,6 @@ export const makePayment = async (accessToken, paymentUrl, body, method = 'post'
 
   if (requestMethod === 'put') {
     const response = await axios.put(paymentUrl, body, { headers });
-    console.log('NEW RES data = ', response.data);
     return response.data;
   }
 
