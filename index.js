@@ -250,7 +250,7 @@ const isGooglePaySupported = (googlePayConfig) => {
         reject({ status: 'Not Supported', error: 'Google Pay is not available' });
         return;
       }
-      const config = googlePayConfig || { environment: 'TEST' };
+      const config = googlePayConfig || { environment: 'PRODUCTION' };
       NiSdk.isGooglePaySupported(config, (isSupported) => {
         resolve(isSupported);
       });

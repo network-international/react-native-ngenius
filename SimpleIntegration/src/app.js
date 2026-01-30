@@ -99,7 +99,7 @@ const App = () => {
       }
       // Check Google Pay availability
       try {
-        const isGooglePayEnabled = await isGooglePaySupported({ environment: 'TEST' });
+        const isGooglePayEnabled = await isGooglePaySupported({ environment: 'PRODUCTION' });
         setShowGooglePay(isGooglePayEnabled);
       } catch (e) {
         setShowGooglePay(false);
@@ -111,10 +111,10 @@ const App = () => {
     getWalletStatus();
   }, [getWalletStatus]);
 
-  // Create an order with value of 250234 AED
+  // Create an order with value of 1 AED
   const createFixedOrder = useCallback(
     async (token, savedCardDetails = null) => {
-      const order = await createOrder(token, 25023400, savedCardDetails); // 250234 AED = 25023400 fils
+      const order = await createOrder(token, 100, savedCardDetails); // 1 AED = 100 fils
       return order;
     },
     [],
@@ -292,7 +292,7 @@ const App = () => {
         merchantName: currentGooglePayConfig.merchantInfo?.name || 'Test Merchant',
         gateway: currentGooglePayConfig.gatewayName || 'networkintl',
         gatewayMerchantId: currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
-        environment: currentGooglePayConfig.environment || 'TEST',
+        environment: currentGooglePayConfig.environment || 'PRODUCTION',
         merchantId: currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
         merchantOrigin: currentGooglePayConfig.merchantOrigin || 'http://applePayChub.com',
       });
@@ -372,7 +372,7 @@ const App = () => {
         disabled={creatingOrder}
         style={StyleSheet.compose(styles.button, disabledStyle)}
         onPressOut={onClickPay}>
-        <Text style={styles.buttonLabel}>Pay 250234 AED using Card</Text>
+        <Text style={styles.buttonLabel}>Pay 1 AED using Card</Text>
       </TouchableHighlight>
       {showWallet && (
         <TouchableHighlight
@@ -382,7 +382,7 @@ const App = () => {
             Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay
           }>
           <Text style={styles.buttonLabel}>
-            {`Pay 250234 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'
+            {`Pay 1 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'
               } Pay`}
           </Text>
         </TouchableHighlight>
@@ -392,7 +392,7 @@ const App = () => {
           disabled={creatingOrder}
           style={StyleSheet.compose(styles.button, disabledStyle)}
           onPressOut={onClickGooglePay}>
-          <Text style={styles.buttonLabel}>Pay 250234 AED using Google Pay</Text>
+          <Text style={styles.buttonLabel}>Pay 1 AED using Google Pay</Text>
         </TouchableHighlight>
       )}
       <Text style={{ paddingVertical: 20 }}>

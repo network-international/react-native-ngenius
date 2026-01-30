@@ -6,6 +6,7 @@ import {
   API_KEY,
   IDENTITY_API_URL,
   GATEWAY_API_BASE_URL,
+  CREATE_ORDER_URL,
   PAYPAGE_API_URL,
   PAYPAGE_GATEWAY_URL,
 } from './config';
@@ -106,7 +107,7 @@ export const createToken = async () => {
       },
       data: {
         grantType: 'client_credentials',
-        realmName: 'newPayPageNoThreeDS',
+        realmName: 'NetworkInternational',
       },
     };
     
@@ -134,7 +135,7 @@ export const createOrder = async (accessToken, amount, savedCard = null) => {
     body.savedCard = savedCard;
   }
   const userAgent = await getUserAgent();
-  const { data } = await axios.post(GATEWAY_API_URL, body, {
+  const { data } = await axios.post(CREATE_ORDER_URL, body, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/vnd.ni-payment.v2+json',
@@ -261,7 +262,7 @@ export const getGooglePayConfig = async (accessToken, orderResponse = null) => {
       allowedPaymentMethods: ['VISA', 'MASTERCARD'],
       allowedAuthMethods: ['CRYPTOGRAM_3DS', 'PAN_ONLY'],
       gatewayName: 'networkintl',
-      environment: 'TEST',
+      environment: 'PRODUCTION',
       merchantInfo: {
         reference: outletIdFromToken || OUTLET_ID,
         name: 'Apple Pay Chub',
