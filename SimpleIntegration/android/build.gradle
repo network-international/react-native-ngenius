@@ -5,7 +5,10 @@ buildscript {
         buildToolsVersion = "34.0.0"
         minSdkVersion = 21
         compileSdkVersion = 34
-        targetSdkVersion = 35
+        // RN 0.70's DevSupportManager registers a receiver without RECEIVER_EXPORTED/NOT_EXPORTED,
+        // which Android 14+ (API 34+) requires for apps targeting SDK 34+, crashing the app on launch.
+        // Targeting 33 exempts the app from that requirement. (RN fixed this in 0.71+.)
+        targetSdkVersion = 33
 
         if (System.properties['os.arch'] == "aarch64") {
             // For M1 Users we need to use the NDK 24 which added support for aarch64

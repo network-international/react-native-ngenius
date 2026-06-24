@@ -48,6 +48,8 @@ start-android-one-line.sh
 
 # SimpleIntegration - example/test app
 SimpleIntegration/
+# Never commit merchant credentials
+SimpleIntegration/src/config.js
 # But allow testing scripts and documentation
 !SimpleIntegration/start-android.sh
 !SimpleIntegration/README.md

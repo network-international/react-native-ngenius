@@ -105,9 +105,10 @@ export const createToken = async () => {
         Authorization: `Basic ${API_KEY}`,
         'User-Agent': userAgent,
       },
+      // N-Genius identity endpoint rejects grantType + realmName 'NetworkInternational'
+      // with 400 "badTokenRequest". The sandbox realm is 'ni' and no grantType is needed.
       data: {
-        grantType: 'client_credentials',
-        realmName: 'NetworkInternational',
+        realmName: 'ni',
       },
     };
     
