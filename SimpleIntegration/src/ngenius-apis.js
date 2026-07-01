@@ -11,6 +11,62 @@ import {
   PAYPAGE_GATEWAY_URL,
 } from './config';
 
+// --- Payload logging -------------------------------------------------------
+// Logs every API request/response so the full payment payload + response can be
+// inspected via Metro logs or `adb logcat -s ReactNativeJS:V`. The Authorization
+// header is redacted so credentials never end up in shared logs.
+const redactHeaders = (headers = {}) => {
+  const h = { ...headers };
+  if (h.Authorization) h.Authorization = '<redacted>';
+  return h;
+};
+
+axios.interceptors.request.use((req) => {
+  console.log(
+    'NGENIUS_REQUEST ' +
+      JSON.stringify(
+        {
+          method: (req.method || 'get').toUpperCase(),
+          url: req.url,
+          headers: redactHeaders(req.headers),
+          body: req.data,
+        },
+        null,
+        2,
+      ),
+  );
+  return req;
+});
+
+axios.interceptors.response.use(
+  (res) => {
+    console.log(
+      'NGENIUS_RESPONSE ' +
+        JSON.stringify(
+          { url: res.config?.url, status: res.status, body: res.data },
+          null,
+          2,
+        ),
+    );
+    return res;
+  },
+  (err) => {
+    console.log(
+      'NGENIUS_ERROR ' +
+        JSON.stringify(
+          {
+            url: err.config?.url,
+            status: err.response?.status,
+            body: err.response?.data || err.message,
+          },
+          null,
+          2,
+        ),
+    );
+    return Promise.reject(err);
+  },
+);
+
 // Cache for device info to avoid repeated native calls
 let cachedDeviceInfo = null;
 

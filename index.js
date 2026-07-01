@@ -42,6 +42,7 @@ export const getDeviceInfo = () => {
 };
 
 const initiateCardPayment = (order) => {
+  console.log('INITIATE_CARD_PAYMENT_ARG ' + JSON.stringify(order, null, 2));
   return new Promise((resolve, reject) => {
     return NiSdk.initiateCardPaymentUI(order, (status) => {
       switch (status) {
