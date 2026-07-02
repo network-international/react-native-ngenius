@@ -41,7 +41,33 @@ export const getDeviceInfo = () => {
   });
 };
 
-const initiateCardPayment = (order) => {
+// The native iOS SDK decodes the whole order into a strongly-typed model whose
+// `WalletProvider` enum rejects values it doesn't know (e.g. "GOOGLE_PAY" when
+// Google Pay is enabled on the outlet). An unknown value makes the entire order
+// fail to decode, producing a nil order and a native crash. A card payment does
+// not use the wallet list, so strip `paymentMethods.wallet` (wherever it
+// appears) before handing the order to the native side.
+const stripWalletMethods = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(stripWalletMethods);
+  }
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, v] of Object.entries(value)) {
+      if (key === 'paymentMethods' && v && typeof v === 'object') {
+        const { wallet, ...rest } = v;
+        out[key] = stripWalletMethods(rest);
+      } else {
+        out[key] = stripWalletMethods(v);
+      }
+    }
+    return out;
+  }
+  return value;
+};
+
+const initiateCardPayment = (rawOrder) => {
+  const order = stripWalletMethods(rawOrder);
   return new Promise((resolve, reject) => {
     return NiSdk.initiateCardPaymentUI(order, (status) => {
       switch (status) {
