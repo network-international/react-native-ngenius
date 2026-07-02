@@ -4,6 +4,7 @@ import { getDeviceInfo, SDK_VERSION } from '@network-international/react-native-
 import {
   OUTLET_ID,
   API_KEY,
+  REALM,
   IDENTITY_API_URL,
   GATEWAY_API_BASE_URL,
   CREATE_ORDER_URL,
@@ -105,9 +106,11 @@ export const createToken = async () => {
         Authorization: `Basic ${API_KEY}`,
         'User-Agent': userAgent,
       },
+      // The identity endpoint rejects grantType + a wrong realmName with
+      // 400 "badTokenRequest". Realm is merchant-specific (set REALM in config.js,
+      // e.g. 'ni' for the shared sandbox outlet) and no grantType is needed.
       data: {
-        grantType: 'client_credentials',
-        realmName: 'NetworkInternational',
+        realmName: REALM,
       },
     };
     
