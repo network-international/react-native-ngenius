@@ -19,5 +19,5 @@ Pod::Spec.new do |s|
   s.requires_arc = true
 
   s.dependency "React"
-  s.dependency "NISdk", "5.0.1"
+  s.dependency "NISdk", "6.0.2"
 end
