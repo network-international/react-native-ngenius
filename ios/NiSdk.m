@@ -21,7 +21,19 @@ RCT_EXPORT_METHOD(initiateCardPaymentUI:(NSDictionary *)orderResponse cardPayRes
     if (!orderResponseJsonData) {
         NSLog(@"Got an error: %@", error);
     } else {
-        OrderResponse *orderResponse = [OrderResponse decodeFromData: orderResponseJsonData error: nil];
+        NSError *decodeError = nil;
+        OrderResponse *orderResponse = [OrderResponse decodeFromData: orderResponseJsonData error: &decodeError];
+        // Guard: decoding the order can fail (e.g. an unexpected field type). The
+        // SDK's `order` param is non-optional, so passing a nil order crashed with
+        // EXC_BAD_ACCESS (0x0) inside PaymentViewController. Log the real reason and
+        // surface a failure to JS instead of crashing.
+        if (!orderResponse) {
+            NSLog(@"[NiSdk] initiateCardPaymentUI: OrderResponse decode FAILED: %@", decodeError);
+            if (self.paymentResponseCallback) {
+                self.paymentResponseCallback(@[@"PaymentFailed"]);
+            }
+            return;
+        }
         dispatch_async(dispatch_get_main_queue(), ^(void){
             UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
             NISdk *sdkInstance = [NISdk sharedInstance];
