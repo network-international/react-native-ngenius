@@ -50,7 +50,20 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
     if (!orderResponseJsonData) {
         NSLog(@"Got an error: %@", error);
     } else {
-        OrderResponse *orderResponse = [OrderResponse decodeFromData: orderResponseJsonData error: nil];
+        NSError *decodeError = nil;
+        OrderResponse *orderResponse = [OrderResponse decodeFromData: orderResponseJsonData error: &decodeError];
+        // Guard: decoding the order can fail (e.g. an unknown payment-method value
+        // such as a new wallet/card scheme). The SDK's `for:` param is non-optional,
+        // so passing a nil order crashes with EXC_BAD_ACCESS (0x0) inside the native
+        // Apple Pay flow. Log the real reason and surface a failure to JS instead of
+        // crashing — matching initiateCardPaymentUI above.
+        if (!orderResponse) {
+            NSLog(@"[NiSdk] initiateApplePay: OrderResponse decode FAILED: %@", decodeError);
+            if (self.paymentResponseCallback) {
+                self.paymentResponseCallback(@[@"PaymentFailed"]);
+            }
+            return;
+        }
         PKPaymentRequest *applePayRequest = [[PKPaymentRequest alloc] init];
         
         applePayRequest.merchantIdentifier = applePayConfig[@"merchantIdentifier"];

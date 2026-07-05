@@ -3,7 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 
 const { NiSdk } = NativeModules;
 
-export const SDK_VERSION = '3.0.0';
+export const SDK_VERSION = '3.0.2';
 
 // Helper function to get device info for User-Agent
 let deviceInfoCache = null;
