@@ -6,7 +6,9 @@
   "main": "index.js",
   "files": [
     "README.md",
-    "android",
+    "android/src",
+    "android/build.gradle",
+    "android/README.md",
     "index.js",
     "ios",
     "react-native-ni-sdk.podspec"
