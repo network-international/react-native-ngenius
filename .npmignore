@@ -1,2 +1,7 @@
 SimpleIntegration/
 node_modules/
+android/build/
+android/.gradle/
+ios/build/
+**/*.log
+.DS_Store
