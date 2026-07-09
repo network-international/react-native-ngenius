@@ -60,7 +60,9 @@ public class Utils {
         // Need to revisit this and add a builder to make it look better
         Order.Amount amount = new Order.Amount();
         amount.setCurrencyCode(orderMap.getMap("amount").getString("currencyCode"));
-        amount.setValue(orderMap.getMap("amount").getInt("value"));
+        // payment-sdk-core 5.x changed Order.Amount.setValue to take a Double
+        // (was int-compatible in 3.0.x); cast so the int amount autoboxes correctly.
+        amount.setValue((double) orderMap.getMap("amount").getInt("value"));
         order.setAmount(amount);
 
         // Set links
