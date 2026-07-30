@@ -182,9 +182,21 @@ const App = () => {
         { cancelable: false },
       );
     } catch (err) {
+      // Show what actually failed instead of a generic message: for an axios error the
+      // useful part is the status and the gateway's response body, which the generic
+      // alert used to hide.
+      const status = err?.response?.status;
+      const body = err?.response?.data;
+      const detail = [
+        err?.message,
+        status ? `HTTP ${status}` : null,
+        err?.config?.url,
+        body ? JSON.stringify(body).slice(0, 500) : null,
+      ].filter(Boolean).join('\n');
+      console.log('[Payment error]', detail);
       Alert.alert(
         'Error',
-        'Payment was not successful',
+        `Payment was not successful\n\n${detail}`,
         [{ text: 'OK' }],
         { cancelable: false },
       );

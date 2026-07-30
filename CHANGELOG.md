@@ -2,6 +2,38 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.0] - 2026-07-30
+
+### Changed
+- **Native iOS `NISdk` bumped `6.0.2` → `6.1.0`.** The iOS pin is exact, so this is what
+  actually delivers the native work below to React Native integrators — 6.0.2 predated
+  all of it.
+
+### Added (via NISdk 6.1.0)
+- **JAYWAN card scheme on iOS** — IINs `6690`/`9784`, early IIN-based scheme detection
+  (resolves as the BIN is typed), and the JAYWAN logo asset. Brings iOS in line with the
+  Android JAYWAN support shipped in 3.1.x.
+- Apple Pay "smoother journey": the intermediate authenticating screen is gone; the
+  `PKPaymentAuthorization` sheet is presented immediately with authorization running
+  concurrently.
+
+### Fixed (via NISdk 6.1.0)
+- **False "payment failed" after a successful 3DS2 challenge.** Two independent causes:
+  a benign WebKit "frame load interrupted" (error 102) was treated as fatal and raced
+  ahead of the real challenge-response, and the 3DS2 payer-IP lookup could kill payments
+  started via `executeThreeDSTwo()`.
+- **Unknown card schemes no longer break decoding.** `CardProvider` now falls back to
+  `.unknown` instead of throwing, matching `WalletProvider`. Previously a single
+  unrecognised scheme value failed the whole `OrderResponse` decode — which surfaced as
+  a false payment failure on the post-3DS `getOrder`. This makes the SDK tolerant of new
+  schemes enabled backend-side without an app update.
+- Card scheme logos never rendered — assets were loaded from the wrong bundle.
+
+### Upgrade notes
+- Same Android toolchain requirement as 3.1.1 (**RN 0.71+ / AGP 8 / Gradle 8 /
+  compileSdk 35 / JDK 17**). No API changes — drop-in over 3.1.2.
+- iOS integrators should run `pod update NISdk` (or `pod install`) to pick up 6.1.0.
+
 ## [3.1.2] - 2026-07-10
 
 ### Changed
