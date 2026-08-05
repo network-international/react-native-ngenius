@@ -89,6 +89,7 @@ Fixes the broken Android build shipped in 3.1.0.
 
 Previous published release.
 
+[3.2.0]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.0
 [3.1.2]: https://github.com/network-international/react-native-ngenius/releases/tag/3.1.2
 [3.1.1]: https://github.com/network-international/react-native-ngenius/releases/tag/3.1.1
 [3.1.0]: https://github.com/network-international/react-native-ngenius/releases/tag/3.1.0
