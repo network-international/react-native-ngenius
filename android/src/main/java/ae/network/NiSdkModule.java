@@ -9,7 +9,6 @@ import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.BaseActivityEventListener;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
-import payment.sdk.android.core.NIPlatform;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReadableMap;
@@ -134,10 +133,6 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     public NiSdkModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.reactContext = reactContext;
-        // The native SDK underneath this bridge is the same artifact a native integration
-        // uses, so it cannot tell on its own that it is running inside React Native.
-        // Declare it here, once, before any request can be made.
-        NIPlatform.setCurrent(NIPlatform.ANDROID_REACT_NATIVE);
         reactContext.addActivityEventListener(cardActivityEventListener);
     }
 
