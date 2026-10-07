@@ -1,5 +1,6 @@
 import { NativeModules, Platform } from 'react-native';
 // import { SHIPPING_CONTACT_FIELDS, MERCHANT_CAPABILITIES, BILLING_CONTACT_FIELDS } from './apple-pay-constants';
+import NgeniusTokenization from './src/tokenization/NgeniusTokenization';
 import {
   initiateCardPayment,
   initiateSamsungPay,
@@ -9,6 +10,19 @@ import {
   isApplePaySupported,
   isGooglePaySupported,
 } from './src/nativePayments';
+
+const { resolveTokenizationTheme } = require('./src/tokenization/resolveTheme');
+const {
+  getTokenizationMethods,
+  TOKENIZATION_SUPPORTED_METHODS,
+} = require('./src/tokenization/supportedMethods');
+const {
+  createTokenizationClient,
+} = require('./src/tokenization/api/TokenizationClient');
+const { TokenizationApiError } = require('./src/tokenization/api/errors');
+const {
+  TOKENIZATION_ENVIRONMENTS,
+} = require('./src/tokenization/api/environments');
 
 const { NiSdk } = NativeModules;
 
@@ -100,5 +114,12 @@ export {
   isApplePaySupported,
   isGooglePaySupported,
   configureSDK,
-  executeThreeDSTwo
+  executeThreeDSTwo,
+  NgeniusTokenization,
+  resolveTokenizationTheme,
+  getTokenizationMethods,
+  TOKENIZATION_SUPPORTED_METHODS,
+  createTokenizationClient,
+  TokenizationApiError,
+  TOKENIZATION_ENVIRONMENTS,
 };

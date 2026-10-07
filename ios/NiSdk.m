@@ -1,9 +1,38 @@
 #import "NiSdk.h"
 #import <PassKit/PassKit.h>
+#import <UIKit/UIKit.h>
+
+// NISdk 6.1.0 exposes setSDKColors to ObjC, but NISdkColors colour fields
+// are public Swift properties only. Colour apply/reset lives in
+// NiSdkColorConfigurator.swift so a later initiateCardPayment is unthemed.
+@interface NiSdkColorConfigurator : NSObject
++ (void)applyColors:(NSDictionary *)colors;
++ (void)resetColors;
+@end
 
 @interface NiSdk ()
 @property (nonatomic) RCTResponseSenderBlock paymentResponseCallback;
 @end
+
+// UIKit silently drops a presentation over a parent that is still presenting
+// (e.g. a React Native Modal mid-dismiss). Retry for up to ~2s, then fail.
+static void NiSdkWhenParentFreeForPresentation(UIViewController *parent,
+                                               NSInteger attempt,
+                                               void (^onReady)(void),
+                                               void (^onFailed)(NSString *presentedClass)) {
+  if (!parent.presentedViewController) {
+    onReady();
+    return;
+  }
+  if (attempt >= 20) {
+    onFailed(NSStringFromClass([parent.presentedViewController class]));
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+                 dispatch_get_main_queue(), ^{
+    NiSdkWhenParentFreeForPresentation(parent, attempt + 1, onReady, onFailed);
+  });
+}
 
 @implementation NiSdk
 
@@ -36,8 +65,15 @@ RCT_EXPORT_METHOD(initiateCardPaymentUI:(NSDictionary *)orderResponse cardPayRes
         }
         dispatch_async(dispatch_get_main_queue(), ^(void){
             UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
-            NISdk *sdkInstance = [NISdk sharedInstance];
-            [sdkInstance showCardPaymentViewWithCardPaymentDelegate: self overParent:rootViewController for: orderResponse];
+            NiSdkWhenParentFreeForPresentation(rootViewController, 0, ^{
+                NISdk *sdkInstance = [NISdk sharedInstance];
+                [sdkInstance showCardPaymentViewWithCardPaymentDelegate: self overParent:rootViewController for: orderResponse];
+            }, ^(NSString *presentedClass) {
+                NSLog(@"[NiSdk] initiateCardPaymentUI: presentation FAILED, still presenting %@", presentedClass);
+                if (self.paymentResponseCallback) {
+                    self.paymentResponseCallback(@[@"Failed"]);
+                }
+            });
         });
     }
 }
@@ -82,12 +118,18 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
         dispatch_async(dispatch_get_main_queue(), ^(void){
             UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
             NISdk *sdkInstance = [NISdk sharedInstance];
-            
-            [sdkInstance initiateApplePayWithApplePayDelegate: self
-            cardPaymentDelegate: self
-                     overParent: rootViewController
-                            for: orderResponse
-                           with: applePayRequest];
+            NiSdkWhenParentFreeForPresentation(rootViewController, 0, ^{
+                [sdkInstance initiateApplePayWithApplePayDelegate: self
+                cardPaymentDelegate: self
+                         overParent: rootViewController
+                                for: orderResponse
+                               with: applePayRequest];
+            }, ^(NSString *presentedClass) {
+                NSLog(@"[NiSdk] initiateApplePay: presentation FAILED, still presenting %@", presentedClass);
+                if (self.paymentResponseCallback) {
+                    self.paymentResponseCallback(@[@"Failed"]);
+                }
+            });
         });
     }
 }
@@ -101,6 +143,17 @@ RCT_EXPORT_METHOD(isApplePaySupported:(RCTResponseSenderBlock)sendResponse) {
 RCT_EXPORT_METHOD(setLocale:(NSString *) language) {
     NISdk *sdkInstance = [NISdk sharedInstance];
     [sdkInstance setSDKLanguageWithLanguage: language];
+}
+
+RCT_EXPORT_METHOD(setSDKColors:(NSDictionary *)colors) {
+    if (![colors isKindOfClass:[NSDictionary class]]) {
+        return;
+    }
+    [NiSdkColorConfigurator applyColors:colors];
+}
+
+RCT_EXPORT_METHOD(resetSDKColors) {
+    [NiSdkColorConfigurator resetColors];
 }
 
 RCT_EXPORT_METHOD(executeThreeDSTwo:(NSDictionary *)paymentResponseDict
