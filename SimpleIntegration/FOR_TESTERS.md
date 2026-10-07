@@ -65,10 +65,19 @@ That's it! The script handles everything automatically.
 2. Can initiate Google Pay flow
 3. Payment processes successfully
 
-### Card Payment
-1. Can enter card number
-2. Validation works
-3. Payment submission works
+### Tokenization POC (not backend tokenization)
+1. Toggle **Default theme** / **Merchant branding** (RN wrapper only)
+2. Tap **Open tokenization**
+3. Confirm CARD (and Apple Pay / Google Pay when the device actually supports them)
+4. CARD opens the **existing native** secure form
+   - **iOS:** button/background/label colours follow branding via NISdk 6.1.0 `setSDKColors` (public Swift `NISdkColors` fields; they are not Objective-C properties)
+   - **Android:** native `CardPaymentActivity` is **not** branded (vendor default)
+5. Success copy means “native screen finished”, **not** “NI token created”
+6. Existing **Pay 1 AED** buttons must still work unchanged
+
+List/get/validate/delete live on `createTokenizationClient`. CARD/wallet **create** is not wired from this UI. The demo does not contain JWT or API keys.
+
+**Not in this POC:** VERIFY `OrderContext`, saved-token payment, MCP, RN 3DS, Android native card theming.
 
 ---
 
@@ -247,3 +256,12 @@ If scripts don't work after trying quick fixes:
 **Estimated Testing Time:** 15-20 minutes  
 **Total Setup Time:** 3-5 minutes  
 **Last Updated:** January 2026
+
+## Final tokenization visual POC
+
+See [final implementation and validation notes](../docs/tokenization-implementation.md).
+Use Merchant branding and Consent off switches, then Open tokenization. The Consent
+scenario button cycles Standard, Recurring, Reusable and Missing order. The local
+example.com T&C fixture validates UI/link appearance only; live backend delivery
+is pending. No tokens are created by these demo screens. Add Card opens existing
+native secure capture; no PAN/CVV fields are added to JavaScript.
