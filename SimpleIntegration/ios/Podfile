@@ -1,7 +1,7 @@
 require_relative '../node_modules/react-native/scripts/react_native_pods'
 require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
 
-platform :ios, '12.4'
+platform :ios, '14.0'
 install! 'cocoapods', :deterministic_uuids => false
 
 target 'SimpleIntegration' do
@@ -21,7 +21,7 @@ target 'SimpleIntegration' do
     #
     # Note that if you have use_frameworks! enabled, Flipper will not work and
     # you should disable the next line.
-    :flipper_configuration => FlipperConfiguration.enabled,
+    :flipper_configuration => FlipperConfiguration.disabled,
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
@@ -39,5 +39,26 @@ target 'SimpleIntegration' do
       :mac_catalyst_enabled => false
     )
     __apply_Xcode_12_5_M1_post_install_workaround(installer)
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+        if target.name == 'Yoga'
+          cxx = config.build_settings['OTHER_CPLUSPLUSFLAGS']
+          cxx = '$(inherited)' if cxx.nil? || cxx == ''
+          cxx = cxx.join(' ') if cxx.is_a?(Array)
+          unless cxx.include?('-Wno-deprecated-literal-operator')
+            config.build_settings['OTHER_CPLUSPLUSFLAGS'] = "#{cxx} -Wno-deprecated-literal-operator"
+          end
+        end
+        if %w[boost RCT-Folly Flipper-Boost-iOSX].include?(target.name)
+          defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+          defs = [defs] unless defs.is_a?(Array)
+          unless defs.any? { |d| d.to_s.include?('_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION') }
+            defs << '_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1'
+          end
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+        end
+      end
+    end
   end
 end

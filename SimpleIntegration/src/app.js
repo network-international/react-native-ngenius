@@ -3,6 +3,7 @@ import {
   StyleSheet,
   Text,
   View,
+  ScrollView,
   TouchableHighlight,
   ActivityIndicator,
   Switch,
@@ -20,6 +21,7 @@ import {
   isGooglePaySupported,
   configureSDK,
   executeThreeDSTwo,
+  NgeniusTokenization,
 } from '@network-international/react-native-ngenius';
 
 
@@ -32,9 +34,50 @@ import {
   acceptGooglePay,
 } from './ngenius-apis';
 import { PAYPAGE_API_URL } from './config';
+// Internal workspace import for this visual demo only; not a public SDK API.
+import { TokenizationBootstrapContext } from '../../src/tokenization/TokenizationBootstrapContext';
 import SavedCardFrame from './save-card-frame';
 
 const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
+
+// VISUAL POC ONLY: reserved example domain, no live backend delivery claim.
+// This local model is not the proposed tokenization-init response contract.
+const demoBootstrapFixture = Object.freeze({
+  resolvedTncUrl: 'https://example.com/?demo=tokenization&locale=en#terms',
+});
+
+function DemoTokenizationBootstrap({ order, consentOff, children }) {
+  const value = useMemo(() => consentOff === true ? null : ({
+    nativeOrder: order,
+    resolvedTncUrl: demoBootstrapFixture.resolvedTncUrl,
+  }), [order, consentOff]);
+  return <TokenizationBootstrapContext.Provider value={value}>{children}</TokenizationBootstrapContext.Provider>;
+}
+
+
+const DEMO_MERCHANT_BRANDING = {
+  buttonColour: '#002E5D',
+  buttonRolloverColour: '#001F3F',
+  paymentFontColour: '#1A1A1A',
+  mainHeadingColour: '#002E5D',
+  pageBackgroundColour: '#F5F9FC',
+  backgroundColour: '#FFFFFF',
+  footerText: 'Northwind Retail',
+  languages: [
+    {
+      language: 'EN',
+      mainHeading: { font: 'Georgia', capitalise: false },
+      subHeading: { font: 'Georgia' },
+      bodyCopyFont: 'Georgia',
+    },
+    {
+      language: 'AR',
+      mainHeading: { font: 'Arial', capitalise: false },
+      subHeading: { font: 'Arial' },
+      bodyCopyFont: 'Arial',
+    },
+  ],
+};
 
 const storeData = async (key, value) => {
   try {
@@ -65,6 +108,12 @@ const App = () => {
   const [showAmount, setShowAmount] = useState(true);
   const [shouldSaveCard, setShouldSaveCard] = useState(false);
   const [savedCard, setSavedCard] = useState(null);
+  const [showTokenization, setShowTokenization] = useState(false);
+  const [tokenizationOrder, setTokenizationOrder] = useState(null);
+  const [useMerchantBranding, setUseMerchantBranding] = useState(false);
+  const [consentOff, setConsentOff] = useState(false);
+  const [consentScenario, setConsentScenario] = useState('Standard');
+  const scenarios = ['Standard', 'Recurring', 'Reusable', 'Missing order'];
 
   useEffect(() => {
     configureSDK({
@@ -338,6 +387,39 @@ const App = () => {
     }
   }, [createFixedOrder, googlePayConfig]);
 
+  const onClickTokenization = async () => {
+    try {
+      setCreatingOrder(true);
+      const tk = await createToken();
+      const order = await createFixedOrder(tk);
+      if (Platform.OS === 'android' && !googlePayConfig) {
+        try {
+          const config = await getGooglePayConfig(tk, order);
+          setGooglePayConfig(config);
+        } catch {
+          // Tokenization can still show CARD without Google Pay config.
+        }
+      }
+      // Local consent-copy scenarios only; never sent to backend as new contracts.
+      setTokenizationOrder(consentScenario === 'Missing order' ? undefined :
+        consentScenario === 'Recurring' ? { ...order, type: 'RECURRING',
+          merchantAttributes: { ...order.merchantAttributes, paymentModel: 'subscription' } } :
+        consentScenario === 'Reusable' ? { ...order, type: 'UNSCHEDULED' } : order);
+      setShowTokenization(true);
+    } catch (err) {
+      const status = err?.response?.status;
+      const body = err?.response?.data;
+      const detail = [
+        err?.message,
+        status ? `HTTP ${status}` : null,
+        body ? JSON.stringify(body).slice(0, 500) : null,
+      ].filter(Boolean).join('\n');
+      Alert.alert('Error', `Could not start tokenization\n\n${detail}`, [{ text: 'OK' }]);
+    } finally {
+      setCreatingOrder(false);
+    }
+  };
+
   const disabledStyle = useMemo(
     () => ({ backgroundColor: creatingOrder ? 'gray' : 'black' }),
     [creatingOrder],
@@ -374,8 +456,22 @@ const App = () => {
     return 'Starting Apple Pay...';
   }, []);
 
+  const tokenizationGooglePayConfig = useMemo(() => {
+    if (!googlePayConfig) {
+      return undefined;
+    }
+    return {
+      merchantName: googlePayConfig.merchantInfo?.name || 'Test Merchant',
+      gateway: googlePayConfig.gatewayName || 'networkintl',
+      gatewayMerchantId: googlePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
+      environment: googlePayConfig.environment || 'PRODUCTION',
+      merchantId: googlePayConfig.merchantGatewayId,
+      merchantOrigin: googlePayConfig.merchantOrigin,
+    };
+  }, [googlePayConfig]);
+
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.welcome} testID="Label">
         NGenius React native SDK
       </Text>
@@ -384,8 +480,34 @@ const App = () => {
         disabled={creatingOrder}
         style={StyleSheet.compose(styles.button, disabledStyle)}
         onPressOut={onClickPay}>
-        <Text style={styles.buttonLabel}>Pay 1 AED using Card</Text>
+          <Text style={styles.buttonLabel}>Pay 1 AED using Card</Text>
+        </TouchableHighlight>
+      <TouchableHighlight
+        disabled={creatingOrder}
+        style={StyleSheet.compose(styles.button, disabledStyle)}
+        onPressOut={onClickTokenization}
+        testID="OpenTokenization">
+        <Text style={styles.buttonLabel}>Open tokenization</Text>
       </TouchableHighlight>
+      <Text style={{ paddingVertical: 8 }}>
+        {useMerchantBranding ? 'Merchant branding' : 'Default theme'}
+      </Text>
+      <Switch
+        trackColor={{ false: '#808080', true: '#000000' }}
+        thumbColor={'#FFFFFF'}
+        onValueChange={() => setUseMerchantBranding((prev) => !prev)}
+        value={useMerchantBranding}
+        accessibilityLabel="Merchant branding"
+      />
+      <Text style={{ paddingVertical: 8 }}>{consentOff ? 'Consent OFF' : 'Consent ON'}</Text>
+      <Switch accessibilityLabel="Consent off" value={consentOff}
+        onValueChange={setConsentOff} />
+      <TouchableHighlight style={[styles.button, { backgroundColor: '#000000' }]}
+        accessibilityLabel={`Consent scenario: ${consentScenario}`}
+        onPress={() => setConsentScenario(scenarios[(scenarios.indexOf(consentScenario) + 1) % scenarios.length])}>
+        <Text style={styles.buttonLabel}>Consent: {consentScenario}</Text>
+      </TouchableHighlight>
+      <Text style={{ fontSize: 12 }}>Demo T&C fixture · live backend delivery pending</Text>
       {showWallet && (
         <TouchableHighlight
           disabled={creatingOrder}
@@ -458,13 +580,45 @@ const App = () => {
         style={styles.loader}
         animating={creatingOrder}
       />
-    </View>
+      {showTokenization ? <DemoTokenizationBootstrap order={tokenizationOrder} consentOff={consentOff}>
+      <NgeniusTokenization
+        paymentMethods={['CARD', 'APPLE_PAY', 'GOOGLE_PAY']}
+        consentOff={consentOff}
+        visible={showTokenization}
+        order={tokenizationOrder}
+        branding={useMerchantBranding ? DEMO_MERCHANT_BRANDING : undefined}
+        language={isEnglish ? 'en' : 'ar'}
+        applePayConfig={{
+          merchantIdentifier: 'com.xyz.a',
+          countryCode: 'AE',
+          merchantName: 'Test Merchant',
+        }}
+        googlePayConfig={tokenizationGooglePayConfig}
+        onSuccess={(result) => {
+          Alert.alert(
+            'Native flow completed',
+            `${result.method} native UI finished. NI token created: ${result.niTokenCreated}`,
+            [{ text: 'OK' }],
+          );
+        }}
+        onError={(error) => {
+          Alert.alert(
+            'Native flow did not complete',
+            error.error || error.status || 'Failed',
+            [{ text: 'OK' }],
+          );
+        }}
+        onCancel={() => { setShowTokenization(false); setTokenizationOrder(null); }}
+      />
+      </DemoTokenizationBootstrap> : null}
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
+    paddingVertical: 50,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F5FCFF',
@@ -472,7 +626,7 @@ const styles = StyleSheet.create({
   welcome: {
     fontSize: 30,
     textAlign: 'center',
-    marginVertical: 50,
+    marginVertical: 20,
   },
   buttonLabel: { color: 'white', fontWeight: '700' },
   button: {
@@ -482,7 +636,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 5,
-    marginVertical: 20,
+    marginVertical: 10,
   },
   loader: {
     marginVertical: 0,
