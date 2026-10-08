@@ -2,6 +2,19 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.3] - 2026-10-08
+
+### Fixed
+- **`npm install` fails on current React Native projects with `ERESOLVE ... peer
+  react@"^16.8.1"`.** The `react` peer range only allowed React 16, so npm 7+ refused any
+  project on React 17, 18 or 19 — every React Native release since 0.64. Widened to
+  `>=16.8.1`. Yarn only warned, so yarn installs were unaffected. No code changes.
+- `SDK_VERSION` and package version aligned to `3.2.3`.
+
+### Upgrade notes
+- Drop-in over 3.2.2. If you installed with `--legacy-peer-deps` or `--force` to get
+  past the error, that is no longer needed.
+
 ## [3.2.2] - 2026-10-08
 
 ### Fixed
@@ -114,6 +127,7 @@ Fixes the broken Android build shipped in 3.1.0.
 
 Previous published release.
 
+[3.2.3]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.3
 [3.2.2]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.2
 [3.2.1]: https://github.com/network-international/react-native-ngenius/releases/tag/v3.2.1
 [3.2.0]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.0
