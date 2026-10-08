@@ -10,6 +10,7 @@ All notable changes to `@network-international/react-native-ngenius` are documen
   3.2.1 sets `NISdk.platform` from the Objective-C bridge, but NISdk 6.1.1 did not
   expose that property to Objective-C, so every iOS build of 3.2.1 failed. Native iOS
   `NISdk` bumped `6.1.1` → `6.1.2`, which does.
+- `SDK_VERSION` and package version aligned to `3.2.2` (3.2.1 still reported `3.2.0`).
 
 ### Upgrade notes
 - Drop-in over 3.2.0 / 3.2.1. Run `pod update NISdk` to pick up 6.1.2.
