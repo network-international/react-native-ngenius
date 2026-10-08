@@ -10,6 +10,10 @@
 RCT_EXPORT_MODULE()
 
 + (BOOL)requiresMainQueueSetup {
+  // The native SDK underneath this bridge is the same binary a native integration uses, so
+  // it cannot tell on its own that it is running inside React Native. Declare it here, once,
+  // before any request can be made.
+  [NISdk sharedInstance].platform = NIPlatformIOSReactNative;
   return YES;
 }
 

@@ -2,6 +2,30 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.2] - 2026-10-08
+
+### Fixed
+- **iOS build failure: `Property 'platform' not found on object of type 'NISdk *'`**
+  ([#68](https://github.com/network-international/react-native-ngenius/issues/68)).
+  3.2.1 sets `NISdk.platform` from the Objective-C bridge, but NISdk 6.1.1 did not
+  expose that property to Objective-C, so every iOS build of 3.2.1 failed. Native iOS
+  `NISdk` bumped `6.1.1` → `6.1.2`, which does.
+
+### Upgrade notes
+- Drop-in over 3.2.0 / 3.2.1. Run `pod update NISdk` to pick up 6.1.2.
+- If you patched `NISdk.swift` locally (adding `@objc` to `platform`) to get 3.2.1 to
+  build, that patch is no longer needed.
+
+## [3.2.1] - 2026-09-10
+
+### Changed
+- **Native iOS `NISdk` bumped `6.1.0` → `6.1.1`**, which reports exactly one payment
+  result per payment (Apple Pay, saved card, 3DS v1).
+- iOS requests now carry `X-NI-Platform: IOS_REACT_NATIVE`.
+
+### Known issues
+- iOS does not compile — see 3.2.2.
+
 ## [3.2.0] - 2026-07-30
 
 ### Changed
@@ -89,6 +113,8 @@ Fixes the broken Android build shipped in 3.1.0.
 
 Previous published release.
 
+[3.2.2]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.2
+[3.2.1]: https://github.com/network-international/react-native-ngenius/releases/tag/v3.2.1
 [3.2.0]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.0
 [3.1.2]: https://github.com/network-international/react-native-ngenius/releases/tag/3.1.2
 [3.1.1]: https://github.com/network-international/react-native-ngenius/releases/tag/3.1.1

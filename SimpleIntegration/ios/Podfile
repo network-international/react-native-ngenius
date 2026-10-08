@@ -1,7 +1,8 @@
 require_relative '../node_modules/react-native/scripts/react_native_pods'
 require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
 
-platform :ios, '12.4'
+# NISdk requires iOS 14.0; the RN 0.70 template default of 12.4 fails to resolve it.
+platform :ios, '14.0'
 install! 'cocoapods', :deterministic_uuids => false
 
 target 'SimpleIntegration' do
@@ -17,14 +18,16 @@ target 'SimpleIntegration' do
     # we make it explicit here to aid in the React Native upgrade process.
     :hermes_enabled => true,
     :fabric_enabled => flags[:fabric_enabled],
-    # Enables Flipper.
-    #
-    # Note that if you have use_frameworks! enabled, Flipper will not work and
-    # you should disable the next line.
-    :flipper_configuration => FlipperConfiguration.enabled,
+    # Flipper does not compile under Xcode 26 / libc++ C++17, and nothing here needs it.
+    :flipper_configuration => FlipperConfiguration.disabled,
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
+
+  # By default NISdk resolves from CocoaPods trunk at react-native-ni-sdk's exact pin, so
+  # this app builds against what integrators actually get. To exercise a local NISdk
+  # checkout instead, set NISDK_PATH to it; its podspec version must match that pin.
+  pod 'NISdk', :path => ENV['NISDK_PATH'] if ENV['NISDK_PATH']
 
   target 'SimpleIntegrationTests' do
     inherit! :complete
@@ -39,5 +42,19 @@ target 'SimpleIntegration' do
       :mac_catalyst_enabled => false
     )
     __apply_Xcode_12_5_M1_post_install_workaround(installer)
+
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # NISdk's deployment target; pods inherit 12.4 from the template otherwise.
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+        # boost relies on std::unary_function, removed from libc++ in C++17 (Xcode 26).
+        defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+        defs = [defs] if defs.is_a?(String)
+        unless defs.include?('_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1')
+          defs += ['_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1']
+        end
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+      end
+    end
   end
 end
