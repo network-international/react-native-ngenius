@@ -1,205 +1,153 @@
-const { resolveTokenizationBaseUrl } = require('./environments');
+const { buildTokenizationHeaders } = require('./headers');
 const {
-  buildTokenizationHeaders,
-  readHeader,
-  HEADER_CORRELATION_ID,
-} = require('./headers');
-const { errorFromResponse, errorFromMalformedResponse, TokenizationApiError } = require('./errors');
-const { TOKENIZATION_PATHS, resolveTokenizationUrl } = require('./endpoints');
+  errorFromResponse,
+  errorFromMalformedResponse,
+  TokenizationApiError,
+} = require('./errors');
 const {
-  parsePaymentMethodResponse,
-  parsePaymentMethodListResponse,
-  parseValidatePaymentMethodResponse,
-  mapCreateCardRequest,
-  mapCreateWalletRequest,
+  REFERENCE_PATTERN,
+  TOKENIZATION_PATHS,
+  resolveTokenizationUrl,
+} = require('./endpoints');
+const {
+  parseSavedCardResponse,
+  parseSavedTokensResponse,
+  mapThreeDSAuthenticationsRequest,
+  mapThreeDSChallengeResponseRequest,
 } = require('./models');
 const { createFetchTransport, parseJsonBody } = require('./transport');
-const { createIdempotencyStore, createIdempotencyKey } = require('./idempotency');
 
-const resolveAuth = async (getAuth) => {
-  if (typeof getAuth !== 'function') {
+const ACCESS_TOKEN_UNAVAILABLE = 'ACCESS_TOKEN_UNAVAILABLE';
+
+// The merchant backend obtains the identity access token; the SDK asks for it
+// just in time and never stores, refreshes or logs it.
+const resolveAccessToken = async (getAccessToken) => {
+  let accessToken;
+  try {
+    accessToken = await getAccessToken();
+  } catch (error) {
+    accessToken = undefined;
+  }
+  if (typeof accessToken !== 'string' || accessToken.length === 0) {
     throw new TokenizationApiError({
       status: 0,
-      code: 'UNAUTHORIZED',
-      message: 'Missing or invalid Bearer JWT token',
+      code: ACCESS_TOKEN_UNAVAILABLE,
+      message: 'Access token is not available',
     });
   }
-  const auth = await getAuth();
-  const accessToken =
-    auth && typeof auth.accessToken === 'string' ? auth.accessToken : '';
-  if (!accessToken) {
-    throw new TokenizationApiError({
-      status: 0,
-      code: 'UNAUTHORIZED',
-      message: 'Missing or invalid Bearer JWT token',
-    });
-  }
-  const apiKey =
-    auth && typeof auth.apiKey === 'string' && auth.apiKey.length > 0
-      ? auth.apiKey
-      : undefined;
-  return { accessToken, apiKey };
+  return accessToken;
 };
 
-const parseSuccess = (parse, body, responseHeaders, status) => {
+const parseSuccess = (parse, body, status) => {
   try {
-    return parse(body, responseHeaders);
+    return parse(body);
   } catch (error) {
     throw new TokenizationApiError({
       status,
       code: 'MALFORMED_RESPONSE',
-      message:
-        (error && error.message) ||
-        'Response did not match Payment Method Tokenization V1',
-      correlationId: readHeader(responseHeaders, HEADER_CORRELATION_ID),
+      message: (error && error.message) || 'Response did not match the tokenization contract',
     });
   }
 };
+
+const savedTokensQuery = ({ tokens, consentOff }) => {
+  const query = [];
+  if (tokens !== undefined) {
+    if (!Array.isArray(tokens)) {
+      throw new Error('tokens must be an array of tokenRef values');
+    }
+    tokens.forEach((tokenRef) => {
+      if (typeof tokenRef !== 'string' || !REFERENCE_PATTERN.test(tokenRef)) {
+        throw new Error('tokens contains an invalid tokenRef');
+      }
+      query.push(['tokens', tokenRef]);
+    });
+  }
+  if (typeof consentOff === 'boolean') {
+    query.push(['consentOff', String(consentOff)]);
+  }
+  return query;
+};
+
+const threeDSIds = (args) => ({
+  outletRef: args && args.outletRef,
+  tokenRef: args && args.tokenRef,
+  orderReference: args && args.orderReference,
+  paymentReference: args && args.paymentReference,
+});
 
 const createTokenizationClient = (options) => {
   if (!options || typeof options !== 'object') {
     throw new Error('createTokenizationClient options are required');
   }
-  const baseUrl =
-    typeof options.baseUrl === 'string' && options.baseUrl.length > 0
-      ? options.baseUrl.replace(/\/+$/, '')
-      : resolveTokenizationBaseUrl(options.environment);
+  if (typeof options.baseUrl !== 'string' || options.baseUrl.length === 0) {
+    throw new Error('createTokenizationClient requires baseUrl');
+  }
+  if (typeof options.getAccessToken !== 'function') {
+    throw new Error('createTokenizationClient requires getAccessToken');
+  }
+  const baseUrl = options.baseUrl;
+  const getAccessToken = options.getAccessToken;
   const transport = options.transport || createFetchTransport(options.fetchImpl);
-  const getAuth = options.getAuth;
-  const getCorrelationId =
-    typeof options.getCorrelationId === 'function'
-      ? options.getCorrelationId
-      : undefined;
-  const idempotency = createIdempotencyStore();
 
-  const request = async ({
-    method,
-    path,
-    correlationId,
-    idempotencyKey,
-    body,
-    emptySuccessStatuses,
-    parse,
-  }) => {
-    const auth = await resolveAuth(getAuth);
-    const resolvedCorrelationId =
-      correlationId || (getCorrelationId ? getCorrelationId() : undefined);
-    const headers = buildTokenizationHeaders({
-      accessToken: auth.accessToken,
-      apiKey: auth.apiKey,
-      correlationId: resolvedCorrelationId,
-      idempotencyKey,
-      hasBody: body !== undefined,
-    });
-    const url = resolveTokenizationUrl(baseUrl, path);
-    const response = await transport({
-      url,
-      method,
-      headers,
-      body,
-    });
-    const status = response.status;
-    const responseHeaders = response.headers || {};
-    if (emptySuccessStatuses && emptySuccessStatuses.indexOf(status) !== -1) {
-      return {
-        correlationId:
-          readHeader(responseHeaders, HEADER_CORRELATION_ID) ||
-          resolvedCorrelationId,
-      };
+  const request = async ({ method, path, query, body, parse }) => {
+    const url = resolveTokenizationUrl(baseUrl, path, query);
+    const accessToken = await resolveAccessToken(getAccessToken);
+    let response;
+    try {
+      response = await transport({
+        url,
+        method,
+        headers: buildTokenizationHeaders({ accessToken }),
+        body,
+      });
+    } catch (error) {
+      throw new TokenizationApiError({
+        status: 0,
+        code: 'NETWORK_ERROR',
+        message: 'Tokenization request could not be sent',
+      });
     }
+    const status = response.status;
     const parsedJson = parseJsonBody(response.text);
     if (!parsedJson.ok) {
-      throw errorFromMalformedResponse({
-        status,
-        headers: responseHeaders,
-        text: response.text,
-      });
+      throw errorFromMalformedResponse({ status });
     }
     if (status >= 200 && status < 300) {
-      return parseSuccess(parse, parsedJson.body, responseHeaders, status);
+      return parseSuccess(parse, parsedJson.body, status);
     }
-    throw errorFromResponse({
-      status,
-      headers: responseHeaders,
-      body: parsedJson.body,
-    });
+    throw errorFromResponse({ status, body: parsedJson.body });
   };
 
-  const idsFrom = (args) => ({
-    outletId: args.outletId,
-    consumerId: args.consumerId,
-    tokenRef: args.tokenRef,
-  });
+  const continuationParse = (body) =>
+    parseSavedCardResponse(body, { requireContinuation: true });
 
-  const resolveCreateIdempotencyKey = (args) => {
-    if (args && typeof args.idempotencyKey === 'string' && args.idempotencyKey.length > 0) {
-      return args.idempotencyKey;
-    }
-    if (args && typeof args.operationId === 'string' && args.operationId.length > 0) {
-      return idempotency.getOrCreate(args.operationId);
-    }
-    return createIdempotencyKey();
-  };
-
-  const client = {
-    listPaymentMethods: (args) =>
+  return {
+    getSavedTokens: async (args = {}) =>
       request({
         method: 'GET',
-        path: TOKENIZATION_PATHS.listPaymentMethods(idsFrom(args)),
-        correlationId: args && args.correlationId,
-        parse: parsePaymentMethodListResponse,
+        path: TOKENIZATION_PATHS.savedTokens({ outletRef: args.outletRef }),
+        query: savedTokensQuery(args),
+        parse: (body) => parseSavedTokensResponse(body, { consentOff: args.consentOff }),
       }),
-    getPaymentMethod: (args) =>
-      request({
-        method: 'GET',
-        path: TOKENIZATION_PATHS.getPaymentMethod(idsFrom(args)),
-        correlationId: args && args.correlationId,
-        parse: parsePaymentMethodResponse,
-      }),
-    validatePaymentMethod: (args) =>
+    authenticateThreeDS: async (args) =>
       request({
         method: 'POST',
-        path: TOKENIZATION_PATHS.validatePaymentMethod(idsFrom(args)),
-        correlationId: args && args.correlationId,
-        parse: parseValidatePaymentMethodResponse,
+        path: TOKENIZATION_PATHS.threeDSAuthentications(threeDSIds(args)),
+        body: mapThreeDSAuthenticationsRequest(args),
+        parse: continuationParse,
       }),
-    deletePaymentMethod: (args) =>
+    submitThreeDSChallengeResponse: async (args) =>
       request({
-        method: 'DELETE',
-        path: TOKENIZATION_PATHS.deletePaymentMethod(idsFrom(args)),
-        correlationId: args && args.correlationId,
-        emptySuccessStatuses: [204],
-        parse: () => undefined,
+        method: 'POST',
+        path: TOKENIZATION_PATHS.threeDSChallengeResponse(threeDSIds(args)),
+        body: mapThreeDSChallengeResponseRequest(args),
+        parse: continuationParse,
       }),
-    // Not called from NgeniusTokenization: CreateCardRequest requires PAN/CVV
-    // and current NISdk does not expose them safely to JS.
-    createCardPaymentMethod: (args) => {
-      return request({
-        method: 'POST',
-        path: TOKENIZATION_PATHS.createCardPaymentMethod(idsFrom(args)),
-        correlationId: args && args.correlationId,
-        idempotencyKey: resolveCreateIdempotencyKey(args),
-        body: mapCreateCardRequest(args && args.request),
-        parse: parsePaymentMethodResponse,
-      });
-    },
-    // Not called from NgeniusTokenization: Apple Pay / Google Pay RN results
-    // do not expose CreateWalletRequest.dan / onlinePaymentCryptogram.
-    createWalletPaymentMethod: (args) => {
-      return request({
-        method: 'POST',
-        path: TOKENIZATION_PATHS.createWalletPaymentMethod(idsFrom(args)),
-        correlationId: args && args.correlationId,
-        idempotencyKey: resolveCreateIdempotencyKey(args),
-        body: mapCreateWalletRequest(args && args.request),
-        parse: parsePaymentMethodResponse,
-      });
-    },
   };
-
-  return client;
 };
 
 module.exports = {
+  ACCESS_TOKEN_UNAVAILABLE,
   createTokenizationClient,
 };

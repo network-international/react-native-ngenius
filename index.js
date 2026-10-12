@@ -20,9 +20,6 @@ const {
   createTokenizationClient,
 } = require('./src/tokenization/api/TokenizationClient');
 const { TokenizationApiError } = require('./src/tokenization/api/errors');
-const {
-  TOKENIZATION_ENVIRONMENTS,
-} = require('./src/tokenization/api/environments');
 
 const { NiSdk } = NativeModules;
 
@@ -121,5 +118,4 @@ export {
   TOKENIZATION_SUPPORTED_METHODS,
   createTokenizationClient,
   TokenizationApiError,
-  TOKENIZATION_ENVIRONMENTS,
 };

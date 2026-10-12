@@ -22,7 +22,6 @@ describe('public SDK exports', () => {
     'NgeniusTokenization',
     'createTokenizationClient',
     'TokenizationApiError',
-    'TOKENIZATION_ENVIRONMENTS',
   ];
 
   it('keeps the existing named payment exports and adds NgeniusTokenization', () => {
@@ -41,5 +40,7 @@ describe('public SDK exports', () => {
     expect(indexSource).not.toMatch(/TOKENIZATION_MEDIA_TYPE/);
     expect(indexSource).not.toMatch(/mapCreateCardRequest/);
     expect(indexSource).not.toMatch(/TOKENIZATION_PATHS/);
+    expect(indexSource).not.toMatch(/TOKENIZATION_ENVIRONMENTS/);
+    expect(indexSource).not.toMatch(/api\.network\.global/);
   });
 });

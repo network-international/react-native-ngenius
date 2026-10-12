@@ -1,23 +1,3 @@
-const { HEADER_CORRELATION_ID, readHeader } = require('./headers');
-const { redactSensitive } = require('./redact');
-
-const headerMapFromFetch = (headers) => {
-  const out = {};
-  if (!headers) {
-    return out;
-  }
-  if (typeof headers.forEach === 'function') {
-    headers.forEach((value, key) => {
-      out[key] = value;
-    });
-    return out;
-  }
-  Object.keys(headers).forEach((key) => {
-    out[key] = headers[key];
-  });
-  return out;
-};
-
 const createFetchTransport = (fetchImpl) => {
   const fetchFn = fetchImpl || globalThis.fetch;
   if (typeof fetchFn !== 'function') {
@@ -35,7 +15,6 @@ const createFetchTransport = (fetchImpl) => {
     const text = await response.text();
     return {
       status: response.status,
-      headers: headerMapFromFetch(response.headers),
       text,
     };
   };
@@ -52,19 +31,7 @@ const parseJsonBody = (text) => {
   }
 };
 
-const describeTransportCall = ({ method, url, headers }) =>
-  redactSensitive({
-    method,
-    url,
-    headers,
-  });
-
-const correlationFromTransport = (headers) =>
-  readHeader(headers, HEADER_CORRELATION_ID);
-
 module.exports = {
   createFetchTransport,
   parseJsonBody,
-  describeTransportCall,
-  correlationFromTransport,
 };

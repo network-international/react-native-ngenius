@@ -83,15 +83,3 @@ describe('POC result model', () => {
     expect(result).not.toHaveProperty('pan');
   });
 });
-
-describe('session idempotency', () => {
-  it('reuses one idempotency key per logical native operation', () => {
-    const session = createTokenizationSession();
-    session.start();
-    const first = session.idempotencyKeyFor('CARD');
-    const retry = session.idempotencyKeyFor('CARD');
-    expect(first).toBe(retry);
-    session.start();
-    expect(session.idempotencyKeyFor('CARD')).not.toBe(first);
-  });
-});

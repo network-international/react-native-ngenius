@@ -1,196 +1,228 @@
-const CARD_SCHEMES = [
-  'VISA',
-  'MASTERCARD',
-  'AMEX',
-  'DINERS',
-  'JCB',
-  'UNIONPAY',
-];
+const { REFERENCE_PATTERN } = require('./endpoints');
 
-const WALLET_SCHEMES = ['VISA', 'MASTERCARD', 'AMEX'];
+const TOKEN_TYPES = ['CARD', 'WALLET'];
 const WALLET_TYPES = ['APPLE_PAY', 'GOOGLE_PAY'];
-const PAYMENT_METHOD_TYPES = ['CARD', 'WALLET'];
-const PAYMENT_METHOD_STATUSES = ['ACTIVE', 'DELETED', 'EXPIRED'];
+const TOKEN_STATUSES = ['VERIFIED', 'AWAIT_3DS', 'FAILED'];
+const THREE_DS_COMP_IND = ['Y', 'N', 'U'];
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LAST4_PATTERN = /^[0-9]{4}$/;
 const EXPIRY_PATTERN = /^[0-9]{4}-(0[1-9]|1[0-2])$/;
-const PAN_PATTERN = /^[0-9]{13,19}$/;
-const CVV_PATTERN = /^[0-9]{3,4}$/;
 
-const isUuid = (value) => typeof value === 'string' && UUID_PATTERN.test(value);
+const isNonEmptyString = (value) => typeof value === 'string' && value.length > 0;
 
-const optionalString = (value) =>
-  typeof value === 'string' && value.length > 0 ? value : null;
+const optionalString = (value, name) => {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${name} is invalid`);
+  }
+  return value;
+};
 
-const parsePaymentMethodResponse = (value) => {
+const parseCardDetails = (value) => {
   if (!value || typeof value !== 'object') {
-    throw new Error('PaymentMethodResponse is missing');
+    throw new Error('SavedCardResponse.cardDetails is invalid');
   }
-  const tokenRef = value.tokenRef;
-  const type = value.type;
-  const scheme = value.scheme;
-  const last4digits = value.last4digits;
-  const status = value.status;
-  if (!isUuid(tokenRef)) {
-    throw new Error('PaymentMethodResponse.tokenRef is invalid');
+  if (!isNonEmptyString(value.scheme)) {
+    throw new Error('SavedCardResponse.cardDetails.scheme is invalid');
   }
-  if (PAYMENT_METHOD_TYPES.indexOf(type) === -1) {
-    throw new Error('PaymentMethodResponse.type is invalid');
+  if (typeof value.last4 !== 'string' || !LAST4_PATTERN.test(value.last4)) {
+    throw new Error('SavedCardResponse.cardDetails.last4 is invalid');
   }
-  if (CARD_SCHEMES.indexOf(scheme) === -1) {
-    throw new Error('PaymentMethodResponse.scheme is invalid');
+  if (typeof value.expiry !== 'string' || !EXPIRY_PATTERN.test(value.expiry)) {
+    throw new Error('SavedCardResponse.cardDetails.expiry is invalid');
   }
-  if (typeof last4digits !== 'string' || !LAST4_PATTERN.test(last4digits)) {
-    throw new Error('PaymentMethodResponse.last4digits is invalid');
+  const details = {
+    scheme: value.scheme,
+    last4: value.last4,
+    expiry: value.expiry,
+  };
+  const cardholderName = optionalString(
+    value.cardholderName,
+    'SavedCardResponse.cardDetails.cardholderName'
+  );
+  if (cardholderName !== undefined) {
+    details.cardholderName = cardholderName;
   }
-  if (PAYMENT_METHOD_STATUSES.indexOf(status) === -1) {
-    throw new Error('PaymentMethodResponse.status is invalid');
+  return details;
+};
+
+const METHOD_FIELDS = [
+  'threeDSMethodURL',
+  'threeDSServerTransID',
+  'threeDSMethodData',
+  'threeDSMethodNotificationURL',
+  'messageVersion',
+];
+const CHALLENGE_FIELDS = [
+  'threeDSServerTransID',
+  'acsTransID',
+  'acsURL',
+  'base64EncodedCReq',
+  'transStatus',
+  'messageVersion',
+];
+
+const copyStrings = (source, fields) => {
+  const out = {};
+  fields.forEach((field) => {
+    const value = optionalString(source[field], `SavedCardResponse.3ds2.${field}`);
+    if (value !== undefined) {
+      out[field] = value;
+    }
+  });
+  return out;
+};
+
+// add-card-api.json returns either the 3DS method step data or, after
+// authentications, the ACS challenge data in the same `3ds2` object.
+const parseThreeDS2 = (value) => {
+  if (!value || typeof value !== 'object') {
+    throw new Error('SavedCardResponse.3ds2 is invalid');
+  }
+  if (isNonEmptyString(value.acsURL) || isNonEmptyString(value.base64EncodedCReq)) {
+    if (!isNonEmptyString(value.acsURL) || !isNonEmptyString(value.base64EncodedCReq)) {
+      throw new Error('SavedCardResponse.3ds2 challenge data is incomplete');
+    }
+    return { step: 'CHALLENGE', ...copyStrings(value, CHALLENGE_FIELDS) };
+  }
+  if (!isNonEmptyString(value.threeDSServerTransID)) {
+    throw new Error('SavedCardResponse.3ds2.threeDSServerTransID is invalid');
+  }
+  const method = copyStrings(value, METHOD_FIELDS);
+  if (method.threeDSMethodURL && !method.threeDSMethodData) {
+    throw new Error('SavedCardResponse.3ds2.threeDSMethodData is invalid');
+  }
+  return { step: 'METHOD', ...method };
+};
+
+/**
+ * Parses SavedCardResponse. `requireContinuation` is set for add card / add
+ * wallet / 3DS responses, where AWAIT_3DS must carry the references and 3ds2
+ * data needed for the next call. Saved-token lists do not carry them.
+ */
+const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => {
+  if (!value || typeof value !== 'object') {
+    throw new Error('SavedCardResponse is missing');
+  }
+  const { tokenRef, type, status } = value;
+  if (typeof tokenRef !== 'string' || !REFERENCE_PATTERN.test(tokenRef)) {
+    throw new Error('SavedCardResponse.tokenRef is invalid');
+  }
+  if (TOKEN_TYPES.indexOf(type) === -1) {
+    throw new Error('SavedCardResponse.type is invalid');
+  }
+  if (TOKEN_STATUSES.indexOf(status) === -1) {
+    throw new Error('SavedCardResponse.status is invalid');
   }
   let walletType = null;
-  if (value.walletType != null) {
+  if (type === 'WALLET') {
     if (WALLET_TYPES.indexOf(value.walletType) === -1) {
-      throw new Error('PaymentMethodResponse.walletType is invalid');
+      throw new Error('SavedCardResponse.walletType is invalid');
     }
     walletType = value.walletType;
+  } else if (value.walletType != null) {
+    throw new Error('SavedCardResponse.walletType is not sent for cards');
   }
-  let expiry = null;
-  if (value.expiry != null) {
-    if (typeof value.expiry !== 'string' || !EXPIRY_PATTERN.test(value.expiry)) {
-      throw new Error('PaymentMethodResponse.expiry is invalid');
+
+  let cardDetails = null;
+  if (value.cardDetails != null) {
+    cardDetails = parseCardDetails(value.cardDetails);
+  } else if (status === 'VERIFIED') {
+    throw new Error('SavedCardResponse.cardDetails is required when VERIFIED');
+  }
+
+  const result = { tokenRef, type, walletType, status, cardDetails };
+  const orderReference = optionalString(value.orderReference, 'SavedCardResponse.orderReference');
+  const paymentReference = optionalString(value.paymentReference, 'SavedCardResponse.paymentReference');
+  if (orderReference !== undefined) result.orderReference = orderReference;
+  if (paymentReference !== undefined) result.paymentReference = paymentReference;
+
+  if (value['3ds2'] != null) {
+    if (status !== 'AWAIT_3DS') {
+      throw new Error('SavedCardResponse.3ds2 is only sent with AWAIT_3DS');
     }
-    expiry = value.expiry;
+    result.threeDS2 = parseThreeDS2(value['3ds2']);
   }
+
+  if (requireContinuation && status === 'AWAIT_3DS') {
+    [orderReference, paymentReference].forEach((reference) => {
+      if (typeof reference !== 'string' || !REFERENCE_PATTERN.test(reference)) {
+        throw new Error('SavedCardResponse references are required for AWAIT_3DS');
+      }
+    });
+    if (!result.threeDS2) {
+      throw new Error('SavedCardResponse.3ds2 is required for AWAIT_3DS');
+    }
+  }
+  return result;
+};
+
+const parseSavedTokensResponse = (value, { consentOff } = {}) => {
+  if (!value || typeof value !== 'object' || !Array.isArray(value.tokens)) {
+    throw new Error('Saved tokens response is invalid');
+  }
+  const result = {
+    tokens: value.tokens.map((token) => parseSavedCardResponse(token)),
+  };
+  // Agreed contract: consentOff=true needs no tncUrl; false/omitted returns it.
+  if (consentOff !== true && value.tncUrl != null) {
+    if (typeof value.tncUrl !== 'string') {
+      throw new Error('Saved tokens response tncUrl is invalid');
+    }
+    result.tncUrl = value.tncUrl;
+  }
+  return result;
+};
+
+const BROWSER_INFO_FIELDS = [
+  'browserAcceptHeader',
+  'browserJavaEnabled',
+  'browserJavascriptEnabled',
+  'browserLanguage',
+  'acceptBrowserLanguages',
+  'browserColorDepth',
+  'browserScreenHeight',
+  'browserScreenWidth',
+  'browserTZ',
+  'browserUserAgent',
+  'challengeWindowSize',
+];
+
+const mapThreeDSAuthenticationsRequest = (input) => {
+  if (!input || THREE_DS_COMP_IND.indexOf(input.threeDSCompInd) === -1) {
+    throw new Error('threeDSCompInd must be Y, N or U');
+  }
+  if (!input.browserInfo || typeof input.browserInfo !== 'object') {
+    throw new Error('browserInfo is required');
+  }
+  const browserInfo = {};
+  BROWSER_INFO_FIELDS.forEach((field) => {
+    if (input.browserInfo[field] !== undefined) {
+      browserInfo[field] = input.browserInfo[field];
+    }
+  });
   return {
-    tokenRef,
-    type,
-    scheme,
-    walletType,
-    last4digits,
-    expiry,
-    status,
+    deviceChannel: 'BRW',
+    threeDSCompInd: input.threeDSCompInd,
+    browserInfo,
   };
 };
 
-const parsePaymentMethodListResponse = (value) => {
-  if (!value || typeof value !== 'object' || !Array.isArray(value.paymentMethods)) {
-    throw new Error('PaymentMethodListResponse is invalid');
+const mapThreeDSChallengeResponseRequest = (input) => {
+  if (!input || !isNonEmptyString(input.base64EncodedCRes)) {
+    throw new Error('base64EncodedCRes is required');
   }
-  return {
-    paymentMethods: value.paymentMethods.map(parsePaymentMethodResponse),
-  };
-};
-
-const parseValidatePaymentMethodResponse = (value) => {
-  if (!value || typeof value !== 'object' || typeof value.valid !== 'boolean') {
-    throw new Error('ValidatePaymentMethodResponse is invalid');
-  }
-  const method = parsePaymentMethodResponse(value);
-  return {
-    valid: value.valid,
-    ...method,
-  };
-};
-
-const optionalOrderContext = (order) => {
-  if (order && typeof order === 'object' && !Array.isArray(order)) {
-    return order;
-  }
-  return undefined;
-};
-
-const mapCreateCardRequest = (input) => {
-  if (!input || typeof input !== 'object') {
-    throw new Error('CreateCardRequest is required');
-  }
-  const pan = input.pan;
-  const expiry = input.expiry;
-  const cvv = input.cvv;
-  const scheme = input.scheme;
-  if (typeof pan !== 'string' || !PAN_PATTERN.test(pan)) {
-    throw new Error('CreateCardRequest.pan is invalid');
-  }
-  if (typeof expiry !== 'string' || !EXPIRY_PATTERN.test(expiry)) {
-    throw new Error('CreateCardRequest.expiry is invalid');
-  }
-  if (typeof cvv !== 'string' || !CVV_PATTERN.test(cvv)) {
-    throw new Error('CreateCardRequest.cvv is invalid');
-  }
-  if (CARD_SCHEMES.indexOf(scheme) === -1) {
-    throw new Error('CreateCardRequest.scheme is invalid');
-  }
-  const body = { pan, expiry, cvv, scheme };
-  const cardholderName = optionalString(input.cardholderName);
-  if (cardholderName) {
-    body.cardholderName = cardholderName;
-  }
-  const order = optionalOrderContext(input.order);
-  if (order) {
-    body.order = order;
-  }
-  return body;
-};
-
-const mapCreateWalletRequest = (input) => {
-  if (!input || typeof input !== 'object') {
-    throw new Error('CreateWalletRequest is required');
-  }
-  const walletType = input.walletType;
-  const dan = input.dan;
-  const onlinePaymentCryptogram = input.onlinePaymentCryptogram;
-  const expiry = input.expiry;
-  const scheme = input.scheme;
-  if (WALLET_TYPES.indexOf(walletType) === -1) {
-    throw new Error('CreateWalletRequest.walletType is invalid');
-  }
-  if (typeof dan !== 'string' || dan.length === 0) {
-    throw new Error('CreateWalletRequest.dan is invalid');
-  }
-  if (
-    typeof onlinePaymentCryptogram !== 'string' ||
-    onlinePaymentCryptogram.length === 0
-  ) {
-    throw new Error('CreateWalletRequest.onlinePaymentCryptogram is invalid');
-  }
-  if (typeof expiry !== 'string' || !EXPIRY_PATTERN.test(expiry)) {
-    throw new Error('CreateWalletRequest.expiry is invalid');
-  }
-  if (WALLET_SCHEMES.indexOf(scheme) === -1) {
-    throw new Error('CreateWalletRequest.scheme is invalid');
-  }
-  const body = {
-    walletType,
-    dan,
-    onlinePaymentCryptogram,
-    expiry,
-    scheme,
-  };
-  if (optionalString(input.eciIndicator)) {
-    body.eciIndicator = input.eciIndicator;
-  }
-  if (optionalString(input.message)) {
-    body.message = input.message;
-  }
-  const order = optionalOrderContext(input.order);
-  if (order) {
-    body.order = order;
-  }
-  return body;
+  return { base64EncodedCRes: input.base64EncodedCRes };
 };
 
 module.exports = {
-  CARD_SCHEMES,
-  WALLET_SCHEMES,
+  TOKEN_TYPES,
   WALLET_TYPES,
-  PAYMENT_METHOD_TYPES,
-  PAYMENT_METHOD_STATUSES,
-  UUID_PATTERN,
-  isUuid,
-  parsePaymentMethodResponse,
-  parsePaymentMethodListResponse,
-  parseValidatePaymentMethodResponse,
-  optionalOrderContext,
-  mapCreateCardRequest,
-  mapCreateWalletRequest,
+  TOKEN_STATUSES,
+  parseSavedCardResponse,
+  parseSavedTokensResponse,
+  mapThreeDSAuthenticationsRequest,
+  mapThreeDSChallengeResponseRequest,
 };

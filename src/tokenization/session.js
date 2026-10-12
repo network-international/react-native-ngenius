@@ -1,4 +1,3 @@
-const { createIdempotencyStore } = require('./api/idempotency');
 const {
   NATIVE_CAPTURE_DEMO,
   REAL_TOKENIZATION_API,
@@ -13,7 +12,6 @@ const createTokenizationSession = () => {
   let successEmitted = false;
   let errorEmitted = false;
   let cancelEmitted = false;
-  const idempotency = createIdempotencyStore();
 
   return {
     start() {
@@ -21,10 +19,6 @@ const createTokenizationSession = () => {
       successEmitted = false;
       errorEmitted = false;
       cancelEmitted = false;
-      idempotency.reset();
-    },
-    idempotencyKeyFor(operationId) {
-      return idempotency.getOrCreate(operationId);
     },
     tryBeginNative() {
       if (inFlight || successEmitted || cancelEmitted) {

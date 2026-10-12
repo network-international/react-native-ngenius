@@ -1,619 +1,487 @@
 const {
   createTokenizationClient,
+  ACCESS_TOKEN_UNAVAILABLE,
 } = require('../TokenizationClient');
 const { TokenizationApiError } = require('../errors');
-const {
-  TOKENIZATION_MEDIA_TYPE,
-  HEADER_ACCEPT,
-  HEADER_CONTENT_TYPE,
-  HEADER_AUTHORIZATION,
-  HEADER_API_KEY,
-  HEADER_CORRELATION_ID,
-  HEADER_IDEMPOTENCY_KEY,
-} = require('../headers');
-const { TOKENIZATION_ENVIRONMENTS } = require('../environments');
-const { redactSensitive } = require('../redact');
-const {
-  mapCreateCardRequest,
-  mapCreateWalletRequest,
-} = require('../models');
-const { inspectNativeWalletForCreateRequest } = require('../nativeCreateBlockers');
+const { HEADER_ACCESS_TOKEN, HEADER_CONTENT_TYPE } = require('../headers');
+const { TOKENIZATION_PATHS } = require('../endpoints');
+const { parseSavedCardResponse } = require('../models');
 
-const DUMMY_JWT = 'test-access-token';
-const DUMMY_API_KEY = 'test-restricted-key';
-const OUTLET = 'outlet 123';
-const CONSUMER = 'consumer/456';
-const TOKEN_REF = '550e8400-e29b-41d4-a716-446655440000';
+// Fixtures follow the examples in add-card-api.json / saved-tokens-api.json.
+const BASE_URL = 'https://tokenization.test';
+const ACCESS_TOKEN = 'test-access-token';
+const OUTLET = 'outlet-1';
 
-const paymentMethod = {
-  tokenRef: TOKEN_REF,
+const verifiedCard = {
+  tokenRef: 'tok_1',
   type: 'CARD',
-  scheme: 'VISA',
-  walletType: null,
-  last4digits: '4242',
-  expiry: '2033-01',
-  status: 'ACTIVE',
+  status: 'VERIFIED',
+  cardDetails: {
+    scheme: 'VISA',
+    last4: '1111',
+    expiry: '2028-12',
+    cardholderName: 'John Smith',
+  },
+  orderReference: 'ord-1',
+  paymentReference: 'pay-1',
 };
 
-const jsonResponse = (status, body, extraHeaders) => ({
-  status,
-  headers: {
-    [HEADER_CORRELATION_ID]: 'corr-from-header',
-    ...extraHeaders,
+const methodStep = {
+  ...verifiedCard,
+  status: 'AWAIT_3DS',
+  '3ds2': {
+    threeDSMethodURL: 'https://acs.bank.test/3ds-method',
+    threeDSServerTransID: '8a880dc0-d2d2-4067-bcb1-b08d1690b26e',
+    threeDSMethodData: 'method-data',
+    threeDSMethodNotificationURL: 'https://paypage.test/notification',
+    messageVersion: '2.2.0',
   },
+};
+
+const challengeStep = {
+  tokenRef: 'tok_1',
+  type: 'CARD',
+  status: 'AWAIT_3DS',
+  orderReference: 'ord-1',
+  paymentReference: 'pay-1',
+  '3ds2': {
+    threeDSServerTransID: '8a880dc0-d2d2-4067-bcb1-b08d1690b26e',
+    acsTransID: 'd7c1ee99-9478-44a6-b1f2-391e29c6b340',
+    acsURL: 'https://acs.bank.test/challenge',
+    base64EncodedCReq: 'creq-value',
+    transStatus: 'C',
+    messageVersion: '2.2.0',
+  },
+};
+
+const browserInfo = {
+  browserAcceptHeader: 'application/json, text/plain, */*',
+  browserJavaEnabled: false,
+  browserJavascriptEnabled: true,
+  browserLanguage: 'en-US',
+  acceptBrowserLanguages: ['en-US', 'en'],
+  browserColorDepth: '24',
+  browserScreenHeight: '900',
+  browserScreenWidth: '1440',
+  browserTZ: '-240',
+  browserUserAgent: 'Mozilla/5.0',
+  challengeWindowSize: '05',
+};
+
+const threeDSIds = {
+  outletRef: OUTLET,
+  tokenRef: 'tok_1',
+  orderReference: 'ord-1',
+  paymentReference: 'pay-1',
+};
+
+const jsonResponse = (status, body) => ({
+  status,
   text: body == null ? '' : JSON.stringify(body),
 });
 
 describe('TokenizationClient', () => {
   const calls = [];
 
-  const createClient = (overrides) =>
+  const createClient = ({ respond, getAccessToken, ...rest } = {}) =>
     createTokenizationClient({
-      environment: 'uat',
-      getAuth: async () => ({
-        accessToken: DUMMY_JWT,
-        apiKey: DUMMY_API_KEY,
-      }),
+      baseUrl: BASE_URL,
+      getAccessToken: getAccessToken || (async () => ACCESS_TOKEN),
       transport: async (request) => {
         calls.push(request);
-        return overrides.respond(request);
+        return respond(request);
       },
-      ...overrides.client,
+      ...rest,
     });
 
   beforeEach(() => {
     calls.length = 0;
   });
 
-  it('encodes outletId, consumerId, and tokenRef in the path', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(200, paymentMethod),
+  describe('configuration', () => {
+    it('requires an explicit baseUrl and ships no environment defaults', () => {
+      expect(() =>
+        createTokenizationClient({ getAccessToken: async () => ACCESS_TOKEN })
+      ).toThrow('baseUrl');
+      expect(() =>
+        createTokenizationClient({ environment: 'uat', getAccessToken: async () => ACCESS_TOKEN })
+      ).toThrow('baseUrl');
     });
-    await client.getPaymentMethod({
-      outletId: OUTLET,
-      consumerId: CONSUMER,
-      tokenRef: TOKEN_REF,
-    });
-    expect(calls[0].url).toBe(
-      `${TOKENIZATION_ENVIRONMENTS.uat}/outlets/${encodeURIComponent(
-        OUTLET
-      )}/consumers/${encodeURIComponent(CONSUMER)}/payment-methods/${encodeURIComponent(
-        TOKEN_REF
-      )}`
-    );
-  });
 
-  it('uses the production base URL when environment is production', async () => {
-    const client = createTokenizationClient({
-      environment: 'production',
-      getAuth: async () => ({ accessToken: DUMMY_JWT, apiKey: DUMMY_API_KEY }),
-      transport: async (request) => {
-        calls.push(request);
-        return jsonResponse(200, { paymentMethods: [] });
-      },
+    it('requires an access-token provider instead of static credentials', () => {
+      expect(() => createTokenizationClient({ baseUrl: BASE_URL })).toThrow('getAccessToken');
+      expect(() =>
+        createTokenizationClient({ baseUrl: BASE_URL, accessToken: ACCESS_TOKEN })
+      ).toThrow('getAccessToken');
     });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    expect(calls[0].url.startsWith(TOKENIZATION_ENVIRONMENTS.production)).toBe(
-      true
-    );
-  });
 
-  it('sends V1 Accept on every request and Content-Type only when there is a body', async () => {
-    const client = createClient({
-      respond: (request) => {
-        if (request.method === 'GET') {
-          return jsonResponse(200, { paymentMethods: [paymentMethod] });
-        }
-        return jsonResponse(200, { valid: true, ...paymentMethod });
-      },
-    });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    expect(calls[0].headers[HEADER_ACCEPT]).toBe(TOKENIZATION_MEDIA_TYPE);
-    expect(calls[0].headers[HEADER_CONTENT_TYPE]).toBeUndefined();
-
-    await client.validatePaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      tokenRef: TOKEN_REF,
-    });
-    expect(calls[1].headers[HEADER_ACCEPT]).toBe(TOKENIZATION_MEDIA_TYPE);
-    expect(calls[1].headers[HEADER_CONTENT_TYPE]).toBeUndefined();
-    expect(calls[1].method).toBe('POST');
-    expect(calls[1].url).toMatch(/\/validate$/);
-  });
-
-  it('sends Authorization Bearer and X-API-Key from the auth provider', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(200, { paymentMethods: [] }),
-    });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    expect(calls[0].headers[HEADER_AUTHORIZATION]).toBe(`Bearer ${DUMMY_JWT}`);
-    expect(calls[0].headers[HEADER_API_KEY]).toBe(DUMMY_API_KEY);
-  });
-
-  it('omits X-API-Key when the auth provider does not supply apiKey', async () => {
-    const client = createTokenizationClient({
-      environment: 'uat',
-      getAuth: async () => ({ accessToken: DUMMY_JWT }),
-      transport: async (request) => {
-        calls.push(request);
-        return jsonResponse(200, { paymentMethods: [] });
-      },
-    });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    expect(calls[0].headers[HEADER_API_KEY]).toBeUndefined();
-  });
-
-  it('sends X-Correlation-Id when provided', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(200, { paymentMethods: [] }),
-    });
-    await client.listPaymentMethods({
-      outletId: 'o',
-      consumerId: 'c',
-      correlationId: 'corr-1',
-    });
-    expect(calls[0].headers[HEADER_CORRELATION_ID]).toBe('corr-1');
-  });
-
-  it('reuses one Idempotency-Key for retries of the same create operation', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(201, paymentMethod),
-    });
-    const request = {
-      pan: '4111111111111111',
-      expiry: '2033-01',
-      cvv: '123',
-      scheme: 'VISA',
-    };
-    await client.createCardPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      operationId: 'add-card',
-      request,
-    });
-    await client.createCardPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      operationId: 'add-card',
-      request,
-    });
-    expect(calls[0].headers[HEADER_IDEMPOTENCY_KEY]).toBe(
-      calls[1].headers[HEADER_IDEMPOTENCY_KEY]
-    );
-    expect(calls[0].headers[HEADER_CONTENT_TYPE]).toBe(TOKENIZATION_MEDIA_TYPE);
-    expect(calls[0].method).toBe('POST');
-    expect(calls[0].url).toMatch(/\/payment-methods\/card$/);
-  });
-
-  it('uses a caller-supplied Idempotency-Key and does not reuse keys across operations', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(201, paymentMethod),
-    });
-    const request = {
-      pan: '4111111111111111',
-      expiry: '2033-01',
-      cvv: '123',
-      scheme: 'VISA',
-    };
-    await client.createCardPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      idempotencyKey: 'explicit-key-1',
-      request,
-    });
-    await client.createCardPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      request,
-    });
-    await client.createCardPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      request,
-    });
-    expect(calls[0].headers[HEADER_IDEMPOTENCY_KEY]).toBe('explicit-key-1');
-    expect(calls[1].headers[HEADER_IDEMPOTENCY_KEY]).not.toBe(
-      calls[2].headers[HEADER_IDEMPOTENCY_KEY]
-    );
-    expect(calls[1].headers[HEADER_IDEMPOTENCY_KEY]).not.toBe('explicit-key-1');
-  });
-
-  it('does not send Idempotency-Key on list/get/validate/delete', async () => {
-    const client = createClient({
-      respond: (request) => {
-        if (request.method === 'DELETE') {
-          return { status: 204, headers: {}, text: '' };
-        }
-        if (String(request.url).endsWith('/validate')) {
-          return jsonResponse(200, { valid: true, ...paymentMethod });
-        }
-        if (request.method === 'GET' && String(request.url).indexOf(TOKEN_REF) !== -1) {
-          return jsonResponse(200, paymentMethod);
-        }
-        return jsonResponse(200, { paymentMethods: [] });
-      },
-    });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    await client.getPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      tokenRef: TOKEN_REF,
-    });
-    await client.validatePaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      tokenRef: TOKEN_REF,
-    });
-    await client.deletePaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      tokenRef: TOKEN_REF,
-    });
-    calls.forEach((call) => {
-      expect(call.headers[HEADER_IDEMPOTENCY_KEY]).toBeUndefined();
+    it('exposes only client-side contract operations', () => {
+      const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
+      expect(Object.keys(client).sort()).toEqual([
+        'authenticateThreeDS',
+        'getSavedTokens',
+        'submitThreeDSChallengeResponse',
+      ]);
     });
   });
 
-  it('calls getAuth on every operation and does not cache the token', async () => {
-    const getAuth = jest.fn(async () => ({
-      accessToken: DUMMY_JWT,
-      apiKey: DUMMY_API_KEY,
-    }));
-    const client = createTokenizationClient({
-      environment: 'uat',
-      getAuth,
-      transport: async (request) => {
-        calls.push(request);
-        return jsonResponse(200, { paymentMethods: [] });
-      },
-    });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    expect(getAuth).toHaveBeenCalledTimes(2);
-  });
-
-  it('surfaces missing auth as TokenizationApiError without leaking credentials', async () => {
-    const client = createTokenizationClient({
-      environment: 'uat',
-      getAuth: async () => ({ accessToken: '' }),
-      transport: async () => jsonResponse(200, { paymentMethods: [] }),
-    });
-    let caught;
-    try {
-      await client.listPaymentMethods({ outletId: 'o', consumerId: 'c' });
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(TokenizationApiError);
-    expect(caught.code).toBe('UNAUTHORIZED');
-    expect(JSON.stringify(caught.toJSON())).not.toMatch(DUMMY_JWT);
-  });
-
-  it('rejects a 201 missing required PaymentMethodResponse fields', async () => {
-    const client = createClient({
-      respond: () =>
-        jsonResponse(201, {
-          tokenRef: TOKEN_REF,
-          type: 'CARD',
-          usageType: 'UNSCHEDULED',
-          authType: 'VERIFY',
-        }),
-    });
-    await expect(
-      client.createCardPaymentMethod({
-        outletId: 'o',
-        consumerId: 'c',
-        operationId: 'add-card-invalid',
-        request: {
-          pan: '4111111111111111',
-          expiry: '2033-01',
-          cvv: '123',
-          scheme: 'VISA',
-        },
-      })
-    ).rejects.toMatchObject({
-      name: 'TokenizationApiError',
-      code: 'MALFORMED_RESPONSE',
-    });
-  });
-
-  it('drops unknown V1 fields such as usageType from a valid response', async () => {
-    const client = createClient({
-      respond: () =>
-        jsonResponse(200, {
-          ...paymentMethod,
-          usageType: 'UNSCHEDULED',
-          authType: 'VERIFY',
-        }),
-    });
-    const result = await client.getPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      tokenRef: TOKEN_REF,
-    });
-    expect(result).toEqual(paymentMethod);
-    expect(result).not.toHaveProperty('usageType');
-    expect(result).not.toHaveProperty('authType');
-  });
-
-  it('models POST /wallet without treating Google Pay token as DAN', async () => {
-    const client = createClient({
-      respond: () =>
-        jsonResponse(201, {
-          ...paymentMethod,
-          type: 'WALLET',
-          walletType: 'GOOGLE_PAY',
-        }),
-    });
-    await client.createWalletPaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      operationId: 'add-wallet',
-      request: {
-        walletType: 'GOOGLE_PAY',
-        dan: 'dummy-dan',
-        onlinePaymentCryptogram: 'dummy-cryptogram',
-        expiry: '2033-01',
-        scheme: 'VISA',
-      },
-    });
-    expect(calls[0].url).toMatch(/\/payment-methods\/wallet$/);
-    expect(calls[0].headers[HEADER_IDEMPOTENCY_KEY]).toBeTruthy();
-    expect(calls[0].body.dan).toBe('dummy-dan');
-    expect(calls[0].body).not.toHaveProperty('token');
-  });
-
-  it('parses PaymentMethodListResponse', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(200, { paymentMethods: [paymentMethod] }),
-    });
-    const result = await client.listPaymentMethods({
-      outletId: 'o',
-      consumerId: 'c',
-    });
-    expect(result).toEqual({ paymentMethods: [paymentMethod] });
-    expect(result.paymentMethods[0]).not.toHaveProperty('usageType');
-    expect(result.paymentMethods[0]).not.toHaveProperty('authType');
-  });
-
-  it('parses PaymentMethodResponse', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(200, paymentMethod),
-    });
-    await expect(
-      client.getPaymentMethod({
-        outletId: 'o',
-        consumerId: 'c',
-        tokenRef: TOKEN_REF,
-      })
-    ).resolves.toEqual(paymentMethod);
-  });
-
-  it('parses ValidatePaymentMethodResponse', async () => {
-    const client = createClient({
-      respond: () => jsonResponse(200, { valid: true, ...paymentMethod }),
-    });
-    await expect(
-      client.validatePaymentMethod({
-        outletId: 'o',
-        consumerId: 'c',
-        tokenRef: TOKEN_REF,
-      })
-    ).resolves.toEqual({ valid: true, ...paymentMethod });
-  });
-
-  it('treats delete 204 as success with no PaymentMethodResponse', async () => {
-    const client = createClient({
-      respond: () => ({
-        status: 204,
-        headers: { [HEADER_CORRELATION_ID]: 'corr-del' },
-        text: '',
-      }),
-    });
-    const result = await client.deletePaymentMethod({
-      outletId: 'o',
-      consumerId: 'c',
-      tokenRef: TOKEN_REF,
-    });
-    expect(result).toEqual({ correlationId: 'corr-del' });
-    expect(calls[0].method).toBe('DELETE');
-  });
-
-  const errorCases = [
-    [
-      400,
-      {
-        code: 'INVALID_REQUEST',
-        message: 'Invalid card expiry format or unsupported scheme',
-        correlationId: 'c-400',
-      },
-    ],
-    [
-      401,
-      {
-        code: 'UNAUTHORIZED',
-        message: 'Missing or invalid Bearer JWT token',
-        correlationId: 'c-401',
-      },
-    ],
-    [
-      403,
-      {
-        code: 'FORBIDDEN',
-        message:
-          'Caller is not authorized to access payment methods for this outlet/consumer',
-        correlationId: 'c-403',
-      },
-    ],
-    [
-      404,
-      {
-        code: 'PAYMENT_METHOD_NOT_FOUND',
-        message: 'Payment method was not found for the supplied consumer',
-        correlationId: 'c-404',
-      },
-    ],
-    [
-      409,
-      {
-        code: 'DUPLICATE_IDEMPOTENCY_KEY',
-        message:
-          'A request with this Idempotency-Key is currently being processed or already succeeded',
-        correlationId: 'c-409',
-      },
-    ],
-    [
-      422,
-      {
-        code: 'VERIFICATION_FAILED',
-        message: 'Card verification order was declined by payment gateway',
-        correlationId: 'c-422',
-      },
-    ],
-    [
-      502,
-      {
-        code: 'DEPENDENCY_ERROR',
-        message: 'Downstream vault or transaction service failed to respond',
-        correlationId: 'c-502',
-      },
-    ],
-    [
-      500,
-      {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'An unexpected error occurred while processing the request',
-        correlationId: 'c-500',
-      },
-    ],
-  ];
-
-  errorCases.forEach(([status, body]) => {
-    it(`surfaces ErrorResponse for HTTP ${status}`, async () => {
-      const client = createClient({
-        respond: () => jsonResponse(status, body),
+  describe('Access-Token', () => {
+    it('sends the provider token as Access-Token with JSON content type only', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
+      await client.getSavedTokens({ outletRef: OUTLET });
+      expect(calls[0].headers).toEqual({
+        [HEADER_ACCESS_TOKEN]: ACCESS_TOKEN,
+        [HEADER_CONTENT_TYPE]: 'application/json',
       });
-      let caught;
-      try {
-        await client.getPaymentMethod({
-          outletId: 'o',
-          consumerId: 'c',
-          tokenRef: TOKEN_REF,
-        });
-      } catch (error) {
-        caught = error;
-      }
-      expect(caught).toBeInstanceOf(TokenizationApiError);
-      expect(caught.status).toBe(status);
-      expect(caught.code).toBe(body.code);
-      expect(caught.message).toBe(body.message);
-      expect(caught.correlationId).toBe(body.correlationId);
-      const serialized = JSON.stringify(caught.toJSON());
-      expect(serialized).not.toMatch(/411111/);
-      expect(serialized).not.toMatch(DUMMY_JWT);
-      expect(serialized).not.toMatch(DUMMY_API_KEY);
+      const headerNames = Object.keys(calls[0].headers).map((name) => name.toLowerCase());
+      expect(headerNames).not.toContain('authorization');
+      expect(headerNames).not.toContain('x-api-key');
+      expect(headerNames).not.toContain('idempotency-key');
+      expect(headerNames).not.toContain('x-correlation-id');
+      expect(JSON.stringify(calls[0].headers)).not.toMatch(/Bearer|Basic/);
+    });
+
+    it('asks the provider just in time for every request and keeps no copy', async () => {
+      let counter = 0;
+      const getAccessToken = jest.fn(async () => {
+        counter += 1;
+        return `token-${counter}`;
+      });
+      const client = createClient({
+        getAccessToken,
+        respond: () => jsonResponse(200, { tokens: [] }),
+      });
+      await client.getSavedTokens({ outletRef: OUTLET });
+      await client.getSavedTokens({ outletRef: OUTLET });
+      expect(getAccessToken).toHaveBeenCalledTimes(2);
+      expect(calls.map((call) => call.headers[HEADER_ACCESS_TOKEN])).toEqual([
+        'token-1',
+        'token-2',
+      ]);
+      expect(JSON.stringify(client)).not.toContain('token-');
+    });
+
+    it.each([
+      ['rejects', async () => { throw new Error('backend said secret-detail'); }],
+      ['returns empty', async () => ''],
+      ['returns non-string', async () => ({ token: ACCESS_TOKEN })],
+    ])('fails safely without a request when the provider %s', async (_label, getAccessToken) => {
+      const client = createClient({
+        getAccessToken,
+        respond: () => jsonResponse(200, { tokens: [] }),
+      });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error).toBeInstanceOf(TokenizationApiError);
+      expect(error.code).toBe(ACCESS_TOKEN_UNAVAILABLE);
+      expect(error.status).toBe(0);
+      expect(JSON.stringify(error)).not.toContain('secret-detail');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('maps a 401 to a safe UNAUTHORIZED error without echoing the token', async () => {
+      const client = createClient({
+        respond: () => jsonResponse(401, { message: 'Unauthorized', code: 401, errors: [] }),
+      });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error.status).toBe(401);
+      expect(error.code).toBe('UNAUTHORIZED');
+      expect(JSON.stringify(error)).not.toContain(ACCESS_TOKEN);
     });
   });
 
-  it('handles malformed non-JSON error bodies without leaking payloads', async () => {
-    const client = createClient({
-      respond: () => ({
-        status: 500,
-        headers: { [HEADER_CORRELATION_ID]: 'corr-bad' },
-        text: '<html>nope</html>',
-      }),
+  describe('getSavedTokens', () => {
+    it('builds the contract path with repeated tokens and consentOff', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
+      await client.getSavedTokens({
+        outletRef: OUTLET,
+        tokens: ['tok_1', 'tok_9'],
+        consentOff: true,
+      });
+      expect(calls[0].method).toBe('GET');
+      expect(calls[0].body).toBeUndefined();
+      expect(calls[0].url).toBe(
+        `${BASE_URL}/api/outlets/outlet-1/tokens?tokens=tok_1&tokens=tok_9&consentOff=true`
+      );
     });
-    await expect(
-      client.listPaymentMethods({ outletId: 'o', consumerId: 'c' })
-    ).rejects.toMatchObject({
-      name: 'TokenizationApiError',
-      code: 'MALFORMED_RESPONSE',
-      correlationId: 'corr-bad',
+
+    it('omits optional query parameters that were not provided', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
+      await client.getSavedTokens({ outletRef: 'outlet 1/a' });
+      expect(calls[0].url).toBe(`${BASE_URL}/api/outlets/outlet%201%2Fa/tokens`);
+      await client.getSavedTokens({ outletRef: OUTLET, consentOff: false });
+      expect(calls[1].url).toBe(`${BASE_URL}/api/outlets/outlet-1/tokens?consentOff=false`);
+    });
+
+    it('treats zero tokens with a tncUrl as a valid first-time response', async () => {
+      const client = createClient({
+        respond: () => jsonResponse(200, { tokens: [], tncUrl: 'https://merchant.test/terms' }),
+      });
+      await expect(client.getSavedTokens({ outletRef: OUTLET })).resolves.toEqual({
+        tokens: [],
+        tncUrl: 'https://merchant.test/terms',
+      });
+    });
+
+    it('ignores tncUrl when consent is turned off', async () => {
+      const client = createClient({
+        respond: () => jsonResponse(200, { tokens: [], tncUrl: 'https://merchant.test/terms' }),
+      });
+      await expect(
+        client.getSavedTokens({ outletRef: OUTLET, consentOff: true })
+      ).resolves.toEqual({ tokens: [] });
+    });
+
+    it('parses VERIFIED, AWAIT_3DS and FAILED tokens including wallets', async () => {
+      const client = createClient({
+        respond: () =>
+          jsonResponse(200, {
+            tokens: [
+              verifiedCard,
+              { tokenRef: 'tok_2', type: 'CARD', status: 'AWAIT_3DS' },
+              {
+                tokenRef: 'tok_3',
+                type: 'WALLET',
+                walletType: 'GOOGLE_PAY',
+                status: 'FAILED',
+                cardDetails: { scheme: 'MASTERCARD', last4: '4444', expiry: '2030-01' },
+              },
+            ],
+          }),
+      });
+      const { tokens } = await client.getSavedTokens({ outletRef: OUTLET });
+      expect(tokens.map((token) => token.status)).toEqual(['VERIFIED', 'AWAIT_3DS', 'FAILED']);
+      expect(tokens[2]).toMatchObject({ type: 'WALLET', walletType: 'GOOGLE_PAY' });
+      expect(tokens[1].cardDetails).toBeNull();
+    });
+
+    it('rejects invalid tokenRef query values before any request', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
+      await expect(
+        client.getSavedTokens({ outletRef: OUTLET, tokens: ['tok 1'] })
+      ).rejects.toThrow('invalid tokenRef');
+      await expect(client.getSavedTokens({ outletRef: '' })).rejects.toThrow('outletRef');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('maps malformed list bodies to MALFORMED_RESPONSE', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, { tncUrl: 'x' }) });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error.code).toBe('MALFORMED_RESPONSE');
     });
   });
 
-  it('does not include auth headers in redacted diagnostics', () => {
-    const redacted = redactSensitive({
-      Authorization: `Bearer ${DUMMY_JWT}`,
-      'X-API-Key': DUMMY_API_KEY,
-      pan: '4111111111111111',
-      cvv: '123',
-      dan: 'wallet-dan',
-      onlinePaymentCryptogram: 'crypto',
-      token: 'google-pay-token',
+  describe('3DS continuation', () => {
+    it('posts authentications with deviceChannel BRW and the token-scoped path', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, challengeStep) });
+      const result = await client.authenticateThreeDS({
+        ...threeDSIds,
+        threeDSCompInd: 'Y',
+        browserInfo: { ...browserInfo, unexpected: 'dropped' },
+      });
+      expect(calls[0].method).toBe('POST');
+      expect(calls[0].url).toBe(
+        `${BASE_URL}/api/outlets/outlet-1/tokens/tok_1/orders/ord-1/payments/pay-1/3ds2/authentications`
+      );
+      expect(calls[0].body).toEqual({ deviceChannel: 'BRW', threeDSCompInd: 'Y', browserInfo });
+      expect(result.status).toBe('AWAIT_3DS');
+      expect(result.threeDS2.step).toBe('CHALLENGE');
+      expect(result.cardDetails).toBeNull();
     });
-    expect(JSON.stringify(redacted)).not.toMatch(DUMMY_JWT);
-    expect(JSON.stringify(redacted)).not.toMatch(DUMMY_API_KEY);
-    expect(JSON.stringify(redacted)).not.toMatch('411111');
-    expect(JSON.stringify(redacted)).not.toMatch('wallet-dan');
-    expect(redacted.pan).toBe('[REDACTED]');
+
+    it('posts the challenge response and returns VERIFIED', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, verifiedCard) });
+      const result = await client.submitThreeDSChallengeResponse({
+        ...threeDSIds,
+        base64EncodedCRes: 'cres-value',
+      });
+      expect(calls[0].url).toBe(
+        `${BASE_URL}/api/outlets/outlet-1/tokens/tok_1/orders/ord-1/payments/pay-1/3ds2/challenge-response`
+      );
+      expect(calls[0].body).toEqual({ base64EncodedCRes: 'cres-value' });
+      expect(result.status).toBe('VERIFIED');
+    });
+
+    it('validates references and inputs before sending', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, verifiedCard) });
+      await expect(
+        client.authenticateThreeDS({ ...threeDSIds, tokenRef: 'tok/1', threeDSCompInd: 'Y', browserInfo })
+      ).rejects.toThrow('tokenRef is invalid');
+      await expect(
+        client.authenticateThreeDS({ ...threeDSIds, threeDSCompInd: 'X', browserInfo })
+      ).rejects.toThrow('threeDSCompInd');
+      await expect(
+        client.submitThreeDSChallengeResponse({ ...threeDSIds, base64EncodedCRes: '' })
+      ).rejects.toThrow('base64EncodedCRes');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('rejects an AWAIT_3DS continuation without references or 3ds2 data', async () => {
+      const client = createClient({
+        respond: () => jsonResponse(200, { ...challengeStep, '3ds2': undefined }),
+      });
+      const error = await client
+        .authenticateThreeDS({ ...threeDSIds, threeDSCompInd: 'U', browserInfo })
+        .catch((e) => e);
+      expect(error.code).toBe('MALFORMED_RESPONSE');
+    });
+
+    it('maps 422 cardVerificationFailed to a typed error', async () => {
+      const client = createClient({
+        respond: () =>
+          jsonResponse(422, {
+            message: 'Unprocessable Entity',
+            code: 422,
+            errors: [
+              {
+                message: 'Card verification failed',
+                localizedMessage: '{error.processing.cardVerificationFailed}',
+                errorCode: 'cardVerificationFailed',
+                domain: 'processing',
+              },
+            ],
+          }),
+      });
+      const error = await client
+        .submitThreeDSChallengeResponse({ ...threeDSIds, base64EncodedCRes: 'cres-value' })
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(TokenizationApiError);
+      expect(error.status).toBe(422);
+      expect(error.code).toBe('cardVerificationFailed');
+      expect(error.errors[0].domain).toBe('processing');
+      expect(JSON.stringify(error)).not.toContain('cres-value');
+    });
+  });
+
+  describe('errors', () => {
+    it('reads the backend error body and keeps only documented fields', async () => {
+      const client = createClient({
+        respond: () =>
+          jsonResponse(400, {
+            message: 'Bad Request',
+            code: 400,
+            errors: [
+              {
+                message: 'Invalid walletType',
+                localizedMessage: '{error.processing.invalidWalletType}',
+                errorCode: 'invalidWalletType',
+                domain: 'processing',
+                encryptedPayload: 'leaked-payload',
+              },
+            ],
+            card: { pan: '4111111111111111' },
+          }),
+      });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error.code).toBe('invalidWalletType');
+      expect(error.message).toBe('Bad Request');
+      expect(error.errors).toEqual([
+        {
+          message: 'Invalid walletType',
+          localizedMessage: '{error.processing.invalidWalletType}',
+          errorCode: 'invalidWalletType',
+          domain: 'processing',
+        },
+      ]);
+      const serialized = JSON.stringify(error);
+      expect(serialized).not.toContain('leaked-payload');
+      expect(serialized).not.toContain('4111111111111111');
+    });
+
+    it('falls back by HTTP status when the error body is not documented', async () => {
+      const client = createClient({ respond: () => jsonResponse(500, undefined) });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error.status).toBe(500);
+      expect(error.code).toBe('INTERNAL_SERVER_ERROR');
+    });
+
+    it('maps non-JSON bodies to MALFORMED_RESPONSE', async () => {
+      const client = createClient({ respond: () => ({ status: 502, text: '<html>' }) });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error.code).toBe('MALFORMED_RESPONSE');
+      expect(error.status).toBe(502);
+    });
+
+    it('maps transport failures to NETWORK_ERROR without the request', async () => {
+      const client = createClient({
+        respond: () => {
+          throw new Error(`failed ${ACCESS_TOKEN}`);
+        },
+      });
+      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      expect(error.code).toBe('NETWORK_ERROR');
+      expect(JSON.stringify(error)).not.toContain(ACCESS_TOKEN);
+    });
+  });
+
+  describe('fetch transport', () => {
+    it('sends JSON over fetch and reads the response text', async () => {
+      const fetchImpl = jest.fn(async () => ({
+        status: 200,
+        text: async () => JSON.stringify({ tokens: [] }),
+      }));
+      const client = createTokenizationClient({
+        baseUrl: `${BASE_URL}/`,
+        getAccessToken: async () => ACCESS_TOKEN,
+        fetchImpl,
+      });
+      await client.getSavedTokens({ outletRef: OUTLET });
+      expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/tokens`, {
+        method: 'GET',
+        headers: {
+          [HEADER_ACCESS_TOKEN]: ACCESS_TOKEN,
+          [HEADER_CONTENT_TYPE]: 'application/json',
+        },
+      });
+    });
   });
 });
 
-describe('create request mapping', () => {
-  it('maps CreateCardRequest schema fields without inventing extras', () => {
-    const body = mapCreateCardRequest({
-      pan: '4111111111111111',
-      expiry: '2033-01',
-      cvv: '123',
-      scheme: 'VISA',
-      cardholderName: 'Jane Merchant',
-    });
-    expect(body).toEqual({
-      pan: '4111111111111111',
-      expiry: '2033-01',
-      cvv: '123',
-      scheme: 'VISA',
-      cardholderName: 'Jane Merchant',
-    });
-    expect(body).not.toHaveProperty('order');
+describe('add card contract (native submission)', () => {
+  it('models the card path without a JS card operation', () => {
+    expect(TOKENIZATION_PATHS.addCard({ outletRef: OUTLET })).toBe('/api/outlets/outlet-1/cards');
   });
 
-  it('maps CreateWalletRequest schema fields when they are actually supplied', () => {
-    const body = mapCreateWalletRequest({
-      walletType: 'APPLE_PAY',
-      dan: 'dummy-dan',
-      onlinePaymentCryptogram: 'dummy-cryptogram',
-      expiry: '2033-01',
-      scheme: 'VISA',
-      eciIndicator: '05',
+  it('accepts non-UUID token references as documented', () => {
+    expect(parseSavedCardResponse(verifiedCard).tokenRef).toBe('tok_1');
+  });
+});
+
+describe('SavedCardResponse model', () => {
+  it('parses the method-step AWAIT_3DS response from add card', () => {
+    const parsed = parseSavedCardResponse(methodStep, { requireContinuation: true });
+    expect(parsed).toMatchObject({
+      tokenRef: 'tok_1',
+      type: 'CARD',
+      walletType: null,
+      status: 'AWAIT_3DS',
+      orderReference: 'ord-1',
+      paymentReference: 'pay-1',
     });
-    expect(body.walletType).toBe('APPLE_PAY');
-    expect(body.scheme).toBe('VISA');
-    expect(body.eciIndicator).toBe('05');
-    expect(body).not.toHaveProperty('order');
+    expect(parsed.threeDS2).toEqual({ step: 'METHOD', ...methodStep['3ds2'] });
   });
 
-  it('does not treat native Apple Pay or Google Pay results as CreateWalletRequest', () => {
-    expect(
-      inspectNativeWalletForCreateRequest({ status: 'Success' }).mappable
-    ).toBe(false);
-    expect(
-      inspectNativeWalletForCreateRequest({
-        status: 'Success',
-        token: 'google-pay-gateway-token',
-      }).mappable
-    ).toBe(false);
+  it('accepts a method step without threeDSMethodURL (threeDSCompInd U)', () => {
+    const { threeDSMethodURL, ...withoutUrl } = methodStep['3ds2'];
+    const parsed = parseSavedCardResponse(
+      { ...methodStep, '3ds2': withoutUrl },
+      { requireContinuation: true }
+    );
+    expect(parsed.threeDS2.step).toBe('METHOD');
+    expect(parsed.threeDS2.threeDSMethodURL).toBeUndefined();
   });
 
-  it('does not pass a SALE order as VERIFY OrderContext', () => {
-    const sale = { action: 'SALE', reference: 'ord_1' };
-    expect(() =>
-      mapCreateCardRequest({
-        pan: '4111111111111111',
-        expiry: '2033-01',
-        cvv: '123',
-        scheme: 'VISA',
-      })
-    ).not.toThrow();
-    const withOrder = mapCreateCardRequest({
-      pan: '4111111111111111',
-      expiry: '2033-01',
-      cvv: '123',
-      scheme: 'VISA',
-      order: sale,
-    });
-    expect(withOrder.order).toEqual(sale);
+  it.each([
+    ['unknown status', { ...verifiedCard, status: 'ACTIVE' }],
+    ['unknown type', { ...verifiedCard, type: 'BANK' }],
+    ['walletType on a card', { ...verifiedCard, walletType: 'GOOGLE_PAY' }],
+    ['wallet without walletType', { ...verifiedCard, type: 'WALLET' }],
+    ['VERIFIED without cardDetails', { ...verifiedCard, cardDetails: undefined }],
+    ['malformed last4', { ...verifiedCard, cardDetails: { ...verifiedCard.cardDetails, last4: '11' } }],
+    ['malformed expiry', { ...verifiedCard, cardDetails: { ...verifiedCard.cardDetails, expiry: '12/28' } }],
+    ['3ds2 on VERIFIED', { ...verifiedCard, '3ds2': methodStep['3ds2'] }],
+    ['incomplete challenge', { ...challengeStep, '3ds2': { ...challengeStep['3ds2'], base64EncodedCReq: undefined } }],
+    ['invalid tokenRef', { ...verifiedCard, tokenRef: 'tok 1' }],
+  ])('rejects %s', (_label, value) => {
+    expect(() => parseSavedCardResponse(value)).toThrow();
   });
 });
