@@ -75,31 +75,35 @@ Frontend paths are relative to `paypage-app-2` at the pinned commit.
 - **Ownership resolved:** consent copy belongs to NI, never merchant text.
 - **Source resolved:** invoice config `tncUrl`, falling back to transaction
   `termsAndConditions`, resolved on backend using the audited PayPage logic above.
-- **Delivery architecture resolved:** backend returns the final `tncUrl` in the
-  FIRST response used to initialise/start tokenization when consent is enabled.
-  The exact response/container is still being defined. This does **not** establish
-  `order.tncUrl`, `orderData.tncUrl`, a public URL prop, or a URL-provider contract.
-- When `consentOff === true`, backend need not return a URL and RN does not read it.
+- **Delivery resolved:** `saved-tokens-api.json` (received 9 Oct 2026),
+  `GET /api/outlets/{outletRef}/tokens`, returns `{ tokens, tncUrl? }`. This does
+  **not** establish `order.tncUrl`, `orderData.tncUrl`, a public URL prop, or a
+  URL-provider contract.
+- Agreed semantics: `consentOff === true` hides consent and needs no `tncUrl`;
+  `consentOff` false or omitted returns `tncUrl`. Zero tokens is valid
+  (`{ tokens: [], tncUrl }`). The supplied JSON still says `tncUrl` is returned
+  for `consentOff=true` and that `tokens` is required; both need a backend-side
+  correction.
 
-RN makes no PayPage/config HTTP request or separate authentication for consent.
-The source audit above explains backend ownership, not a transport for RN to call.
+RN makes no PayPage/config HTTP request for consent. The source audit above
+explains backend ownership. The only call is the saved-tokens endpoint through
+the merchant-supplied tokenization client, authenticated with `Access-Token`.
 No PayPage session status or `PAYPAGE_SESSION_UNAVAILABLE` remains in production code.
 
-## Internal adapter and demo
+## Component loading and demo
 
-`TokenizationBootstrapContext` is internal, absent from `index.js`. It contains a
-session-scoped `resolvedTncUrl`, associated with the current native order object.
-A future internal init adapter maps the agreed backend response into this model.
-No final response shape is guessed and no service call is implemented. Mount a
-fresh provider per initialisation and clear it on close; a provider associated
-with a different order cannot supply a URL. There is no global URL cache.
+When `tokenizationClient` and `outletRef` are supplied and consent is on, the
+component calls `getSavedTokens({ outletRef })` each time it opens and keeps the
+returned `tncUrl` in component state for that open only. Closing clears it, so a
+reopened modal never reuses a previous destination. There is no global URL cache.
+With consent off, no request is made.
 
-`SimpleIntegration/src/app.js — DemoTokenizationBootstrap` is a LOCAL VISUAL FIXTURE.
-It supplies `https://example.com/?demo=tokenization&locale=en#terms` through that
-internal context, never an order field or public merchant prop. It is not exported
-by the SDK/package and is not production T&C or a backend response contract.
-The demo mounts it only while tokenization is open, then unmounts/clears the order.
-Screenshots validate the UI; live backend delivery of `tncUrl` remains pending.
+`SimpleIntegration/src/app.js` passes a DEMO-ONLY client whose in-memory transport
+answers saved tokens with `{ tokens: [], tncUrl }`, using
+`https://example.com/?demo=tokenization&locale=en#terms`, and fails every other
+endpoint. It is not exported by the SDK/package, makes no network call, and is not
+production T&C. Screenshots validate the UI; live backend delivery of `tncUrl`
+remains unverified.
 
 ## Consent and link behavior
 
@@ -121,7 +125,8 @@ aliases. EN/FR/AR copy is checked against source fixtures. Arabic uses RTL.
 Valid absolute HTTP(S) URLs use guarded `Linking.canOpenURL` then `openURL`;
 query parameters, encoding and fragments remain verbatim. Malformed, schemeless,
 relative, credential-bearing and non-web URLs never reach Linking. Missing or
-invalid URLs leave the NI consent visible and Terms plain. Diagnostics contain
+invalid URLs, a pending request and a failed request leave the NI consent visible
+and Terms plain. Diagnostics are emitted after the request settles and contain
 only `TERMS_URL_MISSING` / `TERMS_URL_INVALID`, with no shopper technical error,
 URL, credentials or order data. Consent off skips URL consumption and diagnostics.
 
@@ -135,22 +140,21 @@ preserves the existing POC order-based fallback (card defaults on; wallets depen
 on device capability and any supplied order lists). It is not a new Product default;
 all demo scenarios pass an explicit list.
 
-The V1 API client and existing payment exports are unchanged. UI create calls are
-not wired. Current POC opens existing NISdk payment/capture screens, returning
-`niTokenCreated: false`; it is not a create-token operation. Target boundary:
-RN UI → native secure capture → future service call → PaymentMethodResponse/tokenRef.
-PAN/CVV must never cross the RN JS bridge.
+Existing payment exports are unchanged. Card and Apple Pay open the existing NISdk
+screens and return `niTokenCreated: false`; they are not create-token operations.
+Google Pay with a tokenization client sends the wallet token to `POST /wallets`.
+Target card boundary: RN UI → native secure capture → `POST /cards` from native →
+`SavedCardResponse`. PAN/CVV must never cross the RN JS bridge.
 
 ## Production follow-ups
 
-- Exact tokenization-init response/container containing resolved `tncUrl` and its
-  internal mapping; validate live backend delivery and missing/failure handling.
-- Native secure create-token operation and live Card/Wallet token creation.
-- Inspect current NISdk/payment-sdk encryption and align the native tokenization
-  payload with the existing crypto contract. Product v5 lists optional `publicKey`,
-  but envelope/key management remain unverified. The POC adds no `keyId`,
-  `publicKey` Card payload field, publicKey component prop, or crypto format.
-- Mobile authentication/key placement agreement for live service calls.
-- MCP and new 3DS integration.
+- Backend correction of the `consentOff` / `tokens` wording in
+  `saved-tokens-api.json`; validate live `tncUrl` delivery.
+- Confirmed tokenization base URLs.
+- Native secure `POST /cards` and Apple Pay token access in the iOS bridge.
+- Native 3DS runner for `AWAIT_3DS`.
+- JWE `encryptedPayload` for cards remains out of scope. The POC adds no `keyId`,
+  `publicKey` payload field, publicKey component prop, or crypto format.
+- MCP.
 
 See [implementation and validation notes](tokenization-implementation.md).

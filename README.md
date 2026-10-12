@@ -78,60 +78,76 @@ const makeGooglePayPayment = async () => {
 
 ## Tokenization
 
-This is **not** production-ready saved-card tokenization. Existing payment APIs are unchanged. `API Specs V1.json` is the implementation contract. V1 `PaymentMethodResponse` does **not** include `usageType` or `authType`.
+This is **not** production-ready saved-card tokenization. Existing payment APIs are unchanged.
 
-### Available now
+Backend contracts: `add-card-api.json`, `add-wallet-api.json` and `saved-tokens-api.json` (received 9 Oct 2026).
 
-- `NgeniusTokenization` UI POC (paypage-app-2 layout, branding, native CARD/Apple Pay/Google Pay **demonstration**)
-- `createTokenizationClient` for the tokenization HTTP API
-- Client operations: `listPaymentMethods`, `getPaymentMethod`, `validatePaymentMethod`, `deletePaymentMethod`
-- Client create methods: `createCardPaymentMethod`, `createWalletPaymentMethod` (OpenAPI-shaped; **not** used by the UI)
+### Status
 
-### Not connected yet
+| Area | Status |
+| --- | --- |
+| Saved tokens / T&C (`GET /api/outlets/{outletRef}/tokens`) | Implemented in the client and used by the component for `tncUrl` |
+| Google Pay (`POST /api/outlets/{outletRef}/wallets`) | Implemented in JS; not validated on an Android device |
+| Card (`POST /api/outlets/{outletRef}/cards`) | Modelled only; must be submitted by the native secure layer |
+| Apple Pay | Pending: the iOS bridge does not return the payment token |
+| 3DS (`.../3ds2/authentications`, `.../3ds2/challenge-response`) | Client methods implemented; native 3DS runner pending |
+| Base URLs | Pending: no environment URL ships with the SDK |
 
-- Secure CARD create (`POST /payment-methods/card` from the RN UI)
-- Apple Pay token creation (`POST /payment-methods/wallet`)
-- Google Pay token creation (`POST /payment-methods/wallet`)
+### Authentication (`Access-Token`)
 
-### Waiting for backend/native contract
+The merchant backend calls the identity access-token endpoint with its API key and passes the short-lived token to the app. The SDK asks for it just in time through `getAccessToken` and sends it as the `Access-Token` header. The token is never stored, refreshed or logged. Never put an API key or Basic credentials in the mobile app.
 
-- PCI-safe handling of `CreateCardRequest` (PAN/CVV must not cross the RN bridge)
-- Wallet payload transformation into `dan` / `onlinePaymentCryptogram`
-- Mobile auth / `X-API-Key` model (whether the restricted key may exist on device)
+If `getAccessToken` rejects or returns no token, the call fails with `TokenizationApiError` code `ACCESS_TOKEN_UNAVAILABLE` and no request is sent.
 
 ### Tokenization API client
 
-Do not put JWT or API keys in `configureSDK`, AsyncStorage, demo fixtures, or component state. `getAuth()` is called **just-in-time** for each request.
-
 ```javascript
-import {
-  createTokenizationClient,
-} from '@network-international/react-native-ngenius';
+import { createTokenizationClient } from '@network-international/react-native-ngenius';
 
-const client = createTokenizationClient({
-  environment: 'uat', // or 'production' — TOKENIZATION_ENVIRONMENTS
-  getAuth: async () => {
-    const session = await merchantBackend.getTokenizationAuth();
-    return {
-      accessToken: session.accessToken,
-      apiKey: session.apiKey, // omit if a BFF injects X-API-Key
-    };
-  },
+const tokenizationClient = createTokenizationClient({
+  baseUrl, // required; confirmed URLs are pending
+  getAccessToken: async () => merchantBackend.getTokenizationAccessToken(),
 });
 
-await client.listPaymentMethods({ outletId, consumerId });
-await client.getPaymentMethod({ outletId, consumerId, tokenRef });
-await client.validatePaymentMethod({ outletId, consumerId, tokenRef });
-await client.deletePaymentMethod({ outletId, consumerId, tokenRef });
+// T&C and saved tokens. `tokens` is sent as repeated query parameters.
+const { tokens, tncUrl } = await tokenizationClient.getSavedTokens({
+  outletRef,
+  tokens: ['tok_1', 'tok_9'], // optional
+  consentOff: false, // optional
+});
+
+// Wallet token, passed through exactly as the wallet returned it.
+const savedToken = await tokenizationClient.addWallet({
+  outletRef,
+  walletType: 'GOOGLE_PAY',
+  encryptedPayload: googlePayToken,
+});
+
+// 3DS continuation for AWAIT_3DS (cards and wallets).
+await tokenizationClient.authenticateThreeDS({
+  outletRef, tokenRef, orderReference, paymentReference,
+  threeDSCompInd: 'Y', // Y, N or U
+  browserInfo,
+});
+await tokenizationClient.submitThreeDSChallengeResponse({
+  outletRef, tokenRef, orderReference, paymentReference,
+  base64EncodedCRes,
+});
 ```
 
-`createCardPaymentMethod` is not wired to RN UI because `CreateCardRequest` requires PAN/CVV and current NISdk does not expose them safely to JS.
+Responses are parsed `SavedCardResponse` objects: `tokenRef`, `type` (`CARD` or `WALLET`), `walletType` (wallets only), `status`, `cardDetails` (`scheme`, `last4`, `expiry`, optional `cardholderName`), plus `orderReference`, `paymentReference` and `threeDS2` (from the `3ds2` field) where returned.
 
-`createWalletPaymentMethod` is not wired because existing Apple Pay / Google Pay APIs do not expose `CreateWalletRequest` fields in the required form.
+| Status | Meaning |
+| --- | --- |
+| `VERIFIED` | Terminal success. The token can be used. |
+| `AWAIT_3DS` | A `tokenRef` already exists but is **not** verified. Continue with the 3DS endpoints. |
+| `FAILED` | Verification failed (seen in saved-token lists). |
 
-Errors are `TokenizationApiError` `{ status, code, message, correlationId }`.
+There is no JS card create method: PAN and CVV must never cross the React Native bridge, so `POST /cards` is a native dependency.
 
-### Component (UI POC, separate from the HTTP client)
+Errors are `TokenizationApiError` `{ status, code, message, errors }`. `code` is the first backend `errorCode` (for example `invalidWalletType`, `walletVerificationFailed`, `cardVerificationFailed`) or a fallback by HTTP status. `errors` keeps only `message`, `localizedMessage`, `errorCode` and `domain`. Other codes: `ACCESS_TOKEN_UNAVAILABLE`, `NETWORK_ERROR`, `MALFORMED_RESPONSE`.
+
+### Component
 
 ```javascript
 import { NgeniusTokenization } from '@network-international/react-native-ngenius';
@@ -143,63 +159,46 @@ import { NgeniusTokenization } from '@network-international/react-native-ngenius
   paymentMethods={['CARD', 'APPLE_PAY', 'GOOGLE_PAY']}
   consentOff={false}
   language="en"
+  tokenizationClient={tokenizationClient} // optional
+  outletRef={outletRef} // optional
   applePayConfig={{ merchantIdentifier, countryCode, merchantName }}
   googlePayConfig={{ merchantName, gateway, gatewayMerchantId, environment }}
-  onSuccess={(result) => {
-    // { flow, method, status, niTokenCreated: false, paymentMethod: null }
-  }}
+  onSuccess={(result) => {}}
   onError={(error) => {}}
   onCancel={() => setShowTokenization(false)}
 />
 ```
 
-Native CARD success still returns `niTokenCreated: false` until `POST /card` is safely connected. The component does **not** take `outletId` / `consumerId` / `tokenizationConfig`.
+With `tokenizationClient` and `outletRef`:
+
+- On open, the component calls `getSavedTokens({ outletRef })` and uses the returned `tncUrl` for the consent link.
+- Google Pay sends the wallet token to `POST /wallets`. Only `VERIFIED` calls `onSuccess` with `{ flow, method, status: 'VERIFIED', niTokenCreated: true, savedToken: { tokenRef, type, walletType, status, cardDetails } }`.
+- `AWAIT_3DS` is not success. Until the native 3DS runner exists, the attempt ends in a controlled pending state: the shopper sees a message and `onError` receives `{ status: 'AWAIT_3DS', code: 'THREE_DS_CONTINUATION_UNAVAILABLE', niTokenCreated: false, savedToken: null }`.
+- Failures call `onError` with `{ status: 'FAILED', code, error, niTokenCreated: false }`.
+
+Without them, Google Pay keeps the native demo result. Card and Apple Pay always open the existing native screens and return `niTokenCreated: false`. `force3DS` is not exposed and is never sent for wallets.
 
 `branding` uses the real paypage contract only: `buttonColour`, `buttonRolloverColour`, `paymentFontColour`, `mainHeadingColour`, `pageBackgroundColour`, `backgroundColour`, `languages[].bodyCopyFont` / heading fonts, and logo fallback (`logoUrl` → `merchantLogoUrl` → `tenantLogoUrl` → `footerImageUrl` → `faviconUrl`). Geometry (56px buttons, 8–12px radii) is a local design-system default, not a backend field.
 
 Language fonts: the component `language` prop is matched against `languages[].language`, then `languages[0]`, then design-system defaults. Arabic uses `Arial`. Merchant font names are **best-effort**: they are passed as `fontFamily` only if present. The host app must install/register that font.
 
-### Consent information (UI POC)
+### Consent information
 
-```jsx
-<NgeniusTokenization order={order} consentOff={false} />
-```
+Consent is NI-owned PayPage EN/FR/AR text. Only strict `consentOff === true` removes its block, links and spacing. False, omitted or invalid values retain it. A missing order selects standard text; recurring/reusable orders use the PayPage selectors. Merchant text and `customizedMessage` cannot replace consent.
 
-Consent is NI-owned PayPage EN/FR/AR text. Only strict `consentOff === true`
-removes its block, links and spacing. False, omitted or invalid values retain it;
-missing order selects standard text, recurring/reusable uses PayPage selectors.
-Merchant text and `customizedMessage` cannot replace consent.
+The agreed saved-tokens behavior: `consentOff === true` hides consent and needs no `tncUrl`; `consentOff` false or omitted returns `tncUrl`. Zero saved tokens is valid (`{ tokens: [], tncUrl }`). The supplied `saved-tokens-api.json` still describes `tncUrl` as returned when `consentOff=true` and `tokens` as required; both need a backend-side correction.
 
-Backend resolves invoice config `tncUrl` → transaction `termsAndConditions`
-fallback and returns the result in the FIRST tokenization-init/start response.
-**The exact response/container is pending.** RN does not read `order.tncUrl`,
-accept a public URL/provider, or call/authenticate with PayPage/config for terms.
-An internal session-scoped context holds `resolvedTncUrl` for future mapping.
-Missing/invalid URL retains consent with plain Terms; a valid HTTP(S) URL uses
-`Linking.canOpenURL` / `openURL`, preserving query and fragment. Internal diagnostic
-codes never become shopper technical errors. Consent off skips all URL use.
+While the URL is loading, or if it is missing, invalid or the request fails, consent stays visible with plain Terms. A valid HTTP(S) URL opens through `Linking.canOpenURL` / `openURL`, preserving query and fragment. Internal diagnostic codes never become shopper errors.
 
-SimpleIntegration uses a clearly marked local `example.com` fixture via the
-internal context. It is not exported and does not prove live backend delivery.
-See [the preserved source audit and final decisions](docs/paypage-consent.md) and
-[implementation/validation notes](docs/tokenization-implementation.md).
+See [the preserved source audit and final decisions](docs/paypage-consent.md) and [implementation/validation notes](docs/tokenization-implementation.md).
 
-### Exact POC component props
+### Exact component props
 
-`visible = false`, `order`, `paymentMethods`, `branding`, `language = 'en'`,
-`consentOff = false`, `applePayConfig`, `googlePayConfig`, `onSuccess`, `onError`,
-`onCancel`.
+`visible = false`, `order`, `paymentMethods`, `branding`, `language = 'en'`, `consentOff = false`, `tokenizationClient`, `outletRef`, `applePayConfig`, `googlePayConfig`, `onSuccess`, `onError`, `onCancel`.
 
-`paymentMethods` is an explicit array containing only requested `CARD`, `APPLE_PAY`,
-`GOOGLE_PAY`; the SDK also filters by native platform/capability. Other methods are
-ignored. The final omitted-prop behavior is undefined by Product. The POC retains
-existing POC order-based fallback for compatibility, without declaring a new default.
-The demo always passes all three explicitly. An empty explicit list enables none.
+`paymentMethods` is an explicit array containing only requested `CARD`, `APPLE_PAY`, `GOOGLE_PAY`; the SDK also filters by native platform/capability. Other methods are ignored. Saved tokens are not payment methods and are not shown as methods. The final omitted-prop behavior is undefined by Product. The POC retains existing POC order-based fallback for compatibility, without declaring a new default. The demo always passes all three explicitly. An empty explicit list enables none.
 
-No public `tncUrl`, `orderData`, URL provider, custom consent, `keyId`, or `publicKey`
-prop is introduced. Product v5 optional `publicKey` remains a follow-up: inspect
-existing native encryption/key management before aligning tokenization. Crypto and
-the V1 API client remain unchanged; no UI POST /card or /wallet is connected.
+No public `tncUrl`, `orderData`, URL provider, custom consent, `merchantAttributes`, `keyId`, or `publicKey` prop is introduced. JWE (`encryptedPayload` for cards) is not implemented.
 
 ### Native card screen (PCI)
 
@@ -210,7 +209,7 @@ PAN/CVV stay in the existing native card UI. The themed tokenization container d
 
 ### Demo
 
-`SimpleIntegration`: **Open tokenization** plus **Default theme / Merchant branding**. Existing Pay buttons are unchanged. The demo creates a **SALE** order and does not ship JWT or API keys.
+`SimpleIntegration`: **Open tokenization** plus **Default theme / Merchant branding**. Existing Pay buttons are unchanged. The demo creates a **SALE** order and does not ship JWT or API keys. Its tokenization client uses a demo-only in-memory transport: saved tokens return `{ tokens: [], tncUrl }` with an `example.com` URL, and every other endpoint fails. No backend is called.
 
 ## Quick Links
 

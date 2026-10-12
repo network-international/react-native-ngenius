@@ -1,4 +1,60 @@
-# Tokenization POC consolidation — 2026-09-30
+# Tokenization POC consolidation
+
+## Backend contract alignment
+
+Contracts: `add-card-api.json`, `add-wallet-api.json`, `saved-tokens-api.json`
+(received 9 Oct 2026). The earlier V1 consumer `/payment-methods` client was
+replaced; consumerId, `X-API-Key`, Bearer, the V1 media type, idempotency and
+correlation headers, UUID-only references and the DAN/cryptogram mapping are gone.
+
+| Endpoint | RN status |
+| --- | --- |
+| `GET /api/outlets/{outletRef}/tokens` (`tokens` repeated, `consentOff`) | `getSavedTokens`; used by the component for `tncUrl` |
+| `POST /api/outlets/{outletRef}/wallets` | `addWallet`; wired for Google Pay |
+| `POST /api/outlets/{outletRef}/cards` | Path modelled only; native dependency |
+| `POST .../tokens/{tokenRef}/orders/{orderReference}/payments/{paymentReference}/3ds2/authentications` | `authenticateThreeDS` |
+| `POST .../3ds2/challenge-response` | `submitThreeDSChallengeResponse` |
+
+Headers are `Access-Token` and `Content-Type: application/json`; `X-Forwarded-For`
+is set by the gateway. `getAccessToken` is called per request; the token comes
+from the merchant backend (identity access-token endpoint) and is never stored,
+refreshed or logged. Base URLs are pending, so `baseUrl` is required and no
+environment default ships.
+
+Verification: a `tokenRef` can exist before verification. Only `VERIFIED` is
+success. `AWAIT_3DS` carries `orderReference`, `paymentReference` and `3ds2`
+(method step: `threeDSServerTransID`, `threeDSMethodData`,
+`threeDSMethodNotificationURL`, optional `threeDSMethodURL`; challenge step:
+`acsURL`, `base64EncodedCReq`, `acsTransID`, `transStatus`). The parser exposes
+it as `threeDS2.step` `METHOD` or `CHALLENGE`. UI states are `READY`,
+`SUBMITTING`, `VERIFYING`, `AWAITING_3DS`, `SUCCESS` and `FAILED`.
+
+Card: native secure capture must send `{ card: { pan, expiry, cvv,
+cardholderName }, merchantAttributes? }` over TLS to `/cards`. PAN/CVV never
+cross the bridge; there is no JS card create or card mapper. JWE is not
+implemented. Vendor NISdk / payment-sdk sources are unchanged.
+
+Google Pay: the Android bridge returns `tokenizationData.token`; it is sent
+unchanged as `encryptedPayload`. Merchant `googlePayConfig` must use the N-Genius
+gateway values. Implemented and unit-tested with mocks only; not run on an
+Android device.
+
+Apple Pay: blocked. The iOS bridge returns status only, not the EC_v1 payment
+token required by `/wallets`.
+
+3DS: the client calls are implemented. The native runner is pending and must
+follow the PayPage/BFF redirect pattern: load `threeDSMethodURL` with
+`threeDSMethodData`, read `threeDSCompInd` from the method-notification redirect,
+call `authentications`, open `acsURL` with `base64EncodedCReq`, read
+`base64EncodedCRes` from the challenge redirect, then call `challenge-response`
+(repeat if `AWAIT_3DS` is returned again). The existing order-scoped native 3DS
+is not reusable as-is. Until the runner exists, `AWAIT_3DS` ends in a controlled
+pending state with code `THREE_DS_CONTINUATION_UNAVAILABLE`.
+
+`force3DS` (`merchantAttributes`) is not defaulted, not exposed as a prop and
+never sent for wallets.
+
+## Visual consolidation (2026-09-30)
 
 ## Applied decisions
 
@@ -8,16 +64,12 @@ recurring/subscription/installment/reusable selectors are unchanged. Merchant
 text/URL injection is not supported. `customizedMessage` is unrelated.
 
 Backend resolves invoice config `tncUrl` → transaction `termsAndConditions`
-fallback and includes the final URL in the FIRST tokenization-init/start response
-when consent is on. The precise response/container is pending. RN has no consent
-HTTP/config/auth transport. `order.tncUrl` is no longer consumed.
+fallback and returns it from the saved-tokens endpoint when consent is on. RN has
+no PayPage/config transport. `order.tncUrl` is not consumed.
 
-The internal context holds `resolvedTncUrl` independently of the final response.
-It is associated with the current order, invalidated on close, and must be freshly
-created per init. A later session cannot inherit a prior destination even when its
-order object is reused. The demo mounts a local bootstrap provider per opening and
-clears it on close. That fixture is local to `SimpleIntegration/src/app.js`, uses a
-reserved example.com destination, and is not an exported production API.
+The component loads `tncUrl` per open and clears it on close, so a later session
+cannot inherit a prior destination. The demo uses a demo-only in-memory client in
+`SimpleIntegration/src/app.js` with a reserved example.com destination.
 
 Explicit `paymentMethods` filters to CARD / APPLE_PAY / GOOGLE_PAY plus native
 capability. Omitted-prop Product semantics remain undefined: the previous POC
@@ -27,8 +79,8 @@ always passes an explicit list. No Samsung/APM/split-settlement tokenization.
 ## Exact component API
 
 `visible = false`, `order`, `paymentMethods`, `branding`, `language = 'en'`,
-`consentOff = false`, `applePayConfig`, `googlePayConfig`, `onSuccess`, `onError`,
-`onCancel`.
+`consentOff = false`, `tokenizationClient`, `outletRef`, `applePayConfig`,
+`googlePayConfig`, `onSuccess`, `onError`, `onCancel`.
 
 There is no public terms URL, URL provider, `orderData`, custom consent, `publicKey`
 or `keyId` prop. Product v5 optional publicKey is documented, not implemented with
@@ -57,6 +109,12 @@ No native card-field redesign or speculative backend screens were added. This is
 source-to-simulator comparison, not a live browser pixel-diff against a PayPage order.
 
 ## Build and runtime evidence
+
+Backend contract alignment: iOS simulator Debug build of SimpleIntegration
+(iPhone 17) `BUILD SUCCEEDED`; release JS bundles built for iOS and Android.
+No runtime re-validation on simulator or device was done for this change.
+
+Visual consolidation (2026-09-30):
 
 Device: iPhone 17 simulator, iOS 26.5.
 React Native 0.70.3 and NISdk 6.1.0 were not upgraded.
@@ -110,20 +168,22 @@ Reusable → Missing order → Standard.
 
 Run with `npm test -- --runInBand --watchman=false`.
 
-Tests cover explicit method allowlist/capability; strict consent defaults/invalid
-values; standard/missing-order and recurring/reusable/installment; EN/FR/AR and
-RTL; clickable/missing/malformed URLs and preserved queries; guarded browser
-opening; consent-off URL skip; merchant text/URL rejection; no consent transport;
-and session reset including reused orders/context, plus V1 API client and
-payment-export regression tests.
+Tests cover Access-Token handling (just-in-time provider, unavailable token, no
+Bearer/API key headers); saved tokens (repeated query, zero tokens, consentOff);
+`SavedCardResponse` parsing for VERIFIED / AWAIT_3DS / FAILED and both 3DS steps;
+wallet requests and errors; 3DS request bodies and reference validation; the
+backend error body; the Google Pay slice (VERIFIED, AWAIT_3DS, FAILED, abort,
+missing token, no logging); verification states; T&C loading per open; plus the
+existing method allowlist, consent copy, URL safety, session and payment-export
+regression tests. All backend calls use mock transports.
 
 ## Remaining production work
 
-- Final init-response container and backend delivery/mapping for `tncUrl`.
-- Native secure create-token operation; live Card/Wallet service integration and
-  PaymentMethodResponse/tokenRef result. Existing native success still reports
-  `niTokenCreated: false`; no UI POST /card or /wallet has been connected.
-- Inspect NISdk/payment-sdk encryption and align native payload/key management
-  with the existing contract. No new crypto format, keyId or publicKey BE payload.
-- Confirm mobile authentication/key placement for live service calls.
-- MCP / new 3DS integration.
+- Backend correction of `saved-tokens-api.json` (`tncUrl` with `consentOff=true`,
+  `tokens` marked required).
+- Confirmed base URLs.
+- Native secure `POST /cards`; the Card flow still reports `niTokenCreated: false`.
+- Apple Pay token from the iOS bridge.
+- Native 3DS runner.
+- Google Pay validation on an Android device with N-Genius gateway config.
+- JWE for cards (out of scope). MCP.
