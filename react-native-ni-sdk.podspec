@@ -26,5 +26,5 @@ Pod::Spec.new do |s|
   }
 
   s.dependency "React"
-  s.dependency "NISdk", "6.1.0"
+  s.dependency "NISdk", "6.1.2"
 end

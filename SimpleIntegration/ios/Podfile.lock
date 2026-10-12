@@ -13,7 +13,7 @@ PODS:
   - glog (0.3.5)
   - hermes-engine (0.70.3)
   - libevent (2.1.12)
-  - NISdk (6.1.0)
+  - NISdk (6.1.2)
   - RCT-Folly (2021.07.22.00):
     - boost
     - DoubleConversion
@@ -240,8 +240,8 @@ PODS:
   - React-jsinspector (0.70.3)
   - React-logger (0.70.3):
     - glog
-  - react-native-ni-sdk (3.2.0):
-    - NISdk (= 6.1.0)
+  - react-native-ni-sdk (3.2.2):
+    - NISdk (= 6.1.2)
     - React
   - React-perflogger (0.70.3)
   - React-RCTActionSheet (0.70.3):
@@ -434,7 +434,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  boost: cf4ae79078f2923e5958340491953c526843d174
+  boost: 9fa78656d705f55b1220151d997e57e2a3f2cde0
   DoubleConversion: 5189b271737e1565bdce30deb4a08d647e3f5f54
   FBLazyVector: 3b313c3fb52b597f7a9b430798e6367d2b9f07e5
   FBReactNativeSpec: 99a7ecb7e9665d96f2fea706b0844e2f3117f381
@@ -442,7 +442,7 @@ SPEC CHECKSUMS:
   glog: 04b94705f318337d7ead9e6d17c019bd9b1f6b1b
   hermes-engine: bb344d89a0d14c2c91ad357480a79698bb80e186
   libevent: 4049cae6c81cdb3654a443be001fb9bdceff7913
-  NISdk: 98568078cd84e904817f663f7bda5a52d6ea2454
+  NISdk: fdbba7f527f6f4339ddc440dd4d07a614feaa7ae
   RCT-Folly: 0080d0a6ebf2577475bda044aa59e2ca1f909cda
   RCTRequired: 5cf7e7d2f12699724b59f90350257a422eaa9492
   RCTTypeSafety: 3f3ead9673d1ab8bb1aea85b0894ab3220f8f06e
@@ -458,7 +458,7 @@ SPEC CHECKSUMS:
   React-jsiexecutor: 7e2e1772ef7b97168c880eeaf3749d8c145ffd6e
   React-jsinspector: 0553c9fe7218e1f127be070bd5a4d2fc19fb8190
   React-logger: cffcc09e8aba8a3014be8d18da7f922802e9f19e
-  react-native-ni-sdk: 6c04cce9698c9cdb21b7dd5d23410464e6b29c60
+  react-native-ni-sdk: 5424d435c308918d441df9afdaa5f6d541b9b971
   React-perflogger: 082b4293f0b3914ff41da35a6c06ac4490fcbcc8
   React-RCTActionSheet: 83da3030deb5dea54b398129f56540a44e64d3ae
   React-RCTAnimation: bac3a4f4c0436554d9f7fbb1352a0cdcb1fb0f1c
@@ -474,6 +474,6 @@ SPEC CHECKSUMS:
   RNCAsyncStorage: 0c357f3156fcb16c8589ede67cc036330b6698ca
   Yoga: 2ed968a4f060a92834227c036279f2736de0fce3
 
-PODFILE CHECKSUM: b5add22a1ed962c5c03a46c120500954473b31ca
+PODFILE CHECKSUM: 9eb7030310bc2e31ceeee39a16e85d52ab7e2c28
 
-COCOAPODS: 1.14.3
+COCOAPODS: 1.12.1
