@@ -12,6 +12,7 @@ const {
 const {
   parseSavedCardResponse,
   parseSavedTokensResponse,
+  mapAddWalletRequest,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 } = require('./models');
@@ -129,6 +130,13 @@ const createTokenizationClient = (options) => {
         path: TOKENIZATION_PATHS.savedTokens({ outletRef: args.outletRef }),
         query: savedTokensQuery(args),
         parse: (body) => parseSavedTokensResponse(body, { consentOff: args.consentOff }),
+      }),
+    addWallet: async (args) =>
+      request({
+        method: 'POST',
+        path: TOKENIZATION_PATHS.addWallet({ outletRef: args && args.outletRef }),
+        body: mapAddWalletRequest(args),
+        parse: continuationParse,
       }),
     authenticateThreeDS: async (args) =>
       request({

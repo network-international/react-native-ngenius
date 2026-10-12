@@ -118,6 +118,7 @@ describe('TokenizationClient', () => {
     it('exposes only client-side contract operations', () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
       expect(Object.keys(client).sort()).toEqual([
+        'addWallet',
         'authenticateThreeDS',
         'getSavedTokens',
         'submitThreeDSChallengeResponse',

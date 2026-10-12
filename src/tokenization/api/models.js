@@ -176,6 +176,21 @@ const parseSavedTokensResponse = (value, { consentOff } = {}) => {
   return result;
 };
 
+// The wallet token is forwarded exactly as Apple Pay / Google Pay returned it;
+// it is never parsed, re-serialized or inspected here.
+const mapAddWalletRequest = (input) => {
+  if (!input || WALLET_TYPES.indexOf(input.walletType) === -1) {
+    throw new Error('walletType must be APPLE_PAY or GOOGLE_PAY');
+  }
+  if (!isNonEmptyString(input.encryptedPayload)) {
+    throw new Error('encryptedPayload is required');
+  }
+  return {
+    walletType: input.walletType,
+    encryptedPayload: input.encryptedPayload,
+  };
+};
+
 const BROWSER_INFO_FIELDS = [
   'browserAcceptHeader',
   'browserJavaEnabled',
@@ -223,6 +238,7 @@ module.exports = {
   TOKEN_STATUSES,
   parseSavedCardResponse,
   parseSavedTokensResponse,
+  mapAddWalletRequest,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 };
