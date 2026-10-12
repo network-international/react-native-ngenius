@@ -65,19 +65,25 @@ That's it! The script handles everything automatically.
 2. Can initiate Google Pay flow
 3. Payment processes successfully
 
-### Tokenization POC (not backend tokenization)
+### Card Payment
+1. Can enter card number
+2. Validation works
+3. Payment submission works
+
+### Tokenization POC (no live tokenization backend)
 1. Toggle **Default theme** / **Merchant branding** (RN wrapper only)
 2. Tap **Open tokenization**
 3. Confirm CARD (and Apple Pay / Google Pay when the device actually supports them)
 4. CARD opens the **existing native** secure form
-   - **iOS:** button/background/label colours follow branding via NISdk 6.1.0 `setSDKColors` (public Swift `NISdkColors` fields; they are not Objective-C properties)
+   - **iOS:** button/background/label colours follow branding via NISdk 6.1.2 `setSDKColors` (public Swift `NISdkColors` fields; they are not Objective-C properties)
    - **Android:** native `CardPaymentActivity` is **not** branded (vendor default)
-5. Success copy means “native screen finished”, **not** “NI token created”
-6. Existing **Pay 1 AED** buttons must still work unchanged
+5. CARD and Apple Pay success copy means “native screen finished”, **not** “NI token created”
+6. Google Pay (Android) sends the wallet token to the demo client, which rejects it, so the screen shows the “could not save” message. No token is created.
+7. Existing **Pay 1 AED** buttons must still work unchanged
 
-List/get/validate/delete live on `createTokenizationClient`. CARD/wallet **create** is not wired from this UI. The demo does not contain JWT or API keys.
+The demo passes a demo-only `createTokenizationClient` with an in-memory transport: `getSavedTokens` returns zero tokens and an `example.com` T&C URL, and `addWallet`, `authenticateThreeDS` and `submitThreeDSChallengeResponse` fail. No backend is called. CARD create is not wired from JS. The demo does not contain access tokens or API keys.
 
-**Not in this POC:** VERIFY `OrderContext`, saved-token payment, MCP, RN 3DS, Android native card theming.
+**Not in this POC:** VERIFY `OrderContext`, saved-token payment, MCP, native 3DS continuation, Apple Pay token creation, Android native card theming.
 
 ---
 
@@ -261,7 +267,8 @@ If scripts don't work after trying quick fixes:
 
 See [final implementation and validation notes](../docs/tokenization-implementation.md).
 Use Merchant branding and Consent off switches, then Open tokenization. The Consent
-scenario button cycles Standard, Recurring, Reusable and Missing order. The local
-example.com T&C fixture validates UI/link appearance only; live backend delivery
-is pending. No tokens are created by these demo screens. Add Card opens existing
-native secure capture; no PAN/CVV fields are added to JavaScript.
+scenario button cycles Standard, Recurring, Reusable and Missing order. The T&C link
+comes from the demo client's mocked `getSavedTokens` response (an `example.com`
+URL); it validates UI/link appearance only, not live backend delivery. No tokens
+are created by these demo screens. Add Card opens existing native secure capture;
+no PAN/CVV fields are added to JavaScript.

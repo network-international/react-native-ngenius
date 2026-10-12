@@ -11,11 +11,6 @@ import {
   isGooglePaySupported,
 } from './src/nativePayments';
 
-const { resolveTokenizationTheme } = require('./src/tokenization/resolveTheme');
-const {
-  getTokenizationMethods,
-  TOKENIZATION_SUPPORTED_METHODS,
-} = require('./src/tokenization/supportedMethods');
 const {
   createTokenizationClient,
 } = require('./src/tokenization/api/TokenizationClient');
@@ -113,9 +108,6 @@ export {
   configureSDK,
   executeThreeDSTwo,
   NgeniusTokenization,
-  resolveTokenizationTheme,
-  getTokenizationMethods,
-  TOKENIZATION_SUPPORTED_METHODS,
   createTokenizationClient,
   TokenizationApiError,
 };

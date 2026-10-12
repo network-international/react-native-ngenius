@@ -7,29 +7,36 @@ describe('public SDK exports', () => {
     'utf8'
   );
 
-  const requiredExports = [
-    'initiateCardPayment',
-    'initiateSamsungPay',
-    'initiateApplePay',
-    'initiateGooglePay',
-    'isSamsungPaySupported',
-    'isApplePaySupported',
-    'isGooglePaySupported',
-    'configureSDK',
-    'executeThreeDSTwo',
-    'getDeviceInfo',
-    'SDK_VERSION',
-    'NgeniusTokenization',
-    'createTokenizationClient',
-    'TokenizationApiError',
-  ];
+  const exportedNames = () => {
+    const block = indexSource.match(/^export \{([\s\S]*?)\};/m)[1];
+    const named = block.split(',').map((name) => name.trim()).filter(Boolean);
+    const constants = [...indexSource.matchAll(/^export const (\w+)/gm)].map((match) => match[1]);
+    return [...named, ...constants].sort();
+  };
 
-  it('keeps the existing named payment exports and adds NgeniusTokenization', () => {
-    requiredExports.forEach((name) => {
-      expect(indexSource).toContain(name);
-    });
-    expect(indexSource).toMatch(/export \{[\s\S]*initiateCardPayment[\s\S]*NgeniusTokenization[\s\S]*\}/);
+  it('exports exactly the existing payment API plus the tokenization additions', () => {
+    expect(exportedNames()).toEqual([
+      'NgeniusTokenization',
+      'SDK_VERSION',
+      'TokenizationApiError',
+      'configureSDK',
+      'createTokenizationClient',
+      'executeThreeDSTwo',
+      'getDeviceInfo',
+      'initiateApplePay',
+      'initiateCardPayment',
+      'initiateGooglePay',
+      'initiateSamsungPay',
+      'isApplePaySupported',
+      'isGooglePaySupported',
+      'isSamsungPaySupported',
+    ]);
     expect(indexSource).not.toMatch(/export default/);
+  });
+
+  it('does not expose internal tokenization helpers', () => {
+    ['resolveTokenizationTheme', 'getTokenizationMethods', 'TOKENIZATION_SUPPORTED_METHODS']
+      .forEach((name) => expect(indexSource).not.toContain(name));
   });
 
   it('does not add a global configureSDK mode', () => {
