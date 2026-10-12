@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Animated } from 'react-native';
 
+const { VERIFICATION_STATES, isBusyState } = require('../verificationStates');
+
 const BounceDots = ({ styles }) => {
   const a = useRef(new Animated.Value(0.3)).current;
   const b = useRef(new Animated.Value(0.3)).current;
@@ -48,24 +50,27 @@ const StatusView = ({
   onCancel,
 }) => (
   <View style={styles.statusContainer} testID={`tokenization-status-${status}`}>
-    {status === 'loading' ? (
+    {isBusyState(status) ? (
       <>
         <BounceDots styles={styles} />
         <Text style={styles.loadingLabel}>{loadingLabel}</Text>
       </>
     ) : null}
-    {status === 'success' ? (
+    {status === VERIFICATION_STATES.SUCCESS ? (
       <>
         <Text style={styles.statusTitle}>{title}</Text>
         <Text style={styles.statusMessage}>{message}</Text>
       </>
     ) : null}
-    {status === 'error' ? (
+    {status === VERIFICATION_STATES.AWAITING_3DS ? (
+      <Text style={styles.statusMessage}>{message}</Text>
+    ) : null}
+    {status === VERIFICATION_STATES.FAILED ? (
       <View style={styles.errorBox}>
         <Text style={styles.errorText}>{message}</Text>
       </View>
     ) : null}
-    {status === 'loading' ? null : (
+    {isBusyState(status) ? null : (
       <TouchableOpacity
         testID="tokenization-status-close"
         accessibilityRole="button"

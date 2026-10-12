@@ -2,6 +2,10 @@ const {
   createTokenizationSession,
   pocNativeResult,
   pocErrorResult,
+  savedTokenResult,
+  awaitingThreeDSResult,
+  apiErrorResult,
+  THREE_DS_CONTINUATION_UNAVAILABLE,
 } = require('../session');
 
 describe('createTokenizationSession', () => {
@@ -64,7 +68,7 @@ describe('POC result model', () => {
   it('does not invent tokenRef / usageType / authType', () => {
     const result = pocNativeResult({ method: 'CARD', status: 'Success' });
     expect(result.niTokenCreated).toBe(false);
-    expect(result.paymentMethod).toBe(null);
+    expect(result.savedToken).toBe(null);
     expect(result.poc).toBeUndefined();
     expect(result).not.toHaveProperty('tokenRef');
     expect(result).not.toHaveProperty('usageType');
@@ -81,5 +85,57 @@ describe('POC result model', () => {
     expect(result.error).toBe('Aborted by user');
     expect(result).not.toHaveProperty('token');
     expect(result).not.toHaveProperty('pan');
+  });
+});
+
+describe('backend result model', () => {
+  const verified = {
+    tokenRef: 'tok_9',
+    type: 'WALLET',
+    walletType: 'GOOGLE_PAY',
+    status: 'VERIFIED',
+    cardDetails: { scheme: 'VISA', last4: '4242', expiry: '2029-06' },
+    orderReference: 'ord-9',
+    paymentReference: 'pay-9',
+  };
+
+  it('exposes only safe saved-token fields for VERIFIED', () => {
+    const result = savedTokenResult({ method: 'GOOGLE_PAY', savedToken: verified });
+    expect(result).toEqual({
+      flow: 'TOKENIZATION',
+      method: 'GOOGLE_PAY',
+      status: 'VERIFIED',
+      niTokenCreated: true,
+      savedToken: {
+        tokenRef: 'tok_9',
+        type: 'WALLET',
+        walletType: 'GOOGLE_PAY',
+        status: 'VERIFIED',
+        cardDetails: verified.cardDetails,
+      },
+      capture: 'REAL_TOKENIZATION_API',
+    });
+  });
+
+  it('does not report AWAIT_3DS as a created token', () => {
+    const result = awaitingThreeDSResult({ method: 'GOOGLE_PAY' });
+    expect(result.status).toBe('AWAIT_3DS');
+    expect(result.code).toBe(THREE_DS_CONTINUATION_UNAVAILABLE);
+    expect(result.niTokenCreated).toBe(false);
+    expect(result.savedToken).toBeNull();
+  });
+
+  it('keeps only code and message from API errors', () => {
+    const result = apiErrorResult({
+      method: 'GOOGLE_PAY',
+      error: { code: 'walletVerificationFailed', message: 'Unprocessable Entity', encryptedPayload: 'x' },
+    });
+    expect(result).toMatchObject({
+      status: 'FAILED',
+      code: 'walletVerificationFailed',
+      error: 'Unprocessable Entity',
+      niTokenCreated: false,
+    });
+    expect(JSON.stringify(result)).not.toContain('encryptedPayload');
   });
 });

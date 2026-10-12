@@ -13,6 +13,21 @@ describe('tokenization strings', () => {
     expect(t('fr', 'CANCEL')).toBe('Annuler');
   });
 
+  it('localizes every verification state message', () => {
+    const { STRINGS } = require('../strings');
+    const keys = [
+      'TOKEN_SAVED_TITLE',
+      'TOKEN_SAVED_SUCCESS',
+      'TOKEN_SAVE_FAILED',
+      'VERIFYING_PAYMENT_METHOD',
+      'VERIFICATION_PENDING',
+    ];
+    ['en', 'fr', 'ar'].forEach((language) => {
+      keys.forEach((key) => expect(typeof STRINGS[language][key]).toBe('string'));
+    });
+    expect(t('en', 'TOKEN_SAVED_SUCCESS')).not.toContain('not created');
+  });
+
   it('falls back to English for unknown languages', () => {
     expect(t('de', 'ADD_CARD')).toBe('Add Card');
   });

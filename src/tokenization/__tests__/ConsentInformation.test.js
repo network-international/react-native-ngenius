@@ -13,7 +13,7 @@ const { STRINGS } = require('../strings');
 const paypageCopy = require('./fixtures/paypage-consent.json');
 
 const order = {};
-const bootstrap = { resolvedTncUrl: 'https://example.com/terms?lang=fr&ref=a%2Fb#section' };
+const tncUrl = 'https://example.com/terms?lang=fr&ref=a%2Fb#section';
 const { resolveConsentInformation } = require('../consentInformation');
 const ordinaryCopy = 'By clicking "Pay", you agree to the Terms and Conditions and authorize this transaction.';
 const text = (node) => {
@@ -30,7 +30,7 @@ const render = (props = {}, branding) => {
   const language = props.language || 'en';
   const theme = resolveTokenizationTheme(branding, { language });
   const styles = createTokenizationStyles({ ...theme, isRtl: language.startsWith('ar') });
-  return ConsentInformation({ language, styles, information: resolveConsentInformation({ order, bootstrap, ...props }) });
+  return ConsentInformation({ language, styles, information: resolveConsentInformation({ order, tncUrl, ...props }) });
 };
 
 describe('ConsentInformation', () => {
@@ -51,8 +51,8 @@ describe('ConsentInformation', () => {
   );
 
   it.each([undefined, null, '', '   ', 'javascript:alert(1)', 'www.example.com']) (
-    'preserves consent without a clickable link for tncUrl=%p', (tncUrl) => {
-      const node = render({ bootstrap: { resolvedTncUrl: tncUrl } });
+    'preserves consent without a clickable link for tncUrl=%p', (value) => {
+      const node = render({ tncUrl: value });
       expect(text(node)).toBe(ordinaryCopy);
       expect(links(node)).toHaveLength(0);
     }
@@ -112,12 +112,12 @@ describe('ConsentInformation', () => {
     }, { customizedMessage: 'Injected' }))).toBe(ordinaryCopy);
   });
 
-  it('ignores orderData, top-level URL/providers, branding and transaction fallback fields', () => {
+  it('ignores orderData, providers, branding and transaction fallback fields', () => {
     const injected = { tncUrl: 'https://merchant.invalid/override' };
     const getTermsUrl = jest.fn(() => injected.tncUrl);
     const node = render({
-      bootstrap: null, order: { tncUrl: injected.tncUrl, termsAndConditions: injected.tncUrl }, orderData: injected,
-      tncUrl: injected.tncUrl, terms: { status: 'ready', url: injected.tncUrl }, getTermsUrl,
+      tncUrl: undefined, order: { tncUrl: injected.tncUrl, termsAndConditions: injected.tncUrl }, orderData: injected,
+      terms: { status: 'ready', url: injected.tncUrl }, getTermsUrl,
     }, injected);
     expect(text(node)).toBe(ordinaryCopy);
     expect(links(node)).toHaveLength(0);
@@ -127,7 +127,7 @@ describe('ConsentInformation', () => {
   it.each(['en', 'fr', 'ar'])('opens the resolved URL for the standard %s link', async (language) => {
     Linking.openURL.mockClear();
     await links(render({ language }))[0].props.onPress();
-    expect(Linking.openURL).toHaveBeenCalledWith(bootstrap.resolvedTncUrl);
+    expect(Linking.openURL).toHaveBeenCalledWith(tncUrl);
   });
 
   it('opens the real terms URL for every localized terms token', async () => {
@@ -135,7 +135,7 @@ describe('ConsentInformation', () => {
     const node = render({ order: { ...order, type: 'RECURRING', merchantAttributes: { paymentModel: 'subscription' } } });
     expect(links(node)).toHaveLength(2);
     for (const link of links(node)) await link.props.onPress();
-    expect(Linking.openURL.mock.calls).toEqual([[bootstrap.resolvedTncUrl], [bootstrap.resolvedTncUrl]]);
+    expect(Linking.openURL.mock.calls).toEqual([[tncUrl], [tncUrl]]);
   });
 
   it('does not open unsupported destinations or fail on capability lookup rejection', async () => {

@@ -74,7 +74,7 @@ const pocNativeResult = ({ method, status }) => ({
   method,
   status,
   niTokenCreated: false,
-  paymentMethod: null,
+  savedToken: null,
   capture: NATIVE_CAPTURE_DEMO,
 });
 
@@ -95,15 +95,50 @@ const pocErrorResult = (error) => {
     status,
     error: message,
     niTokenCreated: false,
-    paymentMethod: null,
+    savedToken: null,
     capture: NATIVE_CAPTURE_DEMO,
   };
 };
 
-const paymentMethodCreatedResult = (paymentMethod) => ({
+// Only a VERIFIED SavedCardResponse reaches merchants as a created token.
+const savedTokenResult = ({ method, savedToken }) => ({
   flow: 'TOKENIZATION',
+  method,
+  status: 'VERIFIED',
   niTokenCreated: true,
-  paymentMethod,
+  savedToken: {
+    tokenRef: savedToken.tokenRef,
+    type: savedToken.type,
+    walletType: savedToken.walletType,
+    status: savedToken.status,
+    cardDetails: savedToken.cardDetails,
+  },
+  capture: REAL_TOKENIZATION_API,
+});
+
+const THREE_DS_CONTINUATION_UNAVAILABLE = 'THREE_DS_CONTINUATION_UNAVAILABLE';
+
+// AWAIT_3DS is not success. The 3DS runner is not available yet, so the
+// pending token is not exposed and the attempt ends in a controlled state.
+const awaitingThreeDSResult = ({ method }) => ({
+  flow: 'TOKENIZATION',
+  method,
+  status: 'AWAIT_3DS',
+  code: THREE_DS_CONTINUATION_UNAVAILABLE,
+  error: '3DS verification is required and is not available yet',
+  niTokenCreated: false,
+  savedToken: null,
+  capture: REAL_TOKENIZATION_API,
+});
+
+const apiErrorResult = ({ method, error }) => ({
+  flow: 'TOKENIZATION',
+  method,
+  status: 'FAILED',
+  code: error && typeof error.code === 'string' ? error.code : 'UNKNOWN_ERROR',
+  error: error && typeof error.message === 'string' ? error.message : 'Failed',
+  niTokenCreated: false,
+  savedToken: null,
   capture: REAL_TOKENIZATION_API,
 });
 
@@ -111,5 +146,8 @@ module.exports = {
   createTokenizationSession,
   pocNativeResult,
   pocErrorResult,
-  paymentMethodCreatedResult,
+  savedTokenResult,
+  awaitingThreeDSResult,
+  apiErrorResult,
+  THREE_DS_CONTINUATION_UNAVAILABLE,
 };

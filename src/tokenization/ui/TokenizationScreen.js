@@ -6,6 +6,17 @@ import StatusView from './StatusView';
 
 const { createTokenizationStyles } = require('../createStyles');
 const { t } = require('../strings');
+const { VERIFICATION_STATES, isBusyState } = require('../verificationStates');
+
+const statusMessage = ({ language, status, tokenSaved, errorMessage }) => {
+  if (status === VERIFICATION_STATES.SUCCESS) {
+    return t(language, tokenSaved ? 'TOKEN_SAVED_SUCCESS' : 'VERIFICATION_SUCCESS');
+  }
+  if (status === VERIFICATION_STATES.AWAITING_3DS) {
+    return t(language, 'VERIFICATION_PENDING');
+  }
+  return errorMessage || t(language, 'VERIFICATION_FAILED');
+};
 
 const TokenizationScreen = ({
   theme,
@@ -14,6 +25,7 @@ const TokenizationScreen = ({
   consent,
   methods,
   status,
+  tokenSaved = false,
   errorMessage,
   onSelectMethod,
   onCancel,
@@ -23,14 +35,16 @@ const TokenizationScreen = ({
     () => createTokenizationStyles({ ...theme, isRtl }),
     [theme, isRtl]
   );
-  const isBusy = status === 'loading';
+  const isBusy = isBusyState(status);
   const methodLabels = {
     CARD: t(language, 'ADD_CARD'),
     APPLE_PAY: Platform.OS === 'ios' ? `\uF8FFPay` : t(language, 'APPLE_PAY'),
     GOOGLE_PAY: 'GPay',
   };
-  const showMethods = status === 'idle' || status === 'error';
-  const closeLabel = status === 'success' ? t(language, 'CLOSE') : t(language, 'CONTINUE_SHOPPING');
+  const showMethods =
+    status === VERIFICATION_STATES.READY || status === VERIFICATION_STATES.FAILED;
+  const closeLabel =
+    status === VERIFICATION_STATES.SUCCESS ? t(language, 'CLOSE') : t(language, 'CONTINUE_SHOPPING');
 
   return (
     <SafeAreaView
@@ -48,7 +62,7 @@ const TokenizationScreen = ({
         <BrandingHeader theme={theme} styles={styles} testID="tokenization-branding-header" />
         {showMethods ? (
           <>
-            {status === 'error' ? (
+            {status === VERIFICATION_STATES.FAILED ? (
               <View style={styles.errorBox} testID="tokenization-inline-error">
                 <Text style={styles.errorText}>
                   {errorMessage || t(language, 'VERIFICATION_FAILED')}
@@ -73,19 +87,20 @@ const TokenizationScreen = ({
           <StatusView
             status={status}
             styles={styles}
-            title={t(language, 'VERIFICATION_TITLE')}
-            message={
-              status === 'success'
-                ? t(language, 'VERIFICATION_SUCCESS')
-                : errorMessage || t(language, 'VERIFICATION_FAILED')
-            }
-            loadingLabel={t(language, 'CUSTOM_PENDING_PAYMENT_MESSAGE')}
+            title={t(language, tokenSaved ? 'TOKEN_SAVED_TITLE' : 'VERIFICATION_TITLE')}
+            message={statusMessage({ language, status, tokenSaved, errorMessage })}
+            loadingLabel={t(
+              language,
+              status === VERIFICATION_STATES.VERIFYING
+                ? 'VERIFYING_PAYMENT_METHOD'
+                : 'CUSTOM_PENDING_PAYMENT_MESSAGE'
+            )}
             cancelLabel={closeLabel}
             onCancel={onCancel}
           />
         )}
         <View style={styles.flexSpacer} />
-        {status === 'loading' ? null : showMethods ? (
+        {isBusy ? null : showMethods ? (
           <TouchableOpacity
             testID="tokenization-cancel"
             accessibilityRole="button"

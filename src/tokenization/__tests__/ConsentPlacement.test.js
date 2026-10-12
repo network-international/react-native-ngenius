@@ -4,9 +4,8 @@ jest.mock('react', () => ({
   useMemo: (fn) => fn(),
   useCallback: (fn) => fn,
   useRef: jest.fn((current) => ({ current })),
-  useState: (value) => [value, jest.fn()],
+  useState: jest.fn((value) => [value, jest.fn()]),
   useEffect: jest.fn(),
-  useContext: jest.fn(() => null),
 }));
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text', Pressable: 'Pressable', Image: 'Image', Modal: 'Modal',
@@ -46,12 +45,12 @@ const { resolveConsentInformation } = require('../consentInformation');
 const screen = (overrides = {}) => expand(React.createElement(TokenizationScreen, {
   consent: resolveConsentInformation({ order, ...overrides }),
   theme: resolveTokenizationTheme(), language: 'en', order,
-  methods: ['CARD', 'APPLE_PAY'], status: 'idle', onSelectMethod: jest.fn(),
+  methods: ['CARD', 'APPLE_PAY'], status: 'READY', onSelectMethod: jest.fn(),
   ...overrides,
 }));
 
 describe('paypage consent placement and public props', () => {
-  beforeEach(() => { jest.clearAllMocks(); React.useContext.mockReturnValue(null); });
+  beforeEach(() => { jest.clearAllMocks(); });
 
   it('renders wallet terms after wallet buttons and before the divider, then terms after card', () => {
     const tree = screen();
@@ -96,8 +95,9 @@ describe('paypage consent placement and public props', () => {
   });
 
   it('keeps terms on retry and removes them from result screens', () => {
-    expect(find(screen({ status: 'error' }), 'tokenization-consent-information')).toHaveLength(2);
-    expect(find(screen({ status: 'success' }), 'tokenization-consent-information')).toHaveLength(0);
+    expect(find(screen({ status: 'FAILED' }), 'tokenization-consent-information')).toHaveLength(2);
+    expect(find(screen({ status: 'SUCCESS' }), 'tokenization-consent-information')).toHaveLength(0);
+    expect(find(screen({ status: 'AWAITING_3DS' }), 'tokenization-consent-information')).toHaveLength(0);
   });
 
   it.each([undefined, false, true])('uses consentOff=%p and ignores public URL/content overrides', async (consentOff) => {
@@ -133,53 +133,62 @@ describe('paypage consent placement and public props', () => {
     }));
   });
 
-  it('uses only the new internal session URL and clears it between sessions', async () => {
-    const refs = [];
-    let cursor = 0;
-    const useRef = jest.spyOn(React, 'useRef').mockImplementation((current) => {
-      const index = cursor++;
-      if (!refs[index]) refs[index] = { current };
-      return refs[index];
-    });
-    const render = (props) => {
-      cursor = 0;
-      React.useEffect.mockClear();
-      return expand(React.createElement(NgeniusTokenization, props));
-    };
-    const effects = () => React.useEffect.mock.calls.forEach(([effect]) => effect());
+  it('renders the backend tncUrl as the consent link', async () => {
     const { Linking } = require('react-native');
-    try {
-      const bootstrap = { nativeOrder: order, resolvedTncUrl: order.tncUrl };
-      React.useContext.mockReturnValue(bootstrap);
-      const initial = render({ visible: true, order });
-      expect(flatten(initial).filter((node) => node.props.accessibilityRole === 'link')).toHaveLength(1);
-      effects();
-      React.useContext.mockReturnValue(null);
-      render({ visible: false, order });
-      effects();
-      React.useContext.mockReturnValue(bootstrap);
-      const reused = render({ visible: true, order });
-      expect(flatten(reused).filter((node) => node.props.accessibilityRole === 'link')).toHaveLength(0);
-      const nextOrder = { ...order, tncUrl: 'https://backend.example/new?ref=two%2Fthree' };
-      // Even a stale provider cannot attach an old destination to a new order.
-      const stale = render({ visible: true, order: nextOrder });
-      expect(flatten(stale).filter((node) => node.props.accessibilityRole === 'link')).toHaveLength(0);
-      React.useContext.mockReturnValue({ nativeOrder: nextOrder, resolvedTncUrl: nextOrder.tncUrl });
-      const tree = render({ visible: true, order: nextOrder });
-      const links = flatten(tree).filter((node) => node.props.accessibilityRole === 'link');
-      expect(links).toHaveLength(1);
-      await links[0].props.onPress();
-      expect(Linking.openURL).toHaveBeenLastCalledWith(nextOrder.tncUrl);
-      effects();
-      render({ visible: false, order: nextOrder });
-      effects();
-      React.useContext.mockReturnValue(null);
-      const missing = render({ visible: true });
-      expect(find(missing, 'tokenization-consent-information')).toHaveLength(1);
-      expect(flatten(missing).filter((node) => node.props.accessibilityRole === 'link')).toHaveLength(0);
-    } finally {
-      useRef.mockImplementation((current) => ({ current }));
-    }
+    const tncUrl = 'https://backend.example/terms?ref=two%2Fthree';
+    const tree = screen({ consent: resolveConsentInformation({ order, tncUrl }) });
+    const links = flatten(tree).filter((node) => node.props.accessibilityRole === 'link');
+    expect(links).toHaveLength(2);
+    await links[0].props.onPress();
+    expect(Linking.openURL).toHaveBeenLastCalledWith(tncUrl);
+  });
+
+  describe('saved-tokens T&C loading', () => {
+    const tncSetters = [];
+    beforeEach(() => {
+      tncSetters.length = 0;
+      React.useState.mockImplementation((value) => {
+        const setter = jest.fn();
+        if (value && typeof value === 'object' && 'loaded' in value) tncSetters.push(setter);
+        return [value, setter];
+      });
+    });
+    afterEach(() => React.useState.mockImplementation((value) => [value, jest.fn()]));
+
+    const open = async (props) => {
+      React.useEffect.mockClear();
+      expand(React.createElement(NgeniusTokenization, { visible: true, order, ...props }));
+      React.useEffect.mock.calls.forEach(([effect]) => effect());
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    };
+
+    it('requests saved tokens for the outlet once per open and applies tncUrl', async () => {
+      const client = { getSavedTokens: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/t' }) };
+      await open({ tokenizationClient: client, outletRef: 'outlet-1' });
+      expect(client.getSavedTokens).toHaveBeenCalledTimes(1);
+      expect(client.getSavedTokens).toHaveBeenCalledWith({ outletRef: 'outlet-1' });
+      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: true, url: 'https://backend.example/t' });
+    });
+
+    it('does not request T&C when consent is off', async () => {
+      const client = { getSavedTokens: jest.fn() };
+      await open({ tokenizationClient: client, outletRef: 'outlet-1', consentOff: true });
+      expect(client.getSavedTokens).not.toHaveBeenCalled();
+      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: true, url: undefined });
+    });
+
+    it('keeps consent without a link when loading fails', async () => {
+      const client = { getSavedTokens: jest.fn().mockRejectedValue(new Error('offline')) };
+      await open({ tokenizationClient: client, outletRef: 'outlet-1' });
+      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: true, url: undefined });
+    });
+
+    it('resets the URL when the modal closes so a new open loads fresh', async () => {
+      const client = { getSavedTokens: jest.fn() };
+      await open({ tokenizationClient: client, outletRef: 'outlet-1', visible: false });
+      expect(client.getSavedTokens).not.toHaveBeenCalled();
+      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: false, url: undefined });
+    });
   });
 
   it.each([
@@ -189,6 +198,10 @@ describe('paypage consent placement and public props', () => {
     [undefined, true, undefined],
   ])('emits only internal diagnostic codes for order=%p / consentOff=%p', (value, consentOff, code) => {
     const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+    React.useState.mockImplementation((initial) => [
+      initial && typeof initial === 'object' && 'loaded' in initial ? { loaded: true, url: undefined } : initial,
+      jest.fn(),
+    ]);
     try {
       const tree = expand(React.createElement(NgeniusTokenization, { visible: true, order: value, consentOff }));
       React.useEffect.mock.calls.forEach(([effect]) => effect());
@@ -197,6 +210,18 @@ describe('paypage consent placement and public props', () => {
       const displayedText = flatten(tree).filter((node) => node.type === 'Text').map((node) => node.children);
       expect(JSON.stringify(displayedText)).not.toMatch(/TERMS_URL_|private-payload/);
       expect(JSON.stringify(info.mock.calls)).not.toContain('private-payload');
+    } finally {
+      info.mockRestore();
+      React.useState.mockImplementation((value) => [value, jest.fn()]);
+    }
+  });
+
+  it('emits no diagnostic before the T&C request settles', () => {
+    const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      expand(React.createElement(NgeniusTokenization, { visible: true, order }));
+      React.useEffect.mock.calls.forEach(([effect]) => effect());
+      expect(info).not.toHaveBeenCalled();
     } finally {
       info.mockRestore();
     }

@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Platform } from 'react-native';
 import TokenizationScreen from './ui/TokenizationScreen';
 import { withNativeCardTheme } from './applyNativeCardTheme';
@@ -14,22 +14,24 @@ const { resolveTokenizationTheme } = require('./resolveTheme');
 const { getTokenizationMethods } = require('./supportedMethods');
 const { mapNativeCardColors } = require('./mapNativeCardColors');
 const { t } = require('./strings');
-const { TokenizationBootstrapContext, readResolvedTncUrl } = require('./TokenizationBootstrapContext');
-const { resolveConsentInformation } = require('./consentInformation');
+const { resolveConsentInformation, loadTncUrl } = require('./consentInformation');
 const {
   createTokenizationSession,
   pocNativeResult,
   pocErrorResult,
 } = require('./session');
+const { VERIFICATION_STATES } = require('./verificationStates');
+const { runGooglePayTokenization } = require('./walletTokenization');
 const {
   createNativePresentationGate,
   RN_MODAL_DISMISS_MS,
 } = require('./nativePresentation');
 
-// Native CARD / Apple Pay / Google Pay stay on the NISdk capture screens.
-// Do not call createCardPaymentMethod or createWalletPaymentMethod from this
-// component: CreateCardRequest needs PAN/CVV that NISdk does not expose to JS,
-// and wallet RN results are not CreateWalletRequest (dan / cryptogram).
+// Native CARD and Apple Pay stay on the NISdk capture screens. Card create
+// (POST /cards) must be submitted by the native secure layer so PAN/CVV never
+// cross the bridge, and the Apple Pay bridge does not return the payment token.
+// Google Pay is tokenized through POST /wallets when a client and outletRef
+// are supplied; otherwise it stays on the native demo result.
 const FLOW = 'TOKENIZATION';
 
 const NgeniusTokenization = ({
@@ -39,27 +41,35 @@ const NgeniusTokenization = ({
   branding,
   language = 'en',
   consentOff = false,
+  tokenizationClient,
+  outletRef,
   applePayConfig,
   googlePayConfig,
   onSuccess,
   onError,
   onCancel,
 }) => {
-  const bootstrap = useContext(TokenizationBootstrapContext);
-  const previousVisibility = useRef(false);
-  const retiredBootstrap = useRef(null);
-  const latestBootstrap = useRef(null);
-  // Reusing the component/order must not reuse a completed init session's URL.
-  // The internal adapter supplies a fresh context value for every new init.
-  if (!visible && previousVisibility.current) retiredBootstrap.current = latestBootstrap.current;
-  if (visible) latestBootstrap.current = bootstrap;
-  previousVisibility.current = visible;
-  const resolvedTncUrl = readResolvedTncUrl({
-    bootstrap: bootstrap === retiredBootstrap.current ? null : bootstrap,
-    order, visible, consentOff,
-  });
-  const consent = resolveConsentInformation({ consentOff, order, bootstrap: { resolvedTncUrl } });
-  const consentDiagnostic = consent?.diagnostic;
+  const tokenizationClientRef = useRef(tokenizationClient);
+  tokenizationClientRef.current = tokenizationClient;
+  const [tnc, setTnc] = useState({ loaded: false, url: undefined });
+  // Keyed on open/outlet/consent only, so an inline client cannot cause refetch loops.
+  useEffect(() => {
+    if (!visible) {
+      setTnc({ loaded: false, url: undefined });
+      return undefined;
+    }
+    let cancelled = false;
+    loadTncUrl({ client: tokenizationClientRef.current, outletRef, consentOff }).then((url) => {
+      if (!cancelled) {
+        setTnc({ loaded: true, url });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, outletRef, consentOff]);
+  const consent = resolveConsentInformation({ consentOff, order, tncUrl: tnc.url });
+  const consentDiagnostic = tnc.loaded ? consent?.diagnostic : undefined;
   useEffect(() => {
     if (visible && consentDiagnostic) {
       // Informational log only: no shopper error, URL, order data or credentials.
@@ -70,8 +80,9 @@ const NgeniusTokenization = ({
     () => resolveTokenizationTheme(branding, { language }),
     [branding, language]
   );
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState(VERIFICATION_STATES.READY);
   const [errorMessage, setErrorMessage] = useState(undefined);
+  const [tokenSaved, setTokenSaved] = useState(false);
   const [applePaySupported, setApplePaySupported] = useState(false);
   const [googlePaySupported, setGooglePaySupported] = useState(false);
   const [hideForNative, setHideForNative] = useState(false);
@@ -94,8 +105,9 @@ const NgeniusTokenization = ({
   useEffect(() => {
     if (!visible) {
       wasVisibleRef.current = false;
-      setStatus('idle');
+      setStatus(VERIFICATION_STATES.READY);
       setErrorMessage(undefined);
+      setTokenSaved(false);
       setHideForNative(false);
       nativeGateRef.current = null;
       return;
@@ -103,8 +115,9 @@ const NgeniusTokenization = ({
     if (!wasVisibleRef.current) {
       sessionRef.current.start();
       sessionOrderRef.current = order;
-      setStatus('idle');
+      setStatus(VERIFICATION_STATES.READY);
       setErrorMessage(undefined);
+      setTokenSaved(false);
       setHideForNative(false);
       setSessionNonce((n) => n + 1);
     } else if (!sessionOrderRef.current && order) {
@@ -178,7 +191,7 @@ const NgeniusTokenization = ({
   );
 
   const finishSuccess = useCallback((result) => {
-    setStatus('success');
+    setStatus(VERIFICATION_STATES.SUCCESS);
     sessionRef.current.emitSuccess(onSuccessRef.current, result);
   }, []);
 
@@ -186,10 +199,33 @@ const NgeniusTokenization = ({
     (error) => {
       const payload = pocErrorResult(error);
       setErrorMessage(payload.error || t(language, 'VERIFICATION_FAILED'));
-      setStatus('error');
+      setStatus(VERIFICATION_STATES.FAILED);
       sessionRef.current.emitError(onErrorRef.current, payload);
     },
     [language]
+  );
+
+  const applyWalletOutcome = useCallback(
+    ({ state, result }) => {
+      if (state === VERIFICATION_STATES.READY) {
+        sessionRef.current.endNative();
+        setStatus(VERIFICATION_STATES.READY);
+        return;
+      }
+      if (state === VERIFICATION_STATES.SUCCESS) {
+        setTokenSaved(true);
+        finishSuccess(result);
+        return;
+      }
+      if (state === VERIFICATION_STATES.AWAITING_3DS) {
+        setStatus(VERIFICATION_STATES.AWAITING_3DS);
+      } else {
+        setErrorMessage(t(language, 'TOKEN_SAVE_FAILED'));
+        setStatus(VERIFICATION_STATES.FAILED);
+      }
+      sessionRef.current.emitError(onErrorRef.current, result);
+    },
+    [finishSuccess, language]
   );
 
   const handleDismiss = useCallback(() => {
@@ -214,7 +250,7 @@ const NgeniusTokenization = ({
       } catch (error) {
         if (error && error.status === 'Aborted') {
           sessionRef.current.endNative();
-          setStatus('idle');
+          setStatus(VERIFICATION_STATES.READY);
         } else {
           finishError(error || { status: 'Failed' });
         }
@@ -244,7 +280,7 @@ const NgeniusTokenization = ({
         finishError({ status: 'Error', error: 'Order not found' });
         return;
       }
-      setStatus('loading');
+      setStatus(VERIFICATION_STATES.SUBMITTING);
       setErrorMessage(undefined);
       if (method === 'CARD') {
         runAfterRnModalHidden(() =>
@@ -264,6 +300,19 @@ const NgeniusTokenization = ({
         );
         return;
       }
+      if (method === 'GOOGLE_PAY' && tokenizationClient && outletRef) {
+        applyWalletOutcome(
+          await runGooglePayTokenization({
+            client: tokenizationClient,
+            outletRef,
+            order: activeOrder,
+            googlePayConfig,
+            initiateGooglePay,
+            onVerifying: () => setStatus(VERIFICATION_STATES.VERIFYING),
+          })
+        );
+        return;
+      }
       if (method === 'GOOGLE_PAY') {
         try {
           const response = await initiateGooglePay(activeOrder, googlePayConfig);
@@ -276,7 +325,7 @@ const NgeniusTokenization = ({
         } catch (error) {
           if (error && error.status === 'Aborted') {
             sessionRef.current.endNative();
-            setStatus('idle');
+            setStatus(VERIFICATION_STATES.READY);
             return;
           }
           finishError(error || { status: 'Failed' });
@@ -290,8 +339,11 @@ const NgeniusTokenization = ({
       theme,
       applePayConfig,
       googlePayConfig,
+      tokenizationClient,
+      outletRef,
       finishSuccess,
       finishError,
+      applyWalletOutcome,
       completeNativeAttempt,
       runAfterRnModalHidden,
     ]
@@ -316,6 +368,7 @@ const NgeniusTokenization = ({
         consent={consent}
         methods={methods}
         status={status}
+        tokenSaved={tokenSaved}
         errorMessage={errorMessage}
         onSelectMethod={onSelectMethod}
         onCancel={handleDismiss}

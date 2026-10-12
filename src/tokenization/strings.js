@@ -23,6 +23,12 @@ const STRINGS = {
       'The secure native screen finished. An NI token was not created.',
     VERIFICATION_FAILED: 'The secure native screen did not complete.',
     CUSTOM_PENDING_PAYMENT_MESSAGE: 'Processing your payment securely...',
+    TOKEN_SAVED_TITLE: 'Payment method saved',
+    TOKEN_SAVED_SUCCESS: 'Your payment method was verified and saved.',
+    TOKEN_SAVE_FAILED: 'We could not save your payment method. Please try again.',
+    VERIFYING_PAYMENT_METHOD: 'Verifying your payment method...',
+    VERIFICATION_PENDING:
+      'Additional verification is required to save this payment method. It is not available yet.',
   },
   fr: {
     PAYMENT_DISCLAIMER_1: "En cliquant sur \"Payer\", vous acceptez",
@@ -48,6 +54,12 @@ const STRINGS = {
       "L'écran natif sécurisé s'est terminé. Aucun jeton NI n'a été créé.",
     VERIFICATION_FAILED: "L'écran natif sécurisé ne s'est pas terminé.",
     CUSTOM_PENDING_PAYMENT_MESSAGE: 'Traitement sécurisé de votre paiement...',
+    TOKEN_SAVED_TITLE: 'Moyen de paiement enregistré',
+    TOKEN_SAVED_SUCCESS: 'Votre moyen de paiement a été vérifié et enregistré.',
+    TOKEN_SAVE_FAILED: "Nous n'avons pas pu enregistrer votre moyen de paiement. Veuillez réessayer.",
+    VERIFYING_PAYMENT_METHOD: 'Vérification de votre moyen de paiement...',
+    VERIFICATION_PENDING:
+      "Une vérification supplémentaire est requise pour enregistrer ce moyen de paiement. Elle n'est pas encore disponible.",
   },
   ar: {
     PAYMENT_DISCLAIMER_1: "بالضغط على \"الدفع\"، فإنك توافق على",
@@ -72,6 +84,11 @@ const STRINGS = {
     VERIFICATION_SUCCESS: 'انتهت الشاشة الأصلية الآمنة. لم يتم إنشاء رمز NI.',
     VERIFICATION_FAILED: 'لم تكتمل الشاشة الأصلية الآمنة.',
     CUSTOM_PENDING_PAYMENT_MESSAGE: 'جاري معالجة دفعتك بأمان...',
+    TOKEN_SAVED_TITLE: 'تم حفظ وسيلة الدفع',
+    TOKEN_SAVED_SUCCESS: 'تم التحقق من وسيلة الدفع الخاصة بك وحفظها.',
+    TOKEN_SAVE_FAILED: 'تعذّر حفظ وسيلة الدفع الخاصة بك. يرجى المحاولة مرة أخرى.',
+    VERIFYING_PAYMENT_METHOD: 'جارٍ التحقق من وسيلة الدفع الخاصة بك...',
+    VERIFICATION_PENDING: 'يلزم إجراء تحقق إضافي لحفظ وسيلة الدفع هذه، وهو غير متاح بعد.',
   },
 };
 

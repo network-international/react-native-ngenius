@@ -7,7 +7,7 @@ describe('backend-resolved T&C contract', () => {
     'http://example.com/terms', 'HTTPS://example.com/terms',
   ])('preserves the supported backend URL verbatim: %s', (url) => {
     expect(supportedTermsUrl(url)).toBe(url);
-    expect(resolveConsentInformation({ bootstrap: { resolvedTncUrl: url } }))
+    expect(resolveConsentInformation({ tncUrl: url }))
       .toMatchObject({ url, diagnostic: undefined });
   });
 
@@ -18,25 +18,23 @@ describe('backend-resolved T&C contract', () => {
     ' https://example.com/terms ',
   ])('rejects malformed/non-web URLs without rewriting them: %p', (tncUrl) => {
     expect(supportedTermsUrl(tncUrl)).toBeNull();
-    expect(resolveConsentInformation({ bootstrap: { resolvedTncUrl: tncUrl } }))
+    expect(resolveConsentInformation({ tncUrl }))
       .toMatchObject({ url: null, diagnostic: 'TERMS_URL_INVALID' });
   });
 
   it.each([undefined, null, '', '  '])('reports missing backend field: %p', (tncUrl) => {
-    expect(resolveConsentInformation({ bootstrap: { resolvedTncUrl: tncUrl } }))
+    expect(resolveConsentInformation({ tncUrl }))
       .toMatchObject({ url: null, diagnostic: 'TERMS_URL_MISSING' });
   });
 
-  it('skips URL consumption and diagnostics when consent is disabled', () => {
-    const bootstrap = { get resolvedTncUrl() { throw new Error('must not read'); } };
-    expect(resolveConsentInformation({ bootstrap, consentOff: true })).toBeNull();
+  it('hides consent and ignores tncUrl when consent is disabled', () => {
+    expect(resolveConsentInformation({ tncUrl: 'https://example.com/terms', consentOff: true })).toBeNull();
   });
 
   it('does not fall back to transaction terms, branding or another prop', () => {
     expect(resolveConsentInformation({
       order: { tncUrl: 'https://injected.example', termsAndConditions: 'https://unresolved.example/terms' },
       orderData: { tncUrl: 'https://override.example/terms' },
-      tncUrl: 'https://override.example/terms',
     })).toMatchObject({ url: null, diagnostic: 'TERMS_URL_MISSING' });
   });
 
@@ -54,20 +52,12 @@ describe('backend-resolved T&C contract', () => {
 });
 
 
-describe('internal bootstrap boundary', () => {
-  const { readResolvedTncUrl } = require('../TokenizationBootstrapContext');
-  const order = {};
-  it('skips URL reads entirely for disabled, closed or unrelated sessions', () => {
-    const bootstrap = { nativeOrder: order, get resolvedTncUrl() { throw new Error('must not read'); } };
-    expect(readResolvedTncUrl({ bootstrap, order, visible: true, consentOff: true })).toBeUndefined();
-    expect(readResolvedTncUrl({ bootstrap, order, visible: false })).toBeUndefined();
-    expect(readResolvedTncUrl({ bootstrap, order: {}, visible: true })).toBeUndefined();
-  });
-  it('has no mutable global URL cache or public export', () => {
-    const bootstrap = { nativeOrder: order, resolvedTncUrl: 'https://example.com/?query=a%2Fb' };
-    expect(readResolvedTncUrl({ bootstrap, order, visible: true })).toBe(bootstrap.resolvedTncUrl);
-    expect(readResolvedTncUrl({ bootstrap: null, order, visible: true })).toBeUndefined();
-    const index = require('fs').readFileSync(require('path').join(__dirname, '../../../index.js'), 'utf8');
+describe('saved-tokens T&C source', () => {
+  it('has no demo bootstrap context in the SDK', () => {
+    const fs = require('fs');
+    const path = require('path');
+    expect(fs.existsSync(path.join(__dirname, '..', 'TokenizationBootstrapContext.js'))).toBe(false);
+    const index = fs.readFileSync(path.join(__dirname, '../../../index.js'), 'utf8');
     expect(index).not.toMatch(/TokenizationBootstrapContext|DemoTokenizationBootstrap|resolvedTncUrl/);
   });
 });

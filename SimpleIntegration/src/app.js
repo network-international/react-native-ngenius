@@ -22,6 +22,7 @@ import {
   configureSDK,
   executeThreeDSTwo,
   NgeniusTokenization,
+  createTokenizationClient,
 } from '@network-international/react-native-ngenius';
 
 
@@ -34,25 +35,29 @@ import {
   acceptGooglePay,
 } from './ngenius-apis';
 import { PAYPAGE_API_URL } from './config';
-// Internal workspace import for this visual demo only; not a public SDK API.
-import { TokenizationBootstrapContext } from '../../src/tokenization/TokenizationBootstrapContext';
 import SavedCardFrame from './save-card-frame';
 
 const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
 
-// VISUAL POC ONLY: reserved example domain, no live backend delivery claim.
-// This local model is not the proposed tokenization-init response contract.
-const demoBootstrapFixture = Object.freeze({
-  resolvedTncUrl: 'https://example.com/?demo=tokenization&locale=en#terms',
+// DEMO ONLY: in-memory transport, no network. It answers the saved-tokens
+// call with zero tokens and a reserved example T&C URL, and rejects every
+// other endpoint. A real app passes its tokenization baseUrl and an access
+// token obtained by its own backend.
+const DEMO_TNC_URL = 'https://example.com/?demo=tokenization&locale=en#terms';
+const DEMO_OUTLET_REF = 'demo-outlet';
+const demoTokenizationClient = createTokenizationClient({
+  baseUrl: 'https://tokenization.demo.invalid',
+  getAccessToken: async () => 'demo-access-token',
+  transport: async ({ method, url }) => {
+    if (method === 'GET' && /\/api\/outlets\/[^/]+\/tokens(\?|$)/.test(url)) {
+      return { status: 200, text: JSON.stringify({ tokens: [], tncUrl: DEMO_TNC_URL }) };
+    }
+    return {
+      status: 503,
+      text: JSON.stringify({ message: 'Demo backend does not create tokens', code: 503, errors: [] }),
+    };
+  },
 });
-
-function DemoTokenizationBootstrap({ order, consentOff, children }) {
-  const value = useMemo(() => consentOff === true ? null : ({
-    nativeOrder: order,
-    resolvedTncUrl: demoBootstrapFixture.resolvedTncUrl,
-  }), [order, consentOff]);
-  return <TokenizationBootstrapContext.Provider value={value}>{children}</TokenizationBootstrapContext.Provider>;
-}
 
 
 const DEMO_MERCHANT_BRANDING = {
@@ -507,7 +512,7 @@ const App = () => {
         onPress={() => setConsentScenario(scenarios[(scenarios.indexOf(consentScenario) + 1) % scenarios.length])}>
         <Text style={styles.buttonLabel}>Consent: {consentScenario}</Text>
       </TouchableHighlight>
-      <Text style={{ fontSize: 12 }}>Demo T&C fixture · live backend delivery pending</Text>
+      <Text style={{ fontSize: 12 }}>Demo T&C via mock saved-tokens client · no live backend</Text>
       {showWallet && (
         <TouchableHighlight
           disabled={creatingOrder}
@@ -580,10 +585,12 @@ const App = () => {
         style={styles.loader}
         animating={creatingOrder}
       />
-      {showTokenization ? <DemoTokenizationBootstrap order={tokenizationOrder} consentOff={consentOff}>
+      {showTokenization ? (
       <NgeniusTokenization
         paymentMethods={['CARD', 'APPLE_PAY', 'GOOGLE_PAY']}
         consentOff={consentOff}
+        tokenizationClient={demoTokenizationClient}
+        outletRef={DEMO_OUTLET_REF}
         visible={showTokenization}
         order={tokenizationOrder}
         branding={useMerchantBranding ? DEMO_MERCHANT_BRANDING : undefined}
@@ -596,8 +603,8 @@ const App = () => {
         googlePayConfig={tokenizationGooglePayConfig}
         onSuccess={(result) => {
           Alert.alert(
-            'Native flow completed',
-            `${result.method} native UI finished. NI token created: ${result.niTokenCreated}`,
+            result.niTokenCreated ? 'Payment method saved' : 'Native flow completed',
+            `${result.method} finished. NI token created: ${result.niTokenCreated}`,
             [{ text: 'OK' }],
           );
         }}
@@ -610,7 +617,7 @@ const App = () => {
         }}
         onCancel={() => { setShowTokenization(false); setTokenizationOrder(null); }}
       />
-      </DemoTokenizationBootstrap> : null}
+      ) : null}
     </ScrollView>
   );
 };
