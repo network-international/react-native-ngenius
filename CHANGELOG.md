@@ -2,6 +2,19 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.4] - 2026-10-13
+
+### Fixed
+- **Android build fails on current React Native with `Could not find method jcenter()`.**
+  JCenter was removed in Gradle 9, which current React Native releases use, so any app on
+  them failed at `android/build.gradle` of this package before compiling. Replaced both
+  `jcenter()` repositories with `mavenCentral()`. iOS is unchanged.
+- `SDK_VERSION` and package version aligned to `3.2.4`.
+
+### Upgrade notes
+- Drop-in over 3.2.3. If you replaced `jcenter()` in `node_modules` (by hand or with
+  `patch-package`) to get Android building, remove that patch.
+
 ## [3.2.3] - 2026-10-08
 
 ### Fixed
