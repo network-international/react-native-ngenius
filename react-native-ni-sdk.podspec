@@ -12,12 +12,12 @@ Pod::Spec.new do |s|
   # brief license entry:
   s.license      = "MIT"
   s.authors      = { "Johnny Peter" => "jpeter@equalexperts.com" }
-  s.platforms    = { :ios => "11.0" }
+  s.platforms    = { :ios => "15.0" }
   s.source       = { :git => "https://github.com/network-international/react-native-ngenius.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,c,m,swift}"
   s.requires_arc = true
 
   s.dependency "React"
-  s.dependency "NISdk", "6.1.2"
+  s.dependency "NISdk", "6.1.3"
 end
