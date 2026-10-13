@@ -240,7 +240,7 @@ PODS:
   - React-jsinspector (0.70.3)
   - React-logger (0.70.3):
     - glog
-  - react-native-ni-sdk (3.2.2):
+  - react-native-ni-sdk (3.2.3):
     - NISdk (= 6.1.2)
     - React
   - React-perflogger (0.70.3)
@@ -434,7 +434,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  boost: 9fa78656d705f55b1220151d997e57e2a3f2cde0
+  boost: cf4ae79078f2923e5958340491953c526843d174
   DoubleConversion: 5189b271737e1565bdce30deb4a08d647e3f5f54
   FBLazyVector: 3b313c3fb52b597f7a9b430798e6367d2b9f07e5
   FBReactNativeSpec: 99a7ecb7e9665d96f2fea706b0844e2f3117f381
@@ -458,7 +458,7 @@ SPEC CHECKSUMS:
   React-jsiexecutor: 7e2e1772ef7b97168c880eeaf3749d8c145ffd6e
   React-jsinspector: 0553c9fe7218e1f127be070bd5a4d2fc19fb8190
   React-logger: cffcc09e8aba8a3014be8d18da7f922802e9f19e
-  react-native-ni-sdk: 5424d435c308918d441df9afdaa5f6d541b9b971
+  react-native-ni-sdk: b701d67262d319c46398e2357feb90c55dfe6da4
   React-perflogger: 082b4293f0b3914ff41da35a6c06ac4490fcbcc8
   React-RCTActionSheet: 83da3030deb5dea54b398129f56540a44e64d3ae
   React-RCTAnimation: bac3a4f4c0436554d9f7fbb1352a0cdcb1fb0f1c
@@ -474,6 +474,6 @@ SPEC CHECKSUMS:
   RNCAsyncStorage: 0c357f3156fcb16c8589ede67cc036330b6698ca
   Yoga: 2ed968a4f060a92834227c036279f2736de0fce3
 
-PODFILE CHECKSUM: 9eb7030310bc2e31ceeee39a16e85d52ab7e2c28
+PODFILE CHECKSUM: 36c49622c6d927f6020ccf250b5fbe709f560cab
 
-COCOAPODS: 1.12.1
+COCOAPODS: 1.14.3

@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import NISdk
 
-/// Applies NISdk 6.1.0 card colours from Swift.
+/// Applies NISdk 6.1.2 card colours from Swift.
 ///
 /// Generated ObjC interface for `NISdkColors` only exposes `-init`.
 /// Colour fields are public Swift properties, not `@objc`.

@@ -2,7 +2,7 @@
 #import <PassKit/PassKit.h>
 #import <UIKit/UIKit.h>
 
-// NISdk 6.1.0 exposes setSDKColors to ObjC, but NISdkColors colour fields
+// NISdk 6.1.2 exposes setSDKColors to ObjC, but NISdkColors colour fields
 // are public Swift properties only. Colour apply/reset lives in
 // NiSdkColorConfigurator.swift so a later initiateCardPayment is unthemed.
 @interface NiSdkColorConfigurator : NSObject

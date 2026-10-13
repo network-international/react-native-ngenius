@@ -54,6 +54,14 @@ target 'SimpleIntegration' do
           defs += ['_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1']
         end
         config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+        # RN 0.70 Yoga builds with -Werror; newer clang flags its literal-operator syntax.
+        if target.name == 'Yoga'
+          cxx = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || '$(inherited)'
+          cxx = cxx.join(' ') if cxx.is_a?(Array)
+          unless cxx.include?('-Wno-deprecated-literal-operator')
+            config.build_settings['OTHER_CPLUSPLUSFLAGS'] = "#{cxx} -Wno-deprecated-literal-operator"
+          end
+        end
       end
     end
   end
