@@ -2,6 +2,19 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.5] - 2026-10-13
+
+### Added
+- **TypeScript definitions** (`index.d.ts`). TypeScript projects no longer fail with
+  `TS7016: Could not find a declaration file for module '@network-international/react-native-ngenius'`,
+  and get typed configs (`ApplePayConfig`, `GooglePayConfig`, `SDKConfig`) and result shapes
+  (`PaymentSuccess`, `PaymentFailure`, `GooglePaySuccess`). No runtime changes.
+- `SDK_VERSION` and package version aligned to `3.2.5`.
+
+### Upgrade notes
+- Drop-in over 3.2.4. If you added `declare module '@network-international/react-native-ngenius';`
+  to work around the missing types, delete it to get the real types.
+
 ## [3.2.4] - 2026-10-13
 
 ### Fixed
