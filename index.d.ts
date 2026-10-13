@@ -66,7 +66,7 @@ export interface GooglePaySuccess extends PaymentSuccess {
 export interface SDKConfig {
   /** Android: show the order amount on the payment page. */
   shouldShowOrderAmount?: boolean;
-  /** iOS: SDK language, e.g. `"en"`, `"ar"` or `"fr"`. */
+  /** SDK language on iOS and Android: `"en"`, `"ar"` or `"fr"`. */
   language?: string;
 }
 

@@ -2,6 +2,24 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.6] - 2026-10-13
+
+### Fixed
+- **iOS: `pod install` / build fails on Xcode 27** because the native SDK declared iOS 14.0
+  while Xcode 27 supports 15.0 and later. Native iOS `NISdk` bumped `6.1.2` → `6.1.3`
+  (deployment target 15.0); this pod now declares iOS 15.0 too (was a stale 11.0).
+- **Android: `configureSDK({ language })` was ignored**, so the SDK stayed in the app's
+  language. Native Android SDK bumped `5.2.3` → `5.2.4`, which adds `SDKConfig.setLanguage`,
+  and the bridge now passes `language` through. Supported: `"en"`, `"ar"`, `"fr"`.
+- Android: `configureSDK` no longer throws when `shouldShowOrderAmount` is omitted.
+- `SDK_VERSION` and package version aligned to `3.2.6`.
+
+### Upgrade notes
+- Apps must target iOS 15.0 or later (React Native 0.76+ already requires 15.1). Run
+  `pod update NISdk` to pick up 6.1.3.
+- If you raised pod deployment targets in your Podfile's `post_install` to work around the
+  Xcode 27 error, you can remove that.
+
 ## [3.2.5] - 2026-10-13
 
 ### Added

@@ -3,7 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 
 const { NiSdk } = NativeModules;
 
-export const SDK_VERSION = '3.2.5';
+export const SDK_VERSION = '3.2.6';
 
 // Helper function to get device info for User-Agent
 let deviceInfoCache = null;
@@ -294,10 +294,15 @@ const configureSDK = (config) => {
 
   // Supported configs for android platform
   if (Platform.OS === 'android') {
+    const androidConfig = {};
     if ('shouldShowOrderAmount' in config) {
-      NiSdk.configureSDK({
-        shouldShowOrderAmount: config.shouldShowOrderAmount
-      });
+      androidConfig.shouldShowOrderAmount = config.shouldShowOrderAmount;
+    }
+    if ('language' in config) {
+      androidConfig.language = config.language;
+    }
+    if (Object.keys(androidConfig).length > 0) {
+      NiSdk.configureSDK(androidConfig);
     }
   }
 
