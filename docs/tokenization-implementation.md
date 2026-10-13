@@ -9,11 +9,11 @@ correlation headers, UUID-only references and the DAN/cryptogram mapping are gon
 
 | Endpoint | RN status |
 | --- | --- |
-| `GET /api/outlets/{outletRef}/tokens` (`tokens` repeated, `consentOff`) | `getSavedTokens`; used by the component for `tncUrl` |
+| `GET /api/outlets/{outletRef}/tokens` (`tokens` repeated, `consentOff`) | `getSavedTokens`; current POC initialization call for `tncUrl` (final production init contract pending backend spec update) |
 | `POST /api/outlets/{outletRef}/wallets` | `addWallet`; wired for Google Pay |
 | `POST /api/outlets/{outletRef}/cards` | Path modelled only; native dependency |
-| `POST .../tokens/{tokenRef}/orders/{orderReference}/payments/{paymentReference}/3ds2/authentications` | `authenticateThreeDS` |
-| `POST .../3ds2/challenge-response` | `submitThreeDSChallengeResponse` |
+| `POST .../tokens/{tokenRef}/orders/{orderReference}/payments/{paymentReference}/3ds2/authentications` | `authenticateThreeDS` (experimental; not consumed by a native runner) |
+| `POST .../3ds2/challenge-response` | `submitThreeDSChallengeResponse` (experimental; not consumed by a native runner) |
 
 Headers are `Access-Token` and `Content-Type: application/json`; `X-Forwarded-For`
 is set by the gateway. `getAccessToken` is called per request; the token comes
@@ -42,7 +42,9 @@ Android device.
 Apple Pay: blocked. The iOS bridge returns status only, not the EC_v1 payment
 token required by `/wallets`.
 
-3DS: the client calls are implemented. The native runner is pending and must
+3DS: the client calls exist as experimental, integration-level methods; native 3DS
+continuation is not complete and they are not end-to-end supported. The native
+runner is pending and must
 follow the PayPage/BFF redirect pattern: load `threeDSMethodURL` with
 `threeDSMethodData`, read `threeDSCompInd` from the method-notification redirect,
 call `authentications`, open `acsURL` with `base64EncodedCReq`, read
@@ -54,6 +56,14 @@ pending state with code `THREE_DS_CONTINUATION_UNAVAILABLE`.
 `force3DS` (`merchantAttributes`) is not defaulted, not exposed as a prop and
 never sent for wallets.
 
+Existing payment APIs: names, signatures and normal-path behavior are unchanged.
+On iOS, `initiateCardPayment` and `initiateApplePay` (`ios/NiSdk.m`) now wait for
+the presenting screen to be free before presenting the native sheet, which the
+tokenization modal handoff needs. If another screen is still presented, the
+bridge retries for up to about 2 seconds, then presents or rejects with
+`{ status: 'Failed' }` instead of UIKit silently dropping the presentation and
+leaving the promise unsettled. Android is unchanged.
+
 ## Visual consolidation (2026-09-30)
 
 ## Applied decisions
@@ -63,9 +73,17 @@ spacing. All other values use PayPage localized copy. Standard/missing-order and
 recurring/subscription/installment/reusable selectors are unchanged. Merchant
 text/URL injection is not supported. `customizedMessage` is unrelated.
 
-Backend resolves invoice config `tncUrl` → transaction `termsAndConditions`
-fallback and returns it from the saved-tokens endpoint when consent is on. RN has
-no PayPage/config transport. `order.tncUrl` is not consumed.
+T&C source resolution is resolved: backend uses invoice config `tncUrl` →
+transaction `termsAndConditions` fallback. The POC initialization path is
+implemented: with consent on, the component calls `getSavedTokens({ outletRef })`
+without `tokens` and reads `tncUrl`. With `consentOff === true` it makes no request
+and needs no `tncUrl`. The final production delivery contract (init
+response/container) is pending a backend spec correction. The supplied
+`saved-tokens-api.json` still marks `tokens` as required and returns `tncUrl` for
+`consentOff=true`, contradicting the agreed zero-token behavior; until it is
+corrected a live backend may reject the zero-token call, and consent then remains
+visible without a link. RN has no PayPage/config transport. `order.tncUrl` is not
+consumed.
 
 The component loads `tncUrl` per open and clears it on close, so a later session
 cannot inherit a prior destination. The demo uses a demo-only in-memory client in
@@ -110,9 +128,13 @@ source-to-simulator comparison, not a live browser pixel-diff against a PayPage 
 
 ## Build and runtime evidence
 
-Backend contract alignment: iOS simulator Debug build of SimpleIntegration
-(iPhone 17) `BUILD SUCCEEDED`; release JS bundles built for iOS and Android.
-No runtime re-validation on simulator or device was done for this change.
+Backend contract alignment, rebuilt after merging master (SDK 3.2.3, NISdk 6.1.2,
+Xcode 26.6): iOS simulator Debug build of SimpleIntegration (iPhone 17)
+`BUILD SUCCEEDED`, including the NISdk colour configurator. On the simulator the
+tokenization screen and the existing Card screen opened, native card Cancel
+returned to the app, and Metro served the local SDK with no Invalid Hook Call. No
+payment was submitted and no live tokenization backend was called. Android was
+not re-validated.
 
 Visual consolidation (2026-09-30):
 
@@ -179,8 +201,9 @@ regression tests. All backend calls use mock transports.
 
 ## Remaining production work
 
-- Backend correction of `saved-tokens-api.json` (`tncUrl` with `consentOff=true`,
-  `tokens` marked required).
+- Final production init-response/container for `tncUrl`, and backend correction
+  of `saved-tokens-api.json` (`tncUrl` with `consentOff=true`, `tokens` marked
+  required).
 - Confirmed base URLs.
 - Native secure `POST /cards`; the Card flow still reports `niTokenCreated: false`.
 - Apple Pay token from the iOS bridge.

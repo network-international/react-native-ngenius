@@ -75,25 +75,35 @@ Frontend paths are relative to `paypage-app-2` at the pinned commit.
 - **Ownership resolved:** consent copy belongs to NI, never merchant text.
 - **Source resolved:** invoice config `tncUrl`, falling back to transaction
   `termsAndConditions`, resolved on backend using the audited PayPage logic above.
-- **Delivery resolved:** `saved-tokens-api.json` (received 9 Oct 2026),
-  `GET /api/outlets/{outletRef}/tokens`, returns `{ tokens, tncUrl? }`. This does
-  **not** establish `order.tncUrl`, `orderData.tncUrl`, a public URL prop, or a
+- **POC initialization path implemented:** RN currently uses
+  `getSavedTokens` (`GET /api/outlets/{outletRef}/tokens`, from
+  `saved-tokens-api.json`, received 9 Oct 2026) as the POC initialization call
+  and reads `tncUrl` from its `{ tokens, tncUrl? }` response. This does **not**
+  establish `order.tncUrl`, `orderData.tncUrl`, a public URL prop, or a
   URL-provider contract.
-- Agreed semantics: `consentOff === true` hides consent and needs no `tncUrl`;
-  `consentOff` false or omitted returns `tncUrl`. Zero tokens is valid
-  (`{ tokens: [], tncUrl }`). The supplied JSON still says `tncUrl` is returned
-  for `consentOff=true` and that `tokens` is required; both need a backend-side
-  correction.
+- **Final production delivery contract pending:** the production
+  init-response/container for `tncUrl` is not confirmed and depends on a backend
+  spec update.
+- Agreed semantics: `consentOff === true` means no request, no consent and no
+  `tncUrl` required. `consentOff` false or omitted means the POC calls
+  `getSavedTokens` and expects `tokens[]` plus the resolved `tncUrl`. Zero
+  tokens is valid (`{ tokens: [], tncUrl }`).
+- The supplied JSON still contradicts this: it marks `tokens` as required
+  (`missingField`) and says `tncUrl` is returned for `consentOff=true`. The
+  component calls `getSavedTokens` without `tokens`, so until the backend spec is
+  corrected a live backend may reject that call. Consent then remains visible
+  without a link.
 
 RN makes no PayPage/config HTTP request for consent. The source audit above
-explains backend ownership. The only call is the saved-tokens endpoint through
+explains backend ownership. The only call is the POC saved-tokens request through
 the merchant-supplied tokenization client, authenticated with `Access-Token`.
 No PayPage session status or `PAYPAGE_SESSION_UNAVAILABLE` remains in production code.
 
 ## Component loading and demo
 
 When `tokenizationClient` and `outletRef` are supplied and consent is on, the
-component calls `getSavedTokens({ outletRef })` each time it opens and keeps the
+component calls `getSavedTokens({ outletRef })` (the POC initialization call) each
+time it opens and keeps the
 returned `tncUrl` in component state for that open only. Closing clears it, so a
 reopened modal never reuses a previous destination. There is no global URL cache.
 With consent off, no request is made.

@@ -78,19 +78,23 @@ const makeGooglePayPayment = async () => {
 
 ## Tokenization
 
-This is **not** production-ready saved-card tokenization. Existing payment APIs are unchanged.
+This is **not** production-ready saved-card tokenization. Existing payment API names, signatures and normal-path behavior are unchanged; see [Existing payment APIs](#existing-payment-apis) for one iOS hardening change.
 
 Backend contracts: `add-card-api.json`, `add-wallet-api.json` and `saved-tokens-api.json` (received 9 Oct 2026).
+
+### Existing payment APIs
+
+On iOS, `initiateCardPayment` and `initiateApplePay` now wait for the presenting screen to be free before showing the native sheet. When nothing else is presented (the normal path), behavior is unchanged. When another screen is still presented or dismissing, the bridge retries for up to about 2 seconds, then presents the sheet or rejects with `{ status: 'Failed' }`. Previously UIKit could silently drop the presentation, leaving the promise unsettled. Android and all other payment APIs are unchanged.
 
 ### Status
 
 | Area | Status |
 | --- | --- |
-| Saved tokens / T&C (`GET /api/outlets/{outletRef}/tokens`) | Implemented in the client and used by the component for `tncUrl` |
+| Saved tokens / T&C (`GET /api/outlets/{outletRef}/tokens`) | Implemented in the client; used as the **POC initialization call** for `tncUrl`. The final production init contract is pending a backend spec update. |
 | Google Pay (`POST /api/outlets/{outletRef}/wallets`) | Implemented in JS; not validated on an Android device |
 | Card (`POST /api/outlets/{outletRef}/cards`) | Modelled only; must be submitted by the native secure layer |
 | Apple Pay | Pending: the iOS bridge does not return the payment token |
-| 3DS (`.../3ds2/authentications`, `.../3ds2/challenge-response`) | Client methods implemented; native 3DS runner pending |
+| 3DS (`.../3ds2/authentications`, `.../3ds2/challenge-response`) | Experimental client methods only; native 3DS continuation not complete |
 | Base URLs | Pending: no environment URL ships with the SDK |
 
 ### Authentication (`Access-Token`)
@@ -123,7 +127,9 @@ const savedToken = await tokenizationClient.addWallet({
   encryptedPayload: googlePayToken,
 });
 
-// 3DS continuation for AWAIT_3DS (cards and wallets).
+// EXPERIMENTAL, integration-level only: 3DS continuation for AWAIT_3DS.
+// The SDK does not run the 3DS method/challenge steps yet; native 3DS
+// continuation is not complete, so this is not end-to-end supported.
 await tokenizationClient.authenticateThreeDS({
   outletRef, tokenRef, orderReference, paymentReference,
   threeDSCompInd: 'Y', // Y, N or U
@@ -171,7 +177,7 @@ import { NgeniusTokenization } from '@network-international/react-native-ngenius
 
 With `tokenizationClient` and `outletRef`:
 
-- On open, the component calls `getSavedTokens({ outletRef })` and uses the returned `tncUrl` for the consent link.
+- On open (consent on), the component calls `getSavedTokens({ outletRef })` without `tokens` and uses the returned `tncUrl` for the consent link. This is the current **POC initialization path**, not the final production init contract.
 - Google Pay sends the wallet token to `POST /wallets`. Only `VERIFIED` calls `onSuccess` with `{ flow, method, status: 'VERIFIED', niTokenCreated: true, savedToken: { tokenRef, type, walletType, status, cardDetails } }`.
 - `AWAIT_3DS` is not success. Until the native 3DS runner exists, the attempt ends in a controlled pending state: the shopper sees a message and `onError` receives `{ status: 'AWAIT_3DS', code: 'THREE_DS_CONTINUATION_UNAVAILABLE', niTokenCreated: false, savedToken: null }`.
 - Failures call `onError` with `{ status: 'FAILED', code, error, niTokenCreated: false }`.
@@ -186,7 +192,14 @@ Language fonts: the component `language` prop is matched against `languages[].la
 
 Consent is NI-owned PayPage EN/FR/AR text. Only strict `consentOff === true` removes its block, links and spacing. False, omitted or invalid values retain it. A missing order selects standard text; recurring/reusable orders use the PayPage selectors. Merchant text and `customizedMessage` cannot replace consent.
 
-The agreed saved-tokens behavior: `consentOff === true` hides consent and needs no `tncUrl`; `consentOff` false or omitted returns `tncUrl`. Zero saved tokens is valid (`{ tokens: [], tncUrl }`). The supplied `saved-tokens-api.json` still describes `tncUrl` as returned when `consentOff=true` and `tokens` as required; both need a backend-side correction.
+T&C source resolution (invoice config `tncUrl`, then transaction `termsAndConditions`) is resolved on the backend. The POC initialization path is implemented with `getSavedTokens`. The final production delivery contract (init response/container) is pending a backend spec correction.
+
+Agreed behavior:
+
+- `consentOff === true`: no saved-tokens/T&C request, no consent, no `tncUrl` required.
+- `consentOff` false or omitted: the POC calls `getSavedTokens({ outletRef })` and expects `{ tokens: [], tncUrl }`. Zero saved tokens is valid.
+
+The supplied `saved-tokens-api.json` still contradicts this: it marks `tokens` as required (`missingField`) and describes `tncUrl` as returned when `consentOff=true`. Until the backend spec is corrected, a live backend may reject the zero-token call; consent then remains visible without a link.
 
 While the URL is loading, or if it is missing, invalid or the request fails, consent stays visible with plain Terms. A valid HTTP(S) URL opens through `Linking.canOpenURL` / `openURL`, preserving query and fragment. Internal diagnostic codes never become shopper errors.
 
@@ -204,7 +217,7 @@ No public `tncUrl`, `orderData`, URL provider, custom consent, `merchantAttribut
 
 PAN/CVV stay in the existing native card UI. The themed tokenization container does **not** collect card numbers in React Native `TextInput`s.
 
-- **iOS NISdk 6.1.0:** `NISdk.setSDKColors(sdkColors:)` is a public `@objc` API. Colour fields on `NISdkColors` are public Swift `UIColor` vars, not Objective-C properties. This package sets those Swift fields, then restores defaults after the card sheet.
+- **iOS NISdk 6.1.2:** `NISdk.setSDKColors(sdkColors:)` is a public `@objc` API. Colour fields on `NISdkColors` are public Swift `UIColor` vars, not Objective-C properties. This package sets those Swift fields, then restores defaults after the card sheet.
 - **Android payment-sdk 5.2.3:** no runtime merchant theme API.
 
 ### Demo
