@@ -24,6 +24,7 @@ RCT_EXPORT_METHOD(initiateCardPaymentUI:(NSDictionary *)orderResponse cardPayRes
     NSData *orderResponseJsonData = [NSJSONSerialization dataWithJSONObject: orderResponse options: 0 error:&error];
     if (!orderResponseJsonData) {
         NSLog(@"Got an error: %@", error);
+        [self sendPaymentResult:@"Failed"];
     } else {
         NSError *decodeError = nil;
         OrderResponse *orderResponse = [OrderResponse decodeFromData: orderResponseJsonData error: &decodeError];
@@ -33,9 +34,7 @@ RCT_EXPORT_METHOD(initiateCardPaymentUI:(NSDictionary *)orderResponse cardPayRes
         // surface a failure to JS instead of crashing.
         if (!orderResponse) {
             NSLog(@"[NiSdk] initiateCardPaymentUI: OrderResponse decode FAILED: %@", decodeError);
-            if (self.paymentResponseCallback) {
-                self.paymentResponseCallback(@[@"PaymentFailed"]);
-            }
+            [self sendPaymentResult:@"PaymentFailed"];
             return;
         }
         dispatch_async(dispatch_get_main_queue(), ^(void){
@@ -53,6 +52,7 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
     NSData *orderResponseJsonData = [NSJSONSerialization dataWithJSONObject: orderResponse options: 0 error:&error];
     if (!orderResponseJsonData) {
         NSLog(@"Got an error: %@", error);
+        [self sendPaymentResult:@"Failed"];
     } else {
         NSError *decodeError = nil;
         OrderResponse *orderResponse = [OrderResponse decodeFromData: orderResponseJsonData error: &decodeError];
@@ -63,9 +63,7 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
         // crashing — matching initiateCardPaymentUI above.
         if (!orderResponse) {
             NSLog(@"[NiSdk] initiateApplePay: OrderResponse decode FAILED: %@", decodeError);
-            if (self.paymentResponseCallback) {
-                self.paymentResponseCallback(@[@"PaymentFailed"]);
-            }
+            [self sendPaymentResult:@"PaymentFailed"];
             return;
         }
         PKPaymentRequest *applePayRequest = [[PKPaymentRequest alloc] init];
@@ -115,8 +113,15 @@ RCT_EXPORT_METHOD(executeThreeDSTwo:(NSDictionary *)paymentResponseDict
     NSData *paymentResponseJsonData = [NSJSONSerialization dataWithJSONObject: paymentResponseDict options: 0 error:&error];
     if (!paymentResponseJsonData) {
         NSLog(@"Got an error: %@", error);
+        [self sendPaymentResult:@"Failed"];
     } else {
-        PaymentResponse *paymentResponse = [PaymentResponse decodeFromData: paymentResponseJsonData error: nil];
+        NSError *decodeError = nil;
+        PaymentResponse *paymentResponse = [PaymentResponse decodeFromData: paymentResponseJsonData error: &decodeError];
+        if (!paymentResponse) {
+            NSLog(@"[NiSdk] executeThreeDSTwo: PaymentResponse decode FAILED: %@", decodeError);
+            [self sendPaymentResult:@"Failed"];
+            return;
+        }
         dispatch_async(dispatch_get_main_queue(), ^(void){
             UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
             NISdk *sdkInstance = [NISdk sharedInstance];
@@ -126,19 +131,48 @@ RCT_EXPORT_METHOD(executeThreeDSTwo:(NSDictionary *)paymentResponseDict
 
 }
 
+/// Reports a result to JS at most once. A React Native callback may be invoked only once, and a
+/// pending one would otherwise be reused by the next payment.
+- (void)sendPaymentResult:(NSString *)status {
+    RCTResponseSenderBlock callback = self.paymentResponseCallback;
+    self.paymentResponseCallback = nil;
+    if (callback != nil) {
+        callback(@[status]);
+    }
+}
+
+/// Every native outcome is reported. Review and partial authorisation outcomes keep their own
+/// names rather than "Failed": funds may already be held, so the merchant must check the order
+/// status on their backend before offering a retry.
 - (void)paymentDidCompleteWith:(enum PaymentStatus)status {
-    if(status == PaymentStatusPaymentSuccess) {
-        if(self.paymentResponseCallback != nil) {
-            self.paymentResponseCallback(@[@"Success"]);
-        }
-    } else if(status == PaymentStatusPaymentFailed) {
-        if(self.paymentResponseCallback != nil) {
-            self.paymentResponseCallback(@[@"Failed"]);
-        }
-    } else if(status == PaymentStatusPaymentCancelled) {
-        if(self.paymentResponseCallback != nil) {
-            self.paymentResponseCallback(@[@"Aborted"]);
-        }
+    switch (status) {
+        case PaymentStatusPaymentSuccess:
+            [self sendPaymentResult:@"Success"];
+            break;
+        case PaymentStatusPaymentFailed:
+            [self sendPaymentResult:@"Failed"];
+            break;
+        case PaymentStatusPaymentCancelled:
+            [self sendPaymentResult:@"Aborted"];
+            break;
+        case PaymentStatusPaymentPostAuthReview:
+            [self sendPaymentResult:@"PostAuthReview"];
+            break;
+        case PaymentStatusPartiallyAuthorised:
+            [self sendPaymentResult:@"PartiallyAuthorised"];
+            break;
+        case PaymentStatusPartialAuthDeclined:
+            [self sendPaymentResult:@"PartialAuthDeclined"];
+            break;
+        case PaymentStatusPartialAuthDeclineFailed:
+            [self sendPaymentResult:@"PartialAuthDeclineFailed"];
+            break;
+        case PaymentStatusInValidRequest:
+            [self sendPaymentResult:@"InvalidRequest"];
+            break;
+        default:
+            [self sendPaymentResult:@"Failed"];
+            break;
     }
 }
 

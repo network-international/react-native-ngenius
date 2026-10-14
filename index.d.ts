@@ -12,11 +12,22 @@ export interface NGeniusOrder {
   [key: string]: unknown;
 }
 
-/** Status reported by the native SDK. Only `"Success"` means the payment succeeded. */
+/**
+ * Status reported by the native SDK. Only `"Success"` means the payment succeeded.
+ *
+ * `"PostAuthReview"`, `"PartiallyAuthorised"`, `"PartialAuthDeclined"` and
+ * `"PartialAuthDeclineFailed"` mean the payment may have reached the gateway and funds may be
+ * held. Confirm the order status from your backend before offering the payer a retry.
+ */
 export type PaymentStatus =
   | 'Success'
   | 'Failed'
   | 'Aborted'
+  | 'PostAuthReview'
+  | 'PartiallyAuthorised'
+  | 'PartialAuthDeclined'
+  | 'PartialAuthDeclineFailed'
+  | 'InvalidRequest'
   | 'PaymentFailed'
   | 'Error'
   | 'Not Supported'

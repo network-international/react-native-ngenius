@@ -55,6 +55,33 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     private Callback googlePayResponseCallback;
     private PaymentsClient paymentsClient;
 
+    /**
+     * Maps a native card payment result to the status reported to JS. Review and partial
+     * authorisation outcomes are reported under their own names, not as "Failed": funds may
+     * already be held, so the merchant must check the order status on their backend before
+     * offering a retry.
+     */
+    private static String cardPaymentStatus(int code) {
+        switch (code) {
+            case CardPaymentData.STATUS_PAYMENT_AUTHORIZED:
+            case CardPaymentData.STATUS_PAYMENT_PURCHASED:
+            case CardPaymentData.STATUS_PAYMENT_CAPTURED:
+                return "Success";
+            case CardPaymentData.STATUS_POST_AUTH_REVIEW:
+                return "PostAuthReview";
+            case CardPaymentData.STATUS_PARTIALLY_AUTHORISED:
+                return "PartiallyAuthorised";
+            case CardPaymentData.STATUS_PARTIAL_AUTH_DECLINED:
+                return "PartialAuthDeclined";
+            case CardPaymentData.STATUS_PARTIAL_AUTH_DECLINE_FAILED:
+                return "PartialAuthDeclineFailed";
+            case CardPaymentData.STATUS_PAYMENT_FAILED:
+            case CardPaymentData.STATUS_GENERIC_ERROR:
+            default:
+                return "Failed";
+        }
+    }
+
     private final ActivityEventListener cardActivityEventListener = new BaseActivityEventListener() {
 
         @Override
@@ -62,29 +89,26 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
             if ((requestCode == CARD_ACTIVITY_REQUEST_CODE && cardPayResponseCallback != null) ||
                     (requestCode == EXECUTE_THREE_DS_TWO_ACTIVITY_REQUEST_CODE && executeThreeDSTwoCallback != null)) {
                 Callback cb = requestCode == CARD_ACTIVITY_REQUEST_CODE ? cardPayResponseCallback : executeThreeDSTwoCallback;
-                // This is the card payment intent
+                // A React Native callback may be invoked only once, so release it before reporting.
+                if (requestCode == CARD_ACTIVITY_REQUEST_CODE) {
+                    cardPayResponseCallback = null;
+                } else {
+                    executeThreeDSTwoCallback = null;
+                }
                 if (resultCode == Activity.RESULT_OK) {
                     CardPaymentData cardPaymentData = CardPaymentData.getFromIntent(data);
-                    switch (cardPaymentData.getCode()) {
-                        case CardPaymentData.STATUS_PAYMENT_AUTHORIZED:
-                        case CardPaymentData.STATUS_PAYMENT_PURCHASED:
-                        case CardPaymentData.STATUS_PAYMENT_CAPTURED:
-                            // Payment succeeded
-                            cb.invoke("Success");
-                            break;
-                        case CardPaymentData.STATUS_PAYMENT_FAILED:
-                        case CardPaymentData.STATUS_GENERIC_ERROR:
-                        default:
-                            // Unknown error
-                            cb.invoke("Failed");
-                            break;
-                    }
+                    cb.invoke(cardPaymentStatus(cardPaymentData.getCode()));
                 } else if (resultCode == Activity.RESULT_CANCELED) {
                     // User aborted
                     cb.invoke("Aborted");
+                } else {
+                    // The payment page closed without a recognised result; report it rather than
+                    // leaving the JS promise pending.
+                    cb.invoke("Failed");
                 }
             } else if (requestCode == GOOGLE_PAY_REQUEST_CODE && googlePayResponseCallback != null) {
                 Callback cb = googlePayResponseCallback;
+                googlePayResponseCallback = null;
                 switch (resultCode) {
                     case Activity.RESULT_OK:
                         if (data != null) {

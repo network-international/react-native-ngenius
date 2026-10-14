@@ -2,6 +2,25 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Card payment results are no longer lost or collapsed into `"Failed"`.** Post-auth review
+  and partial-authorisation outcomes are now rejected with their own status
+  (`"PostAuthReview"`, `"PartiallyAuthorised"`, `"PartialAuthDeclined"`,
+  `"PartialAuthDeclineFailed"`) on both platforms. Previously Android reported them as
+  `"Failed"` and iOS never settled the promise. iOS also reports `"InvalidRequest"`.
+- iOS: the promise now settles when the order or payment response cannot be serialised or
+  decoded, instead of staying pending (or crashing in `executeThreeDSTwo`).
+- Android: the card page closing with an unexpected result code now rejects with `"Failed"`.
+- Each native callback is released after its first result, so a late or duplicate native
+  result can no longer reach a later payment.
+
+### Upgrade notes
+- `"Success"`, `"Failed"` and `"Aborted"` are unchanged. If you treat every rejection as a
+  failure, review the new statuses: funds may be held, so confirm the order status from your
+  backend before letting the payer retry.
+
 ## [3.2.6] - 2026-10-13
 
 ### Fixed
