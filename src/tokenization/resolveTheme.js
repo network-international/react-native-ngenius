@@ -26,18 +26,6 @@ const resolveLogoUrl = (branding = {}) =>
   normalizeThemeString(branding.footerImageUrl) ||
   normalizeThemeString(branding.faviconUrl);
 
-/**
- * Maps a BrandingResponse (GET /api/outlets/{outletRef}/branding) plus
- * local design-system tokens into a semantic RN theme.
- *
- * Does not invent backend fields. Extra ThemeConfig keys such as primaryColor
- * are ignored if present.
- *
- * Language fonts: match `options.language` against languages[].language,
- * then languages[0], then design-system (no fontFamily). This follows
- * paypage-app-2 ClickToPaySdk, not ThemeContext, which always uses
- * languages[0] (and forces Arial for Arabic).
- */
 const resolveTokenizationTheme = (branding, options = {}) => {
   const language = options.language || 'en';
   const source = branding && typeof branding === 'object' ? branding : {};

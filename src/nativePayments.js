@@ -2,12 +2,8 @@ import { NativeModules, Platform } from 'react-native';
 
 const { NiSdk } = NativeModules;
 
-// The native iOS SDK decodes the whole order into a strongly-typed model whose
-// `WalletProvider` enum rejects values it doesn't know (e.g. "GOOGLE_PAY" when
-// Google Pay is enabled on the outlet). An unknown value makes the entire order
-// fail to decode, producing a nil order and a native crash. A card payment does
-// not use the wallet list, so strip `paymentMethods.wallet` (wherever it
-// appears) before handing the order to the native side.
+// Unknown wallet enum values make iOS order decoding fail. Card payments do not
+// use wallets, so omit them to avoid passing a nil order to the native SDK.
 const stripWalletMethods = (value) => {
   if (Array.isArray(value)) {
     return value.map(stripWalletMethods);
@@ -132,7 +128,6 @@ const initiateApplePay = (order, applePayConfig) => {
 const isSamsungPaySupported = (serviceId) => {
   return new Promise((resolve, reject) => {
     if (Platform.OS === 'android') {
-      // Native impl
       NiSdk.isSamsungPayEnabled(serviceId, (status) => {
         resolve(status);
       });
@@ -145,7 +140,6 @@ const isSamsungPaySupported = (serviceId) => {
 const isApplePaySupported = () => {
   return new Promise((resolve, reject) => {
     if (Platform.OS === 'ios') {
-      // Native impl
       NiSdk.isApplePaySupported((isSupported) => {
         resolve(isSupported);
       });
@@ -203,9 +197,7 @@ const initiateGooglePay = (order, googlePayConfig) => {
         return;
       }
 
-      // Use formattedValue from order response (as per paypage-app pattern)
-      // formattedValue is already correctly formatted for the currency (handles 2, 3, or 0 decimal places)
-      // If formattedValue is not available, fallback to dividing by 100 and formatting to 2 decimals
+      // formattedValue respects currencies with zero or three decimal places.
       const amount = order.amount.formattedValue || (order.amount.value / 100).toFixed(2);
 
       const orderDetails = {

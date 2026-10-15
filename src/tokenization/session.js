@@ -3,10 +3,6 @@ const {
   REAL_TOKENIZATION_API,
 } = require('./captureModes');
 
-/**
- * Per-modal session flags. Extracted so reopen / double-callback
- * behaviour can be unit-tested without rendering React Native views.
- */
 const createTokenizationSession = () => {
   let inFlight = false;
   let successEmitted = false;
@@ -100,7 +96,6 @@ const pocErrorResult = (error) => {
   };
 };
 
-// Only a VERIFIED SavedCardResponse reaches merchants as a created token.
 const savedTokenResult = ({ method, savedToken }) => ({
   flow: 'TOKENIZATION',
   method,
@@ -118,8 +113,7 @@ const savedTokenResult = ({ method, savedToken }) => ({
 
 const THREE_DS_CONTINUATION_UNAVAILABLE = 'THREE_DS_CONTINUATION_UNAVAILABLE';
 
-// AWAIT_3DS is not success. The 3DS runner is not available yet, so the
-// pending token is not exposed and the attempt ends in a controlled state.
+// AWAIT_3DS is unverified; with no native 3DS runner, do not expose it as a saved token.
 const awaitingThreeDSResult = ({ method }) => ({
   flow: 'TOKENIZATION',
   method,

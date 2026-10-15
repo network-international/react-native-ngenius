@@ -1,9 +1,5 @@
 const { DESIGN_TOKENS } = require('./designTokens');
 
-/**
- * Maps resolved semantic theme → public Swift NISdkColors field names
- * on NISdk 6.1.2. Android 5.2.3 has no runtime color API; callers no-op.
- */
 const mapNativeCardColors = (theme) => {
   const branding = (theme && theme.branding) || {};
   return {

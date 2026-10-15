@@ -20,8 +20,6 @@ const { createFetchTransport, parseJsonBody } = require('./transport');
 
 const ACCESS_TOKEN_UNAVAILABLE = 'ACCESS_TOKEN_UNAVAILABLE';
 
-// The merchant backend obtains the identity access token; the SDK asks for it
-// just in time and never stores, refreshes or logs it.
 const resolveAccessToken = async (getAccessToken) => {
   let accessToken;
   try {

@@ -8,11 +8,6 @@ const {
 
 const METHOD = 'GOOGLE_PAY';
 
-/**
- * Google Pay capture -> POST /wallets. The Google Pay token is passed to the
- * backend unchanged and is never logged, stored or returned to the merchant.
- * `onVerifying` fires once the wallet sheet has closed and the token is sent.
- */
 const runGooglePayTokenization = async ({
   client,
   outletRef,

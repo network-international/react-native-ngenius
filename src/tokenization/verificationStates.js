@@ -1,5 +1,4 @@
-// UI states for one tokenization attempt. A tokenRef can exist before it is
-// usable: only a VERIFIED SavedCardResponse is success.
+// A tokenRef can exist before verification; only VERIFIED means success.
 const VERIFICATION_STATES = Object.freeze({
   READY: 'READY',
   SUBMITTING: 'SUBMITTING',

@@ -7,7 +7,6 @@ const { HEADER_ACCESS_TOKEN, HEADER_CONTENT_TYPE } = require('../headers');
 const { TOKENIZATION_PATHS } = require('../endpoints');
 const { parseSavedCardResponse } = require('../models');
 
-// Fixtures follow the examples in add-card-api.json / saved-tokens-api.json.
 const BASE_URL = 'https://tokenization.test';
 const ACCESS_TOKEN = 'test-access-token';
 const OUTLET = 'outlet-1';

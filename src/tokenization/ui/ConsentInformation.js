@@ -2,7 +2,6 @@ const React = require('react');
 const { Text, Linking } = require('react-native');
 const { t } = require('../strings');
 
-// No text/content prop: copy belongs to the SDK localization table.
 const ConsentInformation = ({ information, language, styles }) => {
   if (!information) return null;
   const { url } = information;
@@ -28,9 +27,7 @@ const ConsentInformation = ({ information, language, styles }) => {
       if (index) content.push(link(t(language, 'TERMS_OF_USE'), index));
       content.push(part);
     });
-    // PayPage's UNSCHEDULED copy contains no link token. Product now requires a
-    // terms reference for this variant too; retain its exact copy and append the
-    // existing localized terms label, linked only to the resolved destination.
+    // Reusable-card copy has no placeholder, so append the required terms link.
     if (parts.length === 1) content.push(' ', link(t(language, 'TERMS_OF_USE'), 'terms'));
   } else {
     content = [

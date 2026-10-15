@@ -2,7 +2,6 @@ const { runGooglePayTokenization } = require('../walletTokenization');
 const { createTokenizationClient } = require('../api/TokenizationClient');
 const { VERIFICATION_STATES } = require('../verificationStates');
 
-// Mock transport only; no backend is called.
 const GOOGLE_PAY_TOKEN = '{"signature":"sig","protocolVersion":"ECv2","signedMessage":"msg"}';
 const order = { amount: { value: 100, currencyCode: 'AED' } };
 const googlePayConfig = { merchantName: 'Demo', gateway: 'networkintl', gatewayMerchantId: 'm' };

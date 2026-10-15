@@ -18,14 +18,8 @@ const resetNativeCardTheme = () => {
   return { reset: true, platform: 'ios' };
 };
 
-/**
- * iOS NISdk 6.1.2 stores colours on the NISdk singleton via setSDKColors.
- * Colour fields are public Swift properties, applied natively from Swift.
- * Always restore NISdkColors() defaults after the card UI returns,
- * including rejection / throw. Native set/reset are async main-queue
- * calls; JS cannot unit-test the UIKit singleton. This helper only
- * asserts the JS call contract.
- */
+// NISdk colours are global; restore defaults even on failure so later payments
+// do not inherit tokenization branding.
 const withNativeCardTheme = async (nativeColors, runNativeCard) => {
   applyNativeCardTheme(nativeColors);
   try {

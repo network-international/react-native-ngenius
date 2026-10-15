@@ -1,4 +1,3 @@
-// Execute the real component tree with host views and hooks stubbed. No snapshots.
 jest.mock('react', () => ({
   ...jest.requireActual('react'),
   useMemo: (fn) => fn(),
@@ -121,7 +120,6 @@ describe('paypage consent placement and public props', () => {
     const tree = expand(React.createElement(NgeniusTokenization, {
       visible: true, order, consentOff, onSuccess, onError,
     }));
-    // Start the session and wallet-support effects. No real native UI is opened.
     React.useEffect.mock.calls.forEach(([effect]) => effect());
     await find(tree, 'tokenization-method-CARD')[0].props.onPress();
     for (let i = 0; i < 5; i += 1) await Promise.resolve();

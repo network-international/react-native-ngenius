@@ -39,10 +39,6 @@ import SavedCardFrame from './save-card-frame';
 
 const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
 
-// DEMO ONLY: in-memory transport, no network. It answers the saved-tokens
-// call with zero tokens and a reserved example T&C URL, and rejects every
-// other endpoint. A real app passes its tokenization baseUrl and an access
-// token obtained by its own backend.
 const DEMO_TNC_URL = 'https://example.com/?demo=tokenization&locale=en#terms';
 const DEMO_OUTLET_REF = 'demo-outlet';
 const demoTokenizationClient = createTokenizationClient({
@@ -405,7 +401,6 @@ const App = () => {
           // Tokenization can still show CARD without Google Pay config.
         }
       }
-      // Local consent-copy scenarios only; never sent to backend as new contracts.
       setTokenizationOrder(consentScenario === 'Missing order' ? undefined :
         consentScenario === 'Recurring' ? { ...order, type: 'RECURRING',
           merchantAttributes: { ...order.merchantAttributes, paymentModel: 'subscription' } } :

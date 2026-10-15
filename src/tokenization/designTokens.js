@@ -1,16 +1,3 @@
-/**
- * Paypage-app-2 design-system defaults (origin/master).
- * These are NOT merchant branding fields from GET /branding.
- *
- * Sources:
- * - src/styles/variables/_colors.scss
- * - src/styles/global.scss
- * - PaymentOptions.module.scss (mobile padding)
- * - WalletButtons.module.scss / Apple style.module.scss
- * - CardForm.module.scss .payButton
- * - Logo.module.scss (mobile large)
- * - Typography.module.scss
- */
 const DESIGN_TOKENS = {
   colors: {
     pageBackground: '#FFFFFF',

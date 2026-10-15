@@ -1,7 +1,6 @@
 const { createTokenizationClient } = require('../TokenizationClient');
 const { TokenizationApiError } = require('../errors');
 
-// Fixtures follow the examples in add-wallet-api.json.
 const BASE_URL = 'https://tokenization.test';
 const GOOGLE_PAY_TOKEN =
   '{"signature":"sig","intermediateSigningKey":{"signedKey":"k","signatures":["s"]},"protocolVersion":"ECv2","signedMessage":"msg"}';

@@ -14,10 +14,7 @@ module.exports = {
   projectRoot: __dirname,
   watchFolders: [sdkRoot],
   resolver: {
-    // Local SDK sources live in the parent repo, which has its own
-    // node_modules/react (devDependency 16.9). Hierarchical lookup
-    // from those files would bind NgeniusTokenization to a second
-    // React instance and throw Invalid hook call. Always use the app copy.
+    // Use the app's React copy; resolving the SDK's copy causes Invalid Hook Call.
     disableHierarchicalLookup: true,
     nodeModulesPaths: [appNodeModules],
     extraNodeModules: {

@@ -29,9 +29,7 @@ const HTTP_ERROR_FALLBACK = {
 
 const ERROR_ITEM_FIELDS = ['errorCode', 'domain', 'message', 'localizedMessage'];
 
-// Shared error body: { message, code, errors: [{ message, localizedMessage, errorCode, domain }] }.
-// Only these fields are copied, so request echoes or payload fragments in a
-// non-conforming body never reach SDK errors.
+// Allowlist error fields to keep unexpected request echoes out of SDK errors.
 const parseErrorItems = (value) => {
   if (!Array.isArray(value)) {
     return [];

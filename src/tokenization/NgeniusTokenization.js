@@ -27,11 +27,7 @@ const {
   RN_MODAL_DISMISS_MS,
 } = require('./nativePresentation');
 
-// Native CARD and Apple Pay stay on the NISdk capture screens. Card create
-// (POST /cards) must be submitted by the native secure layer so PAN/CVV never
-// cross the bridge, and the Apple Pay bridge does not return the payment token.
-// Google Pay is tokenized through POST /wallets when a client and outletRef
-// are supplied; otherwise it stays on the native demo result.
+// Card capture stays native so PAN/CVV never cross the React Native bridge.
 const FLOW = 'TOKENIZATION';
 
 const NgeniusTokenization = ({
@@ -72,7 +68,6 @@ const NgeniusTokenization = ({
   const consentDiagnostic = tnc.loaded ? consent?.diagnostic : undefined;
   useEffect(() => {
     if (visible && consentDiagnostic) {
-      // Informational log only: no shopper error, URL, order data or credentials.
       console.info('[TOKENIZATION_CONSENT]', { code: consentDiagnostic });
     }
   }, [visible, consentDiagnostic]);

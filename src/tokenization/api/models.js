@@ -75,8 +75,6 @@ const copyStrings = (source, fields) => {
   return out;
 };
 
-// add-card-api.json returns either the 3DS method step data or, after
-// authentications, the ACS challenge data in the same `3ds2` object.
 const parseThreeDS2 = (value) => {
   if (!value || typeof value !== 'object') {
     throw new Error('SavedCardResponse.3ds2 is invalid');
@@ -97,11 +95,7 @@ const parseThreeDS2 = (value) => {
   return { step: 'METHOD', ...method };
 };
 
-/**
- * Parses SavedCardResponse. `requireContinuation` is set for add card / add
- * wallet / 3DS responses, where AWAIT_3DS must carry the references and 3ds2
- * data needed for the next call. Saved-token lists do not carry them.
- */
+// Saved-token lists can omit continuation data; verification responses need it.
 const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => {
   if (!value || typeof value !== 'object') {
     throw new Error('SavedCardResponse is missing');
@@ -166,7 +160,6 @@ const parseSavedTokensResponse = (value, { consentOff } = {}) => {
   const result = {
     tokens: value.tokens.map((token) => parseSavedCardResponse(token)),
   };
-  // Agreed contract: consentOff=true needs no tncUrl; false/omitted returns it.
   if (consentOff !== true && value.tncUrl != null) {
     if (typeof value.tncUrl !== 'string') {
       throw new Error('Saved tokens response tncUrl is invalid');
@@ -176,8 +169,7 @@ const parseSavedTokensResponse = (value, { consentOff } = {}) => {
   return result;
 };
 
-// The wallet token is forwarded exactly as Apple Pay / Google Pay returned it;
-// it is never parsed, re-serialized or inspected here.
+// Wallet payloads are opaque; changing their encoding can invalidate them.
 const mapAddWalletRequest = (input) => {
   if (!input || WALLET_TYPES.indexOf(input.walletType) === -1) {
     throw new Error('walletType must be APPLE_PAY or GOOGLE_PAY');

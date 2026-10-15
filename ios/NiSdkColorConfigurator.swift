@@ -2,13 +2,10 @@ import Foundation
 import UIKit
 import NISdk
 
-/// Applies NISdk 6.1.2 card colours from Swift.
-///
-/// Generated ObjC interface for `NISdkColors` only exposes `-init`.
-/// Colour fields are public Swift properties, not `@objc`.
-/// `NISdk.setSDKColors(sdkColors:)` is `@objc public`.
+// NISdkColors fields are not exposed to Objective-C.
 @objc(NiSdkColorConfigurator)
 public final class NiSdkColorConfigurator: NSObject {
+    // Only the latest queued apply/reset may change global SDK colours.
     private static var mutation: Int = 0
 
     @objc public static func applyColors(_ colors: [AnyHashable: Any]?) {

@@ -3,8 +3,6 @@ const JSON_MEDIA_TYPE = 'application/json';
 const HEADER_ACCESS_TOKEN = 'Access-Token';
 const HEADER_CONTENT_TYPE = 'Content-Type';
 
-// The contracts list Access-Token and Content-Type on every call. X-Forwarded-For
-// is set by the gateway, not by the client.
 const buildTokenizationHeaders = ({ accessToken }) => {
   if (typeof accessToken !== 'string' || accessToken.length === 0) {
     throw new Error('accessToken is required');

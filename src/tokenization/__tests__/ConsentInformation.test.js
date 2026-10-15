@@ -9,7 +9,6 @@ const ConsentInformation = require('../ui/ConsentInformation');
 const { createTokenizationStyles } = require('../createStyles');
 const { resolveTokenizationTheme } = require('../resolveTheme');
 const { STRINGS } = require('../strings');
-// Extracted from paypage-app-2 commit 1d37b89b, not from the SDK table.
 const paypageCopy = require('./fixtures/paypage-consent.json');
 
 const order = {};

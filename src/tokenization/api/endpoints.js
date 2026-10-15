@@ -1,5 +1,3 @@
-// Paths from the backend contracts: add-card-api.json, add-wallet-api.json,
-// saved-tokens-api.json (received 9 Oct 2026).
 const REFERENCE_PATTERN = /^[A-Za-z0-9:_-]{1,100}$/;
 
 const encodePathSegment = (value, name) => {
@@ -26,7 +24,7 @@ const threeDSPath = ({ outletRef, tokenRef, orderReference, paymentReference }) 
 
 const TOKENIZATION_PATHS = {
   savedTokens: ({ outletRef }) => `${outletPath(outletRef)}/tokens`,
-  // Card create is submitted by the native secure layer, never from JS.
+  // PAN/CVV must stay native; this path is not a JS card-creation API.
   addCard: ({ outletRef }) => `${outletPath(outletRef)}/cards`,
   addWallet: ({ outletRef }) => `${outletPath(outletRef)}/wallets`,
   threeDSAuthentications: (ids) => `${threeDSPath(ids)}/authentications`,

@@ -26,19 +26,12 @@ const walletIncludes = (paymentMethods, wallet) => {
   return wallets.includes(wallet);
 };
 
-/**
- * Tokenization allowlist: CARD, APPLE_PAY, GOOGLE_PAY.
- * Unsupported APMs / Samsung Pay are never returned.
- */
 const getTokenizationMethods = (order, options = {}) => {
   const {
     platform,
     applePaySupported = false,
     googlePaySupported = false,
   } = options;
-  // Explicit merchant allowlist, additionally constrained by device capability.
-  // Omission preserves the pre-existing POC order-based behavior below; the final
-  // Product contract for omission remains undefined (no new default introduced).
   if (options.paymentMethods !== undefined) {
     const requested = Array.isArray(options.paymentMethods) ? options.paymentMethods : [];
     return TOKENIZATION_SUPPORTED_METHODS.filter((method) => requested.includes(method) && (

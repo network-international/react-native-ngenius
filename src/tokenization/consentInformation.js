@@ -1,6 +1,3 @@
-// Source: paypage-app-2 TnC and getOrderType, origin/master 1d37b89b.
-// tncUrl comes from GET /api/outlets/{outletRef}/tokens (saved-tokens-api.json):
-// consentOff=true hides consent; otherwise the backend returns tncUrl.
 const { supportedTermsUrl } = require('./termsUrl');
 
 const resolveConsentInformation = ({ consentOff, order, tncUrl } = {}) => {
@@ -20,11 +17,9 @@ const resolveConsentInformation = ({ consentOff, order, tncUrl } = {}) => {
     }
   }
 
-  // TnC has no action/VERIFY branch and interpolates no amounts or MCP values.
   return { key, url, diagnostic };
 };
 
-// Consent stays visible without a link if the URL cannot be loaded.
 const loadTncUrl = async ({ client, outletRef, consentOff }) => {
   if (consentOff === true || !client || !outletRef) return undefined;
   try {
