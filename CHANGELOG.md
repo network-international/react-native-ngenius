@@ -2,6 +2,13 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.7] - 2026-10-19
+
+### Fixed
+- **Android: card number label misaligned in Arabic.** With `configureSDK({ language: "ar" })`
+  the label above the card number field ("رقم بطاقة الدفع") sat at the field's left edge
+  instead of its right edge. Native Android SDK bumped `5.2.4` → `5.2.5`. iOS unchanged.
+
 ## [3.2.6] - 2026-10-13
 
 ### Fixed
