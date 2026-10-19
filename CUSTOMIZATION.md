@@ -59,15 +59,15 @@ Use one palette and set each colour under its name on each platform:
 | Field labels | `payment_sdk_floating_hint_color` | `textFieldLabelColor` |
 | Text typed into fields | `payment_sdk_text_field_text_color` | `textFieldTextColor` |
 | Field placeholders | `payment_sdk_text_field_placeholder_color` | `textFieldPlaceholderColor` |
+| Lines between fields | `payment_sdk_divider_color` | `payPageDividerColor` |
 | Title bar background | `payment_sdk_toolbar_color` | `navigationBarColor` |
 | Title text | `payment_sdk_toolbar_text_color` | `payPageTitleColor` |
 | Title bar button (back / Cancel) | `payment_sdk_toolbar_icon_color` | `navigationBarButtonColor` |
 | Loader while the order loads and during 3-D Secure | `payment_sdk_progress_loader_color` | `progressLoaderColor` |
 
-Two options exist on iOS only, because the Android page has no such element:
-
-- `payPageDividerColor`: the line under each input field.
-- `payButtonActivityIndicatorColor`: the spinner inside the pay button while paying.
+One option exists on iOS only, because the Android page has no such element:
+`payButtonActivityIndicatorColor`, the spinner inside the pay button while paying. Android shows
+its payment loader instead (`payment_sdk_progress_loader_color`).
 
 ### Android
 

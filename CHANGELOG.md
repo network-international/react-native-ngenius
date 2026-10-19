@@ -15,6 +15,10 @@ All notable changes to `@network-international/react-native-ngenius` are documen
   and Android `5.2.5` each add the colour options the other platform already had. Colours are
   set natively (Android `colors.xml`, iOS `NISdkColors`); see the customisation guide.
 
+### Changed
+- **Android: the card payment screen now looks like the iOS one** (Android SDK `5.2.5`): same
+  title bar with Cancel, card preview, Number / Expires / CVV / Name rows and pay button.
+
 ### Fixed
 - **Android: card number label misaligned in Arabic.** With `configureSDK({ language: "ar" })`
   the label above the card number field ("رقم بطاقة الدفع") sat at the field's left edge
