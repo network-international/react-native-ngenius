@@ -3,20 +3,28 @@
 ![Banner](assets/banner.jpg)
 
 ## Requirements
-- Reat-native `v0.60+`
-- iOS version `11+`
-- Android minSDK version `19`
+- iOS `15.0+` (NISdk 6.1.4)
+- Android minSdk `21` (payment-sdk 5.2.5)
+- React Native: tested with 0.79. On Android the app must use Android Gradle Plugin 8 or later;
+  older templates on AGP 7.x (for example React Native 0.70 with AGP 7.2.1) fail to build the SDK.
 
 ## Getting started
 ```bash
 npm i @network-international/react-native-ngenius
+cd ios && pod install
 ```
 
-**Note:** If your project is using iOS deployment target 10, you need to increase it to 11.
+If `pod install` reports that no spec satisfies `NISdk`, your local CocoaPods index is older than
+the release: run `pod install --repo-update` instead.
 
-In order to increase change the versions in the following files
-- Change the iOS deployment version in `your-project/ios/Podfile` as follows `platform :ios, '11.0'`  
-- Open the `.xcworkspacefile` inside the following directory `your-project/ios/yourproject.xcworkspace` and change the deployment target to 11.0.
+When upgrading from an earlier version, run `cd ios && pod update NISdk`, because the package pins
+an exact NISdk version.
+
+**iOS deployment target:** NISdk needs iOS 15.0 or later. If your app targets an older version,
+set `platform :ios, '15.0'` in `ios/Podfile` and the deployment target of your app target in Xcode
+to 15.0 or later.
+
+**Android:** no extra setup is needed. The Android SDK is downloaded from JitPack automatically.
 
 ## Basic usage example
 ```javascript
