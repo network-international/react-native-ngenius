@@ -78,6 +78,7 @@ const makeGooglePayPayment = async () => {
 
 ## Quick Links
 
+* [Customising the payment page](CUSTOMIZATION.md): language, behaviour and colours on iOS and Android
 * [Basic Usage](https://github.com/network-international/react-native-ngenius/wiki/Basic-Usage)
 * [Samsung Pay](https://github.com/network-international/react-native-ngenius/wiki/Samsung-Pay)
 * [Samsung Pay FAQ & Troubleshooting](https://github.com/network-international/react-native-ngenius/wiki/Samsung-Pay#faq--troubleshooting)
