@@ -292,24 +292,30 @@ const configureSDK = (config) => {
     return;
   }
 
-  // Supported configs for android platform
+  // Same options on both platforms.
+  const nativeConfig = {};
+  if ('shouldShowOrderAmount' in config) {
+    nativeConfig.shouldShowOrderAmount = config.shouldShowOrderAmount;
+  }
+  if ('shouldShowCancelAlert' in config) {
+    nativeConfig.shouldShowCancelAlert = config.shouldShowCancelAlert;
+  }
+
   if (Platform.OS === 'android') {
-    const androidConfig = {};
-    if ('shouldShowOrderAmount' in config) {
-      androidConfig.shouldShowOrderAmount = config.shouldShowOrderAmount;
-    }
     if ('language' in config) {
-      androidConfig.language = config.language;
+      nativeConfig.language = config.language;
     }
-    if (Object.keys(androidConfig).length > 0) {
-      NiSdk.configureSDK(androidConfig);
+    if (Object.keys(nativeConfig).length > 0) {
+      NiSdk.configureSDK(nativeConfig);
     }
   }
 
-  // Supported configs on iOS
   if (Platform.OS === 'ios') {
     if ('language' in config) {
       NiSdk.setLocale(config.language);
+    }
+    if (Object.keys(nativeConfig).length > 0) {
+      NiSdk.configureSDK(nativeConfig);
     }
   }
 }

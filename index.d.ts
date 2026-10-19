@@ -64,9 +64,14 @@ export interface GooglePaySuccess extends PaymentSuccess {
 }
 
 export interface SDKConfig {
-  /** Android: show the order amount on the payment page. */
+  /**
+   * Show the order amount on the pay button. Native defaults differ: Android `false`,
+   * iOS `true`, so set it explicitly for the same result on both.
+   */
   shouldShowOrderAmount?: boolean;
-  /** SDK language on iOS and Android: `"en"`, `"ar"` or `"fr"`. */
+  /** Ask the customer to confirm before cancelling the payment page. Default `false`. */
+  shouldShowCancelAlert?: boolean;
+  /** SDK language: `"en"` or `"ar"` on both platforms; `"fr"` on Android only. */
   language?: string;
 }
 

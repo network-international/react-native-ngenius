@@ -102,6 +102,16 @@ RCT_EXPORT_METHOD(isApplePaySupported:(RCTResponseSenderBlock)sendResponse) {
     sendResponse(@[[NSNumber numberWithBool:isApplyPaySupportedOnDevice]]);
 }
 
+RCT_EXPORT_METHOD(configureSDK:(NSDictionary *)config) {
+    NISdk *sdkInstance = [NISdk sharedInstance];
+    if (config[@"shouldShowOrderAmount"] != nil) {
+        sdkInstance.shouldShowOrderAmount = [config[@"shouldShowOrderAmount"] boolValue];
+    }
+    if (config[@"shouldShowCancelAlert"] != nil) {
+        sdkInstance.shouldShowCancelAlert = [config[@"shouldShowCancelAlert"] boolValue];
+    }
+}
+
 RCT_EXPORT_METHOD(setLocale:(NSString *) language) {
     NISdk *sdkInstance = [NISdk sharedInstance];
     [sdkInstance setSDKLanguageWithLanguage: language];
