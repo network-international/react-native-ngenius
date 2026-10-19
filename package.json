@@ -1,12 +1,13 @@
 {
   "name": "@network-international/react-native-ngenius",
   "title": "React Native NGenius Sdk",
-  "version": "3.2.6",
+  "version": "3.2.7",
   "description": "Network Internation Payment SDK for React-Native",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
     "README.md",
+    "CUSTOMIZATION.md",
     "android/src",
     "android/build.gradle",
     "android/README.md",

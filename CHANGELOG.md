@@ -2,6 +2,28 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.7] - 2026-10-19
+
+### Upgrade notes
+- Run `pod update NISdk` to pick up 6.1.4.
+
+### Added
+- `configureSDK` now applies `shouldShowOrderAmount` on iOS too (it was Android only), and
+  accepts `shouldShowCancelAlert` on both platforms. Both settings already existed in the
+  native SDKs.
+- Colour customisation now matches across platforms: native iOS `NISdk` bumped `6.1.3` → `6.1.4`
+  and Android `5.2.5` each add the colour options the other platform already had. Colours are
+  set natively (Android `colors.xml`, iOS `NISdkColors`); see the customisation guide.
+
+### Changed
+- **Android: the card payment screen now looks like the iOS one** (Android SDK `5.2.5`): same
+  title bar with Cancel, card preview, Number / Expires / CVV / Name rows and pay button.
+
+### Fixed
+- **Android: card number label misaligned in Arabic.** With `configureSDK({ language: "ar" })`
+  the label above the card number field ("رقم بطاقة الدفع") sat at the field's left edge
+  instead of its right edge. Native Android SDK bumped `5.2.4` → `5.2.5`.
+
 ## [3.2.6] - 2026-10-13
 
 ### Fixed

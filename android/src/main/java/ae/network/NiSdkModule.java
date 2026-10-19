@@ -185,6 +185,9 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
         if (config.hasKey("shouldShowOrderAmount")) {
             SDKConfig.INSTANCE.shouldShowOrderAmount(config.getBoolean("shouldShowOrderAmount"));
         }
+        if (config.hasKey("shouldShowCancelAlert")) {
+            SDKConfig.INSTANCE.shouldShowCancelAlert(config.getBoolean("shouldShowCancelAlert"));
+        }
         if (config.hasKey("language")) {
             SDKConfig.INSTANCE.setLanguage(config.getString("language"));
         }
