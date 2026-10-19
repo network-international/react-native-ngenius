@@ -165,5 +165,3 @@ None of the following can be customised on either platform:
 - Fonts.
 - A logo or background image on the card preview.
 - The loader's animation or shape. Only its colour can change.
-- The input fields' own background, which stays white on both platforms. If you change the page
-  background, choose a colour that works next to white fields.
