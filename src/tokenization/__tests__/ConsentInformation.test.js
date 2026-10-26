@@ -14,7 +14,7 @@ const paypageCopy = require('./fixtures/paypage-consent.json');
 const order = {};
 const tncUrl = 'https://example.com/terms?lang=fr&ref=a%2Fb#section';
 const { resolveConsentInformation } = require('../consentInformation');
-const ordinaryCopy = 'By clicking "Pay", you agree to the Terms and Conditions and authorize this transaction.';
+const ordinaryCopy = 'Terms and Conditions';
 const text = (node) => {
   if (Array.isArray(node)) return node.map(text).join('');
   if (node == null) return '';
@@ -33,19 +33,19 @@ const render = (props = {}, branding) => {
 };
 
 describe('ConsentInformation', () => {
-  it.each([undefined, false])('uses default behavior for consentOff=%p', (consentOff) => {
-    expect(text(render({ consentOff }))).toBe(ordinaryCopy);
-    expect(text(render({ consentOff, order: undefined }))).toBe(ordinaryCopy);
-    expect(links(render({ consentOff }))).toHaveLength(1);
+  it.each([undefined, false])('uses default behavior for skipConsent=%p', (skipConsent) => {
+    expect(text(render({ skipConsent }))).toBe(ordinaryCopy);
+    expect(text(render({ skipConsent, order: undefined }))).toBe(ordinaryCopy);
+    expect(links(render({ skipConsent }))).toHaveLength(1);
   });
 
   it('returns null with no text, container or spacing when explicitly disabled', () => {
-    expect(render({ consentOff: true })).toBeNull();
+    expect(render({ skipConsent: true })).toBeNull();
   });
 
   it.each([null, 'true', 'false', 1, 0, [], {}, { mode: 'hidden' }])(
-    'uses default behavior for malformed consentOff=%p', (consentOff) => {
-      expect(text(render({ consentOff }))).toBe(ordinaryCopy);
+    'uses default behavior for malformed skipConsent=%p', (skipConsent) => {
+      expect(text(render({ skipConsent }))).toBe(ordinaryCopy);
     }
   );
 
@@ -63,7 +63,7 @@ describe('ConsentInformation', () => {
     }
     const copy = paypageCopy[language];
     expect(text(render({ language }))).toBe(
-      `${copy.PAYMENT_DISCLAIMER_1} ${copy.PAYMENT_DISCLAIMER_2} ${copy.PAYMENT_DISCLAIMER_3}.`
+      copy.PAYMENT_DISCLAIMER_2
     );
   });
 

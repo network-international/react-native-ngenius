@@ -50,6 +50,15 @@ const createTokenizationStyles = (theme) => {
     methods: {
       flexDirection: 'column',
     },
+    consentBlock: { marginBottom: layout.spacing.md },
+    consentToggle: { minHeight: 44, flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center' },
+    checkbox: { width: 24, height: 24, borderWidth: 2, borderColor: branding.textPrimary,
+      alignItems: 'center', justifyContent: 'center', marginHorizontal: 8 },
+    checkboxMark: { color: branding.textPrimary, fontSize: 16 },
+    consentLabel: { flex: 1, color: branding.textPrimary, fontSize: 13,
+      textAlign: isRtl ? 'right' : 'left', writingDirection: isRtl ? 'rtl' : 'ltr',
+      ...fontStyle(branding.fontFamily) },
+    methodDisabled: { opacity: 0.45 },
     consentInformation: {
       color: branding.textPrimary,
       fontSize: 13,

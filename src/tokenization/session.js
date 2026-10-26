@@ -4,6 +4,9 @@ const {
 } = require('./captureModes');
 
 const createTokenizationSession = () => {
+  let generation = 0;
+  let active = true;
+  let accepted = false;
   let inFlight = false;
   let successEmitted = false;
   let errorEmitted = false;
@@ -11,13 +14,26 @@ const createTokenizationSession = () => {
 
   return {
     start() {
+      generation += 1;
+      active = true;
+      accepted = false;
       inFlight = false;
       successEmitted = false;
       errorEmitted = false;
       cancelEmitted = false;
     },
+    close() {
+      generation += 1;
+      active = false;
+      accepted = false;
+      inFlight = false;
+    },
+    generation() { return generation; },
+    isCurrent(id) { return active && id === generation && !cancelEmitted; },
+    setAccepted(value) { if (active && !inFlight && !cancelEmitted) accepted = value === true; },
+    canProceed(skipConsent) { return active && !cancelEmitted && (skipConsent === true || accepted); },
     tryBeginNative() {
-      if (inFlight || successEmitted || cancelEmitted) {
+      if (!active || inFlight || successEmitted || cancelEmitted) {
         return false;
       }
       inFlight = true;
@@ -31,7 +47,7 @@ const createTokenizationSession = () => {
       return inFlight;
     },
     emitSuccess(callback, payload) {
-      if (successEmitted || cancelEmitted) {
+      if (!active || successEmitted || cancelEmitted) {
         return false;
       }
       successEmitted = true;
@@ -42,7 +58,7 @@ const createTokenizationSession = () => {
       return true;
     },
     emitError(callback, payload) {
-      if (errorEmitted || successEmitted || cancelEmitted) {
+      if (!active || errorEmitted || successEmitted || cancelEmitted) {
         return false;
       }
       errorEmitted = true;
@@ -53,10 +69,12 @@ const createTokenizationSession = () => {
       return true;
     },
     emitCancel(callback) {
-      if (inFlight || cancelEmitted) {
+      if (!active || inFlight || cancelEmitted) {
         return false;
       }
       cancelEmitted = true;
+      accepted = false;
+      generation += 1;
       if (callback) {
         callback();
       }

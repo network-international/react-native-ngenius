@@ -46,7 +46,7 @@ const demoTokenizationClient = createTokenizationClient({
   getAccessToken: async () => 'demo-access-token',
   transport: async ({ method, url }) => {
     if (method === 'GET' && /\/api\/outlets\/[^/]+\/tokens(\?|$)/.test(url)) {
-      return { status: 200, text: JSON.stringify({ tokens: [], tncUrl: DEMO_TNC_URL }) };
+      return { status: 200, text: JSON.stringify({ tokens: [], page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }, tncUrl: DEMO_TNC_URL }) };
     }
     return {
       status: 503,
@@ -112,7 +112,7 @@ const App = () => {
   const [showTokenization, setShowTokenization] = useState(false);
   const [tokenizationOrder, setTokenizationOrder] = useState(null);
   const [useMerchantBranding, setUseMerchantBranding] = useState(false);
-  const [consentOff, setConsentOff] = useState(false);
+  const [skipConsent, setSkipConsent] = useState(false);
   const [consentScenario, setConsentScenario] = useState('Standard');
   const scenarios = ['Standard', 'Recurring', 'Reusable', 'Missing order'];
 
@@ -499,15 +499,15 @@ const App = () => {
         value={useMerchantBranding}
         accessibilityLabel="Merchant branding"
       />
-      <Text style={{ paddingVertical: 8 }}>{consentOff ? 'Consent OFF' : 'Consent ON'}</Text>
-      <Switch accessibilityLabel="Consent off" value={consentOff}
-        onValueChange={setConsentOff} />
+      <Text style={{ paddingVertical: 8 }}>{skipConsent ? 'Skip consent ON' : 'Skip consent OFF'}</Text>
+      <Switch accessibilityLabel="Skip consent" value={skipConsent}
+        onValueChange={setSkipConsent} />
       <TouchableHighlight style={[styles.button, { backgroundColor: '#000000' }]}
         accessibilityLabel={`Consent scenario: ${consentScenario}`}
         onPress={() => setConsentScenario(scenarios[(scenarios.indexOf(consentScenario) + 1) % scenarios.length])}>
         <Text style={styles.buttonLabel}>Consent: {consentScenario}</Text>
       </TouchableHighlight>
-      <Text style={{ fontSize: 12 }}>Demo T&C via mock saved-tokens client · no live backend</Text>
+      <Text style={{ fontSize: 12 }}>Mock consent persistence · backend schema pending. Accept the checkbox to enable methods.</Text>
       {showWallet && (
         <TouchableHighlight
           disabled={creatingOrder}
@@ -583,7 +583,7 @@ const App = () => {
       {showTokenization ? (
       <NgeniusTokenization
         paymentMethods={['CARD', 'APPLE_PAY', 'GOOGLE_PAY']}
-        consentOff={consentOff}
+        skipConsent={skipConsent}
         tokenizationClient={demoTokenizationClient}
         outletRef={DEMO_OUTLET_REF}
         visible={showTokenization}

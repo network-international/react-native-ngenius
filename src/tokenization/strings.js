@@ -1,5 +1,6 @@
 const STRINGS = {
   en: {
+    CONSENT_ACCEPT: 'I agree to save my payment method under the terms below.',
     PAYMENT_DISCLAIMER_1: "By clicking \"Pay\", you agree to the",
     PAYMENT_DISCLAIMER_2: "Terms and Conditions",
     PAYMENT_DISCLAIMER_3: "and authorize this transaction",
@@ -31,6 +32,7 @@ const STRINGS = {
       'Additional verification is required to save this payment method. It is not available yet.',
   },
   fr: {
+    CONSENT_ACCEPT: 'J’accepte l’enregistrement de mon moyen de paiement selon les conditions ci-dessous.',
     PAYMENT_DISCLAIMER_1: "En cliquant sur \"Payer\", vous acceptez",
     PAYMENT_DISCLAIMER_2: "les termes et conditions",
     PAYMENT_DISCLAIMER_3: "et autorisez cette transaction",
@@ -62,6 +64,7 @@ const STRINGS = {
       "Une vérification supplémentaire est requise pour enregistrer ce moyen de paiement. Elle n'est pas encore disponible.",
   },
   ar: {
+    CONSENT_ACCEPT: 'أوافق على حفظ وسيلة الدفع الخاصة بي وفقًا للشروط أدناه.',
     PAYMENT_DISCLAIMER_1: "بالضغط على \"الدفع\"، فإنك توافق على",
     PAYMENT_DISCLAIMER_2: "الشروط والأحكام",
     PAYMENT_DISCLAIMER_3: "وتقوم بتفويض هذه الحركة",

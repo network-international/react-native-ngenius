@@ -27,7 +27,7 @@ const { tokens } = await tokenizationClient.getSavedTokens({ outletRef });
   outletRef={outletRef}
   branding={branding}
   language="en"
-  consentOff={false}
+  skipConsent={false}
   applePayConfig={{ merchantIdentifier, countryCode, merchantName }}
   googlePayConfig={{ merchantName, gateway, gatewayMerchantId, environment }}
   onSuccess={handleResult}
@@ -38,14 +38,14 @@ const { tokens } = await tokenizationClient.getSavedTokens({ outletRef });
 
 `order` is the N-Genius create-order response. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
 
-With a client and `outletRef`, opening with consent on loads `tncUrl` through `getSavedTokens`. Only `consentOff={true}` hides consent and skips that request. Missing or invalid URLs leave the consent text visible without a link.
+With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), the unchecked checkbox must be accepted before Card or wallets can start. `skipConsent={true}` hides the entire consent block and enables actions immediately. Acceptance resets on close/reopen. Missing or invalid URLs leave the consent text visible without a link.
 
 ## Supported methods
 
 - Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
 - Helpers: `isSamsungPaySupported(serviceId)`, `isApplePaySupported()`, `isGooglePaySupported(googlePayConfig)`, `configureSDK(config)`, `executeThreeDSTwo(paymentResponse)`.
 - Tokenization UI: `CARD`, `APPLE_PAY` (iOS), `GOOGLE_PAY` (Android).
-- Tokenization client: `getSavedTokens({ outletRef, tokens?, consentOff? })`, `addWallet({ outletRef, walletType, encryptedPayload })`. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
+- Tokenization client: `getSavedTokens({ outletRef })`, `addWallet({ outletRef, walletType, encryptedPayload })`. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
 
 ## Authentication
 
@@ -55,7 +55,9 @@ Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the s
 
 - Real Card token creation is not connected. PAN/CVV stay in native capture; there is no JS card-create method. Apple Pay tokenization needs native work. Both flows return `niTokenCreated: false`.
 - Google Pay sends the unchanged wallet token to `addWallet` when a client and `outletRef` are supplied. Only `VERIFIED` means success. `AWAIT_3DS` reports `THREE_DS_CONTINUATION_UNAVAILABLE`; native 3DS continuation is pending.
-- No tokenization environment URL is bundled. The production consent initialization contract and live `tncUrl` delivery still need backend confirmation.
+- Saved Tokens returns `{ tokens, page?, tncUrl? }`; `page` contains `number`, `size`, `totalElements`, `totalPages`. No token filters or pagination query parameters are sent.
+- Consent state and mock serialization are implemented internally. Live consent persistence is blocked pending Hossam’s exact schema; no consent fields are sent to `/wallets` yet. Server time is preferred; no client audit timestamp or device data is collected.
+- Native `/cards` integration must accept safe consent metadata once confirmed. The existing PAYMENT Card flow receives no consent data.
 - iOS native Card colours follow branding and reset after closing. Android native Card uses vendor defaults; Android E2E is not verified.
 - The demo mocks the tokenization backend and creates no tokens. Card JWE and MCP are outside this POC.
 

@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import CardSchemeIcon from './CardSchemeIcon';
-import ConsentInformation from './ConsentInformation';
 
 const WALLET_METHODS = ['APPLE_PAY', 'GOOGLE_PAY'];
 const methodTestId = (method) => `tokenization-method-${method}`;
@@ -11,10 +10,12 @@ const WalletRow = ({ method, styles, payWith, mark, disabled, onSelect }) => (
     testID={methodTestId(method)}
     disabled={disabled}
     accessibilityRole="button"
+    accessibilityState={{ disabled: Boolean(disabled) }}
     accessibilityLabel={`${payWith} ${mark}`}
-    onPress={() => onSelect(method)}
+    onPress={() => { if (!disabled) onSelect(method); }}
     style={({ pressed }) => [
       styles.methodButton,
+      disabled ? styles.methodDisabled : null,
       styles.walletButton,
       pressed ? styles.walletButtonPressed : null,
     ]}
@@ -29,10 +30,12 @@ const CardRow = ({ styles, label, disabled, onSelect }) => (
     testID={methodTestId('CARD')}
     disabled={disabled}
     accessibilityRole="button"
+    accessibilityState={{ disabled: Boolean(disabled) }}
     accessibilityLabel={label}
-    onPress={() => onSelect('CARD')}
+    onPress={() => { if (!disabled) onSelect('CARD'); }}
     style={({ pressed }) => [
       styles.methodButton,
+      disabled ? styles.methodDisabled : null,
       styles.cardButton,
       pressed ? styles.cardButtonPressed : null,
     ]}
@@ -51,9 +54,6 @@ const MethodList = ({
   cardSectionLabel,
   disabled,
   onSelect,
-  order,
-  consent,
-  language,
 }) => {
   const wallets = WALLET_METHODS.filter((method) => methods.includes(method));
   const showCard = methods.includes('CARD');
@@ -74,12 +74,6 @@ const MethodList = ({
               onSelect={onSelect}
             />
           ))}
-          <ConsentInformation
-            order={order}
-            information={consent}
-            language={language}
-            styles={styles}
-          />
         </View>
       ) : null}
       {showDivider ? (
@@ -93,12 +87,6 @@ const MethodList = ({
             {cardSectionLabel}
           </Text>
           <CardRow styles={styles} label={labels.CARD} disabled={disabled} onSelect={onSelect} />
-          <ConsentInformation
-            order={order}
-            information={consent}
-            language={language}
-            styles={styles}
-          />
         </View>
       ) : null}
     </View>

@@ -28,7 +28,7 @@ describe('backend-resolved T&C contract', () => {
   });
 
   it('hides consent and ignores tncUrl when consent is disabled', () => {
-    expect(resolveConsentInformation({ tncUrl: 'https://example.com/terms', consentOff: true })).toBeNull();
+    expect(resolveConsentInformation({ tncUrl: 'https://example.com/terms', skipConsent: true })).toBeNull();
   });
 
   it('does not fall back to transaction terms, branding or another prop', () => {

@@ -1,3 +1,4 @@
+const { mapConsentRequest } = require('./consentData');
 const { TokenizationApiError } = require('./api/errors');
 const { VERIFICATION_STATES, stateForSavedToken } = require('./verificationStates');
 const {
@@ -15,6 +16,8 @@ const runGooglePayTokenization = async ({
   googlePayConfig,
   initiateGooglePay,
   onVerifying,
+  consent,
+  isCurrent = () => true,
 }) => {
   let encryptedPayload;
   try {
@@ -32,6 +35,7 @@ const runGooglePayTokenization = async ({
       }),
     };
   }
+  if (!isCurrent()) return { state: VERIFICATION_STATES.READY };
   if (typeof encryptedPayload !== 'string' || encryptedPayload.length === 0) {
     return {
       state: VERIFICATION_STATES.FAILED,
@@ -47,7 +51,9 @@ const runGooglePayTokenization = async ({
   }
   let savedToken;
   try {
-    savedToken = await client.addWallet({ outletRef, walletType: METHOD, encryptedPayload });
+    const tokenData = { outletRef, walletType: METHOD, encryptedPayload };
+    const request = consent ? mapConsentRequest({ tokenData, consent }) : tokenData;
+    savedToken = await client.addWallet(request);
   } catch (error) {
     const safeError =
       error instanceof TokenizationApiError

@@ -1,7 +1,7 @@
 const { supportedTermsUrl } = require('./termsUrl');
 
-const resolveConsentInformation = ({ consentOff, order, tncUrl } = {}) => {
-  if (consentOff === true) return null;
+const resolveConsentInformation = ({ skipConsent, order, tncUrl } = {}) => {
+  if (skipConsent === true) return null;
   const url = supportedTermsUrl(tncUrl);
   const diagnostic = url ? undefined :
     tncUrl == null || (typeof tncUrl === 'string' && !tncUrl.trim())
@@ -20,8 +20,8 @@ const resolveConsentInformation = ({ consentOff, order, tncUrl } = {}) => {
   return { key, url, diagnostic };
 };
 
-const loadTncUrl = async ({ client, outletRef, consentOff }) => {
-  if (consentOff === true || !client || !outletRef) return undefined;
+const loadTncUrl = async ({ client, outletRef }) => {
+  if (!client || !outletRef) return undefined;
   try {
     const { tncUrl } = await client.getSavedTokens({ outletRef });
     return tncUrl;

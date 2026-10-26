@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, Platform, StatusBar, ScrollView } from 'react-native';
 import BrandingHeader from './BrandingHeader';
 import MethodList from './MethodList';
+import ConsentCheckbox from './ConsentCheckbox';
 import StatusView from './StatusView';
 
 const { createTokenizationStyles } = require('../createStyles');
@@ -21,8 +22,9 @@ const statusMessage = ({ language, status, tokenSaved, errorMessage }) => {
 const TokenizationScreen = ({
   theme,
   language,
-  order,
   consent,
+  consentAccepted = false,
+  onConsentChange,
   methods,
   status,
   tokenSaved = false,
@@ -69,6 +71,8 @@ const TokenizationScreen = ({
                 </Text>
               </View>
             ) : null}
+            {methods.length > 0 ? <ConsentCheckbox information={consent} language={language}
+              styles={styles} checked={consentAccepted} onChange={onConsentChange} /> : null}
             <MethodList
               methods={methods}
               styles={styles}
@@ -76,11 +80,8 @@ const TokenizationScreen = ({
               payWithLabel={t(language, 'PAY_WITH')}
               dividerLabel={t(language, 'PAYMENT_OPTIONS_DIVIDER')}
               cardSectionLabel={t(language, 'USE_CREDIT_DEBIT_CARD')}
-              disabled={isBusy}
+              disabled={isBusy || Boolean(consent && !consentAccepted)}
               onSelect={onSelectMethod}
-              order={order}
-              consent={consent}
-              language={language}
             />
           </>
         ) : (

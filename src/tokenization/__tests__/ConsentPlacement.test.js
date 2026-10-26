@@ -1,227 +1,223 @@
-jest.mock('react', () => ({
-  ...jest.requireActual('react'),
-  useMemo: (fn) => fn(),
-  useCallback: (fn) => fn,
-  useRef: jest.fn((current) => ({ current })),
-  useState: jest.fn((value) => [value, jest.fn()]),
-  useEffect: jest.fn(),
-}));
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text', Pressable: 'Pressable', Image: 'Image', Modal: 'Modal',
   SafeAreaView: 'SafeAreaView', ScrollView: 'ScrollView', TouchableOpacity: 'TouchableOpacity',
   ActivityIndicator: 'ActivityIndicator',
-  Platform: { OS: 'android' }, StatusBar: { currentHeight: 24 },
-  NativeModules: {},
+  Animated: { View: 'AnimatedView', Value: function Value(v) { this.value = v; },
+    loop: () => ({ start() {}, stop() {} }), sequence: () => ({}), delay: () => ({}), timing: () => ({}) },
+  Platform: { OS: 'android' }, StatusBar: { currentHeight: 24 }, NativeModules: {},
   StyleSheet: { create: (styles) => styles },
   Linking: { canOpenURL: jest.fn().mockResolvedValue(true), openURL: jest.fn().mockResolvedValue(undefined) },
 }));
 jest.mock('../../nativePayments', () => ({
   initiateCardPayment: jest.fn().mockResolvedValue({ status: 'Success' }),
-  initiateApplePay: jest.fn(), initiateGooglePay: jest.fn(),
-  isApplePaySupported: jest.fn().mockResolvedValue(false),
-  isGooglePaySupported: jest.fn().mockResolvedValue(false),
+  initiateApplePay: jest.fn().mockResolvedValue({ status: 'Success' }),
+  initiateGooglePay: jest.fn().mockResolvedValue({ status: 'Success', token: 'opaque-wallet' }),
+  isApplePaySupported: jest.fn().mockResolvedValue(true),
+  isGooglePaySupported: jest.fn().mockResolvedValue(true),
 }));
 
 const React = require('react');
-const TokenizationScreen = require('../ui/TokenizationScreen').default;
+const renderer = require('react-test-renderer');
+const { act } = renderer;
+const { Platform, Linking } = require('react-native');
 const NgeniusTokenization = require('../NgeniusTokenization').default;
-const { initiateCardPayment } = require('../../nativePayments');
+const TokenizationScreen = require('../ui/TokenizationScreen').default;
+const native = require('../../nativePayments');
 const { resolveTokenizationTheme } = require('../resolveTheme');
-
-const expand = (node) => {
-  if (Array.isArray(node)) return node.flatMap(expand);
-  if (node == null || typeof node !== 'object') return node == null ? [] : [node];
-  if (typeof node.type === 'function') return expand(node.type(node.props));
-  if (node.type === React.Fragment) return expand(node.props.children);
-  return [{ ...node, children: expand(node.props.children) }];
-};
-const flatten = (nodes) => nodes.flatMap((node) =>
-  typeof node === 'object' ? [node, ...flatten(node.children)] : []);
-const find = (nodes, id) => flatten(nodes).filter((node) => node.props.testID === id);
-const ids = (nodes) => flatten(nodes).map((node) => node.props.testID).filter(Boolean);
-const order = { action: 'VERIFY', paymentMethods: { card: ['VISA'] }, tncUrl: 'https://backend.example/terms?locale=ar' };
 const { resolveConsentInformation } = require('../consentInformation');
-const screen = (overrides = {}) => expand(React.createElement(TokenizationScreen, {
-  consent: resolveConsentInformation({ order, ...overrides }),
-  theme: resolveTokenizationTheme(), language: 'en', order,
-  methods: ['CARD', 'APPLE_PAY'], status: 'READY', onSelectMethod: jest.fn(),
-  ...overrides,
-}));
+const order = { action: 'VERIFY', paymentMethods: { card: ['VISA'], wallet: ['GOOGLE_PAY', 'APPLE_PAY'] } };
+const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { resolve, promise }; };
+const flush = async () => { for (let i = 0; i < 12; i += 1) await Promise.resolve(); };
+let tree;
+let props;
+const byId = (id) => tree.root.findAll((node) => typeof node.type === 'string' && node.props.testID === id);
+const checkbox = () => byId('tokenization-consent-checkbox')[0];
+const press = async (node) => act(async () => { node.props.onPress(); await flush(); });
+const open = async (extra = {}) => {
+  props = { visible: true, order, paymentMethods: ['CARD', 'APPLE_PAY', 'GOOGLE_PAY'],
+    outletRef: 'outlet', tokenizationClient: { getSavedTokens: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/terms' }), addWallet: jest.fn() },
+    onSuccess: jest.fn(), onError: jest.fn(), onCancel: jest.fn(), ...extra };
+  await act(async () => { tree = renderer.create(React.createElement(NgeniusTokenization, props)); await flush(); });
+};
+const update = async (extra) => {
+  props = { ...props, ...extra };
+  await act(async () => { tree.update(React.createElement(NgeniusTokenization, props)); await flush(); });
+};
+const select = async (method) => {
+  await act(async () => { tree.root.findByType(TokenizationScreen).props.onSelectMethod(method); await flush(); });
+};
 
-describe('paypage consent placement and public props', () => {
-  beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => { jest.clearAllMocks(); Platform.OS = 'android'; });
+afterEach(() => { if (tree) act(() => tree.unmount()); tree = undefined; jest.useRealTimers(); });
 
-  it('renders wallet terms after wallet buttons and before the divider, then terms after card', () => {
-    const tree = screen();
-    const renderedIds = ids(tree);
-    const positions = renderedIds.reduce((out, id, index) =>
-      id === 'tokenization-consent-information' ? [...out, index] : out, []);
-    expect(positions).toHaveLength(2);
-    expect(positions[0]).toBeGreaterThan(renderedIds.indexOf('tokenization-method-APPLE_PAY'));
-    expect(positions[0]).toBeLessThan(renderedIds.indexOf('tokenization-methods-divider'));
-    expect(positions[1]).toBeGreaterThan(renderedIds.indexOf('tokenization-method-CARD'));
-    expect(find(find(tree, 'tokenization-wallet-section'), 'tokenization-consent-information')).toHaveLength(1);
-    expect(find(find(tree, 'tokenization-card-section'), 'tokenization-consent-information')).toHaveLength(1);
-  });
+it.each([undefined, false, true])('loads saved tokens in skipConsent=%p and controls checkbox visibility', async (skipConsent) => {
+  await open({ skipConsent });
+  expect(props.tokenizationClient.getSavedTokens).toHaveBeenCalledTimes(1);
+  expect(props.tokenizationClient.getSavedTokens).toHaveBeenCalledWith({ outletRef: 'outlet' });
+  expect(byId('tokenization-consent')).toHaveLength(skipConsent === true ? 0 : 1);
+  expect(byId('tokenization-consent-checkbox')).toHaveLength(skipConsent === true ? 0 : 1);
+  if (skipConsent !== true) expect(checkbox().props.accessibilityState).toEqual({ checked: false });
+});
 
-  it.each([['CARD'], ['APPLE_PAY'], ['GOOGLE_PAY']])('places one block for %s alone', (method) => {
-    const tree = screen({ methods: [method] });
-    expect(find(tree, 'tokenization-consent-information')).toHaveLength(1);
-    expect(find(tree, 'tokenization-methods-divider')).toHaveLength(0);
-  });
+it.each(['CARD', 'APPLE_PAY', 'GOOGLE_PAY'])('blocks %s buttons and action handlers before acceptance', async (method) => {
+  Platform.OS = method === 'APPLE_PAY' ? 'ios' : 'android';
+  await open();
+  expect(byId(`tokenization-method-${method}`)[0].props.disabled).toBe(true);
+  await press(byId(`tokenization-method-${method}`)[0]);
+  await select(method); // Bypass disabled styling to exercise the owning handler.
+  expect(native.initiateCardPayment).not.toHaveBeenCalled();
+  expect(native.initiateApplePay).not.toHaveBeenCalled();
+  expect(native.initiateGooglePay).not.toHaveBeenCalled();
+  expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
+});
 
-  it('adds no wrapper or spacing when disabled', () => {
-    const simplify = (nodes) => nodes.map((node) => typeof node !== 'object' ? node : ({
-      type: node.type, id: node.props.testID,
-      style: typeof node.props.style === 'function' ? node.props.style({ pressed: false }) : node.props.style,
-      children: simplify(node.children),
-    }));
-    expect(simplify(screen({ consentOff: true })))
-      .toEqual(simplify(screen()).map(function removeConsent(node) {
-        if (!node || typeof node !== 'object') return node;
-        return { ...node, children: node.children.filter((child) =>
-          !child || child.id !== 'tokenization-consent-information').map(removeConsent) };
-      }));
-    expect(find(screen({ consentOff: true }), 'tokenization-consent-information')).toHaveLength(0);
-  });
+it.each(['CARD', 'APPLE_PAY', 'GOOGLE_PAY'])('allows %s after explicit acceptance with duplicate protection', async (method) => {
+  Platform.OS = method === 'APPLE_PAY' ? 'ios' : 'android';
+  const capture = deferred();
+  const fn = native[{ CARD: 'initiateCardPayment', APPLE_PAY: 'initiateApplePay', GOOGLE_PAY: 'initiateGooglePay' }[method]];
+  fn.mockReturnValueOnce(capture.promise);
+  props = undefined;
+  await open();
+  await press(checkbox());
+  expect(checkbox().props.accessibilityState.checked).toBe(true);
+  expect(byId(`tokenization-method-${method}`)[0].props.disabled).toBe(false);
+  const handler = tree.root.findByType(TokenizationScreen).props.onSelectMethod;
+  await act(async () => { handler(method); handler(method); await flush(); });
+  if (Platform.OS === 'ios') await act(async () => { tree.root.findByType('Modal').props.onDismiss(); await flush(); });
+  expect(fn).toHaveBeenCalledTimes(1);
+  await act(async () => { capture.resolve({ status: 'Success', token: 'opaque-wallet' }); await flush(); });
+  expect(fn).toHaveBeenCalledWith(order, ...(method === 'CARD' ? [] : [undefined]));
+  if (method === 'GOOGLE_PAY') expect(props.tokenizationClient.addWallet).toHaveBeenCalledWith({ outletRef: 'outlet', walletType: 'GOOGLE_PAY', encryptedPayload: 'opaque-wallet' });
+  else expect(props.onSuccess).toHaveBeenCalledTimes(1);
+});
 
-  it('keeps default consent visible without order details', () => {
-    expect(find(screen({ order: undefined }), 'tokenization-consent-information')).toHaveLength(2);
-  });
+it('allows skipConsent immediately and renders no consent block, link or reserved spacing', async () => {
+  await open({ skipConsent: true });
+  expect(byId('tokenization-consent')).toHaveLength(0);
+  expect(byId('tokenization-consent-information')).toHaveLength(0);
+  expect(tree.root.findAll((node) => node.props.accessibilityRole === 'link')).toHaveLength(0);
+  expect(byId('tokenization-method-CARD')[0].props.disabled).toBe(false);
+  await select('CARD');
+  expect(native.initiateCardPayment).toHaveBeenCalledTimes(1);
+});
 
-  it('renders no terms when no methods are present', () => {
-    expect(find(screen({ methods: [] }), 'tokenization-consent-information')).toHaveLength(0);
-  });
+it.each(['en', 'fr', 'ar'])('keeps the terms link independently clickable and supports accessibility/RTL in %s', async (language) => {
+  await open({ language });
+  expect(checkbox().props.accessibilityRole).toBe('checkbox');
+  expect(checkbox().props.accessibilityLabel).toBe(require('../strings').t(language, 'CONSENT_ACCEPT'));
+  const link = tree.root.findAll((node) => node.type === 'Text' && node.props.accessibilityRole === 'link')[0];
+  await press(link);
+  expect(Linking.openURL).toHaveBeenCalledWith('https://backend.example/terms');
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+  expect(checkbox().props.style.flexDirection).toBe(language === 'ar' ? 'row-reverse' : 'row');
+});
 
-  it('keeps terms on retry and removes them from result screens', () => {
-    expect(find(screen({ status: 'FAILED' }), 'tokenization-consent-information')).toHaveLength(2);
-    expect(find(screen({ status: 'SUCCESS' }), 'tokenization-consent-information')).toHaveLength(0);
-    expect(find(screen({ status: 'AWAITING_3DS' }), 'tokenization-consent-information')).toHaveLength(0);
-  });
+it('resets acceptance on cancel, close and reopen', async () => {
+  await open();
+  await press(checkbox());
+  await press(byId('tokenization-cancel')[0]);
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+  expect(props.onCancel).toHaveBeenCalledTimes(1);
+  await select('CARD');
+  expect(native.initiateCardPayment).not.toHaveBeenCalled();
+  await update({ visible: false });
+  await update({ visible: true });
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+  await press(checkbox());
+  await update({ visible: false });
+  await update({ visible: true });
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+  expect(props.tokenizationClient.getSavedTokens).toHaveBeenCalledTimes(3);
+});
 
-  it.each([undefined, false, true])('uses consentOff=%p and ignores public URL/content overrides', async (consentOff) => {
-    const getTermsUrl = jest.fn(() => 'https://merchant.invalid/override');
-    const tree = expand(React.createElement(NgeniusTokenization, {
-      order, getTermsUrl, orderData: { tncUrl: 'https://merchant.invalid/override' },
-      terms: { status: 'ready', url: 'https://merchant.invalid/override' }, tncUrl: 'https://merchant.invalid/override', consentOff, informationalText: { mode: 'custom', text: 'Injected' },
-    }));
-    expect(find(tree, 'tokenization-consent-information')).toHaveLength(consentOff === true ? 0 : 1);
-    expect(JSON.stringify(tree)).not.toContain('Injected');
-    const links = flatten(tree).filter((node) => node.props.accessibilityRole === 'link');
-    expect(links).toHaveLength(0);
-    for (const link of links) await link.props.onPress();
-    expect(require('react-native').Linking.openURL).not.toHaveBeenCalled();
-    expect(getTermsUrl).not.toHaveBeenCalled();
-  });
+it('ignores old saved-token responses after close/reopen', async () => {
+  const first = deferred();
+  const getSavedTokens = jest.fn().mockReturnValueOnce(first.promise).mockResolvedValue({ tokens: [], tncUrl: 'https://new.example/terms' });
+  await open({ tokenizationClient: { getSavedTokens } });
+  await update({ visible: false });
+  await update({ visible: true });
+  await act(async () => { first.resolve({ tokens: [], tncUrl: 'https://stale.example/terms' }); await flush(); });
+  await press(tree.root.findAll((node) => node.type === 'Text' && node.props.accessibilityRole === 'link')[0]);
+  expect(Linking.openURL).toHaveBeenLastCalledWith('https://new.example/terms');
+});
 
-  it.each([false, true])('leaves native CARD dispatch and success payload unchanged with consentOff=%p', async (consentOff) => {
-    const onSuccess = jest.fn();
-    const onError = jest.fn();
-    const tree = expand(React.createElement(NgeniusTokenization, {
-      visible: true, order, consentOff, onSuccess, onError,
-    }));
-    React.useEffect.mock.calls.forEach(([effect]) => effect());
-    await find(tree, 'tokenization-method-CARD')[0].props.onPress();
-    for (let i = 0; i < 5; i += 1) await Promise.resolve();
-    expect(initiateCardPayment).toHaveBeenCalledTimes(1);
-    expect(initiateCardPayment).toHaveBeenCalledWith(order);
-    expect(onError).not.toHaveBeenCalled();
-    expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({
-      flow: 'TOKENIZATION', method: 'CARD', status: 'Success', niTokenCreated: false,
-    }));
-  });
+it('does not apply a native response to a newer session', async () => {
+  const capture = deferred();
+  native.initiateCardPayment.mockReturnValueOnce(capture.promise);
+  await open();
+  await press(checkbox());
+  await select('CARD');
+  await update({ visible: false });
+  await update({ visible: true });
+  await act(async () => { capture.resolve({ status: 'Success' }); await flush(); });
+  expect(props.onSuccess).not.toHaveBeenCalled();
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+});
 
-  it('renders the backend tncUrl as the consent link', async () => {
-    const { Linking } = require('react-native');
-    const tncUrl = 'https://backend.example/terms?ref=two%2Fthree';
-    const tree = screen({ consent: resolveConsentInformation({ order, tncUrl }) });
-    const links = flatten(tree).filter((node) => node.props.accessibilityRole === 'link');
-    expect(links).toHaveLength(2);
-    await links[0].props.onPress();
-    expect(Linking.openURL).toHaveBeenLastCalledWith(tncUrl);
-  });
+it('does not submit a wallet captured by a closed session', async () => {
+  const capture = deferred();
+  native.initiateGooglePay.mockReturnValueOnce(capture.promise);
+  await open();
+  await press(checkbox());
+  await select('GOOGLE_PAY');
+  await update({ visible: false });
+  await update({ visible: true });
+  await act(async () => { capture.resolve({ token: 'opaque-wallet' }); await flush(); });
+  expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
+  expect(props.onSuccess).not.toHaveBeenCalled();
+});
 
-  describe('saved-tokens T&C loading', () => {
-    const tncSetters = [];
-    beforeEach(() => {
-      tncSetters.length = 0;
-      React.useState.mockImplementation((value) => {
-        const setter = jest.fn();
-        if (value && typeof value === 'object' && 'loaded' in value) tncSetters.push(setter);
-        return [value, setter];
-      });
-    });
-    afterEach(() => React.useState.mockImplementation((value) => [value, jest.fn()]));
+it('keeps acceptance gated when terms loading fails and ignores merchant URL overrides', async () => {
+  await open({ tokenizationClient: { getSavedTokens: jest.fn().mockRejectedValue(new Error('offline')) }, tncUrl: 'https://injected.example' });
+  expect(byId('tokenization-consent-checkbox')).toHaveLength(1);
+  expect(byId('tokenization-method-CARD')[0].props.disabled).toBe(true);
+  expect(tree.root.findAll((node) => node.props.accessibilityRole === 'link')).toHaveLength(0);
+});
 
-    const open = async (props) => {
-      React.useEffect.mockClear();
-      expand(React.createElement(NgeniusTokenization, { visible: true, order, ...props }));
-      React.useEffect.mock.calls.forEach(([effect]) => effect());
-      for (let i = 0; i < 5; i += 1) await Promise.resolve();
-    };
+it('ignores a wallet save response belonging to a previous session', async () => {
+  const save = deferred();
+  await open({ tokenizationClient: {
+    getSavedTokens: jest.fn().mockResolvedValue({ tokens: [] }), addWallet: jest.fn().mockReturnValue(save.promise),
+  } });
+  await press(checkbox());
+  await select('GOOGLE_PAY');
+  expect(props.tokenizationClient.addWallet).toHaveBeenCalledTimes(1);
+  await update({ visible: false });
+  await update({ visible: true });
+  await act(async () => { save.resolve({ status: 'VERIFIED', tokenRef: 'old-token' }); await flush(); });
+  expect(props.onSuccess).not.toHaveBeenCalled();
+  expect(props.onError).not.toHaveBeenCalled();
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+});
 
-    it('requests saved tokens for the outlet once per open and applies tncUrl', async () => {
-      const client = { getSavedTokens: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/t' }) };
-      await open({ tokenizationClient: client, outletRef: 'outlet-1' });
-      expect(client.getSavedTokens).toHaveBeenCalledTimes(1);
-      expect(client.getSavedTokens).toHaveBeenCalledWith({ outletRef: 'outlet-1' });
-      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: true, url: 'https://backend.example/t' });
-    });
+it('invalidates outstanding native work on unmount', async () => {
+  const capture = deferred();
+  native.initiateCardPayment.mockReturnValueOnce(capture.promise);
+  await open({ skipConsent: true });
+  await select('CARD');
+  act(() => tree.unmount()); tree = undefined;
+  await act(async () => { capture.resolve({ status: 'Success' }); await flush(); });
+  expect(props.onSuccess).not.toHaveBeenCalled();
+});
 
-    it('does not request T&C when consent is off', async () => {
-      const client = { getSavedTokens: jest.fn() };
-      await open({ tokenizationClient: client, outletRef: 'outlet-1', consentOff: true });
-      expect(client.getSavedTokens).not.toHaveBeenCalled();
-      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: true, url: undefined });
-    });
+it('does not launch deferred iOS Card presentation after the session closes', async () => {
+  Platform.OS = 'ios';
+  await open({ skipConsent: true });
+  await select('CARD');
+  const dismiss = tree.root.findByType('Modal').props.onDismiss;
+  await update({ visible: false });
+  await act(async () => { dismiss(); await flush(); });
+  expect(native.initiateCardPayment).not.toHaveBeenCalled();
+});
 
-    it('keeps consent without a link when loading fails', async () => {
-      const client = { getSavedTokens: jest.fn().mockRejectedValue(new Error('offline')) };
-      await open({ tokenizationClient: client, outletRef: 'outlet-1' });
-      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: true, url: undefined });
-    });
-
-    it('resets the URL when the modal closes so a new open loads fresh', async () => {
-      const client = { getSavedTokens: jest.fn() };
-      await open({ tokenizationClient: client, outletRef: 'outlet-1', visible: false });
-      expect(client.getSavedTokens).not.toHaveBeenCalled();
-      expect(tncSetters[0]).toHaveBeenCalledWith({ loaded: false, url: undefined });
-    });
-  });
-
-  it.each([
-    [undefined, undefined, 'TERMS_URL_MISSING'],
-    [{ tncUrl: 'javascript:private-payload' }, false, 'TERMS_URL_MISSING'],
-    [order, false, 'TERMS_URL_MISSING'],
-    [undefined, true, undefined],
-  ])('emits only internal diagnostic codes for order=%p / consentOff=%p', (value, consentOff, code) => {
-    const info = jest.spyOn(console, 'info').mockImplementation(() => {});
-    React.useState.mockImplementation((initial) => [
-      initial && typeof initial === 'object' && 'loaded' in initial ? { loaded: true, url: undefined } : initial,
-      jest.fn(),
-    ]);
-    try {
-      const tree = expand(React.createElement(NgeniusTokenization, { visible: true, order: value, consentOff }));
-      React.useEffect.mock.calls.forEach(([effect]) => effect());
-      if (code) expect(info).toHaveBeenCalledWith('[TOKENIZATION_CONSENT]', { code });
-      else expect(info).not.toHaveBeenCalled();
-      const displayedText = flatten(tree).filter((node) => node.type === 'Text').map((node) => node.children);
-      expect(JSON.stringify(displayedText)).not.toMatch(/TERMS_URL_|private-payload/);
-      expect(JSON.stringify(info.mock.calls)).not.toContain('private-payload');
-    } finally {
-      info.mockRestore();
-      React.useState.mockImplementation((value) => [value, jest.fn()]);
-    }
-  });
-
-  it('emits no diagnostic before the T&C request settles', () => {
-    const info = jest.spyOn(console, 'info').mockImplementation(() => {});
-    try {
-      expand(React.createElement(NgeniusTokenization, { visible: true, order }));
-      React.useEffect.mock.calls.forEach(([effect]) => effect());
-      expect(info).not.toHaveBeenCalled();
-    } finally {
-      info.mockRestore();
-    }
-  });
+it.each(['CARD', 'GOOGLE_PAY'])('clears acceptance when %s native capture is cancelled', async (method) => {
+  native[method === 'CARD' ? 'initiateCardPayment' : 'initiateGooglePay']
+    .mockRejectedValueOnce({ status: 'Aborted' });
+  await open();
+  await press(checkbox());
+  await select(method);
+  expect(checkbox().props.accessibilityState.checked).toBe(false);
+  expect(byId(`tokenization-method-${method}`)[0].props.disabled).toBe(true);
+  expect(props.onSuccess).not.toHaveBeenCalled();
+  expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
 });

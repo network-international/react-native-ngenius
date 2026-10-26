@@ -35,7 +35,7 @@ describe('public SDK exports', () => {
   });
 
   it('does not expose internal tokenization helpers', () => {
-    ['resolveTokenizationTheme', 'getTokenizationMethods', 'TOKENIZATION_SUPPORTED_METHODS']
+    ['resolveTokenizationTheme', 'getTokenizationMethods', 'TOKENIZATION_SUPPORTED_METHODS', 'buildConsentData', 'mapConsentRequest']
       .forEach((name) => expect(indexSource).not.toContain(name));
   });
 
@@ -51,3 +51,9 @@ describe('public SDK exports', () => {
     expect(indexSource).not.toMatch(/api\.network\.global/);
   });
 });
+
+ it('declares the sole consent prop and keeps wire adapters internal', () => {
+  const declarations = fs.readFileSync(path.join(__dirname, '../../../index.d.ts'), 'utf8');
+  expect(declarations).toContain('skipConsent?: boolean');
+  expect(declarations).not.toMatch(/consentOff|buildConsentData|mapConsentRequest/);
+ });

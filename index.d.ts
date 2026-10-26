@@ -117,3 +117,88 @@ export function configureSDK(config: SDKConfig): void;
  * payment made from your backend). Resolves on `"Success"`.
  */
 export function executeThreeDSTwo(paymentResponse: Record<string, unknown>): Promise<PaymentSuccess>;
+
+/** Safe response fields; PAN/CVV never enter JavaScript. */
+export interface SavedCardResponse {
+  tokenRef: string;
+  type: 'CARD' | 'WALLET';
+  walletType: 'APPLE_PAY' | 'GOOGLE_PAY' | null;
+  status: 'VERIFIED' | 'AWAIT_3DS' | 'FAILED';
+  cardDetails: {
+    scheme: string;
+    last4: string;
+    expiry: string;
+    cardholderName?: string;
+  } | null;
+  orderReference?: string;
+  paymentReference?: string;
+  threeDS2?: Record<string, unknown>;
+}
+
+export interface TokenizationClient {
+  /** List-all endpoint. No filtering or pagination query contract is defined. */
+  getSavedTokens(args: { outletRef: string }): Promise<{
+    tokens: SavedCardResponse[];
+    page?: { number: number; size: number; totalElements: number; totalPages: number };
+    tncUrl?: string;
+  }>;
+  addWallet(args: {
+    outletRef: string;
+    walletType: 'APPLE_PAY' | 'GOOGLE_PAY';
+    encryptedPayload: string;
+  }): Promise<SavedCardResponse>;
+  authenticateThreeDS(args: {
+    outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;
+    threeDSCompInd: 'Y' | 'N' | 'U'; browserInfo: Record<string, unknown>;
+  }): Promise<SavedCardResponse>;
+  submitThreeDSChallengeResponse(args: {
+    outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;
+    base64EncodedCRes: string;
+  }): Promise<SavedCardResponse>;
+}
+
+export function createTokenizationClient(options: {
+  baseUrl: string;
+  getAccessToken: () => Promise<string>;
+  transport?: (request: {
+    url: string; method: string; headers: Record<string, string>; body?: unknown;
+  }) => Promise<{ status: number; text: string }>;
+  fetchImpl?: typeof fetch;
+}): TokenizationClient;
+
+export class TokenizationApiError extends Error {
+  status: number;
+  code: string;
+  errors: Array<Record<string, string>>;
+  constructor(options: { status: number; code: string; message: string; errors?: Array<Record<string, string>> });
+}
+
+export interface TokenizationResult {
+  flow: 'TOKENIZATION';
+  method?: 'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY';
+  status: string;
+  niTokenCreated: boolean;
+  savedToken: SavedCardResponse | null;
+  capture: 'NATIVE_CAPTURE_DEMO' | 'REAL_TOKENIZATION_API';
+  code?: string;
+  error?: string;
+}
+
+export interface NgeniusTokenizationProps {
+  visible?: boolean;
+  order?: NGeniusOrder;
+  paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY'>;
+  branding?: Record<string, unknown>;
+  language?: string;
+  /** Default false: explicit session-scoped checkbox acceptance is required. */
+  skipConsent?: boolean;
+  tokenizationClient?: TokenizationClient;
+  outletRef?: string;
+  applePayConfig?: ApplePayConfig;
+  googlePayConfig?: GooglePayConfig;
+  onSuccess?: (result: TokenizationResult) => void;
+  onError?: (result: TokenizationResult) => void;
+  onCancel?: () => void;
+}
+
+export const NgeniusTokenization: import('react').ComponentType<NgeniusTokenizationProps>;

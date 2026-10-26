@@ -30,11 +30,7 @@ const ConsentInformation = ({ information, language, styles }) => {
     // Reusable-card copy has no placeholder, so append the required terms link.
     if (parts.length === 1) content.push(' ', link(t(language, 'TERMS_OF_USE'), 'terms'));
   } else {
-    content = [
-      `${t(language, 'PAYMENT_DISCLAIMER_1')} `,
-      link(t(language, 'PAYMENT_DISCLAIMER_2'), 'terms'),
-      ` ${t(language, 'PAYMENT_DISCLAIMER_3')}.`,
-    ];
+    content = [link(t(language, 'PAYMENT_DISCLAIMER_2'), 'terms')];
   }
 
   return React.createElement(Text, {
