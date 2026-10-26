@@ -5,7 +5,6 @@ const {
   TokenizationApiError,
 } = require('./errors');
 const {
-  REFERENCE_PATTERN,
   TOKENIZATION_PATHS,
   resolveTokenizationUrl,
 } = require('./endpoints');
@@ -47,25 +46,6 @@ const parseSuccess = (parse, body, status) => {
       message: (error && error.message) || 'Response did not match the tokenization contract',
     });
   }
-};
-
-const savedTokensQuery = ({ tokens, consentOff }) => {
-  const query = [];
-  if (tokens !== undefined) {
-    if (!Array.isArray(tokens)) {
-      throw new Error('tokens must be an array of tokenRef values');
-    }
-    tokens.forEach((tokenRef) => {
-      if (typeof tokenRef !== 'string' || !REFERENCE_PATTERN.test(tokenRef)) {
-        throw new Error('tokens contains an invalid tokenRef');
-      }
-      query.push(['tokens', tokenRef]);
-    });
-  }
-  if (typeof consentOff === 'boolean') {
-    query.push(['consentOff', String(consentOff)]);
-  }
-  return query;
 };
 
 const threeDSIds = (args) => ({
@@ -126,8 +106,7 @@ const createTokenizationClient = (options) => {
       request({
         method: 'GET',
         path: TOKENIZATION_PATHS.savedTokens({ outletRef: args.outletRef }),
-        query: savedTokensQuery(args),
-        parse: (body) => parseSavedTokensResponse(body, { consentOff: args.consentOff }),
+        parse: parseSavedTokensResponse,
       }),
     addWallet: async (args) =>
       request({

@@ -1,3 +1,4 @@
+const { supportedTermsUrl } = require('../termsUrl');
 const { REFERENCE_PATTERN } = require('./endpoints');
 
 const TOKEN_TYPES = ['CARD', 'WALLET'];
@@ -153,19 +154,23 @@ const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => 
   return result;
 };
 
-const parseSavedTokensResponse = (value, { consentOff } = {}) => {
+// Pagination is response metadata only; the list endpoint defines no query contract.
+const parseSavedTokensResponse = (value) => {
   if (!value || typeof value !== 'object' || !Array.isArray(value.tokens)) {
     throw new Error('Saved tokens response is invalid');
   }
-  const result = {
-    tokens: value.tokens.map((token) => parseSavedCardResponse(token)),
-  };
-  if (consentOff !== true && value.tncUrl != null) {
-    if (typeof value.tncUrl !== 'string') {
-      throw new Error('Saved tokens response tncUrl is invalid');
+  const result = { tokens: value.tokens.map((token) => parseSavedCardResponse(token)) };
+  if (value.page != null) {
+    const fields = ['number', 'size', 'totalElements', 'totalPages'];
+    if (typeof value.page !== 'object' || fields.some((field) =>
+      !Number.isSafeInteger(value.page[field]) || value.page[field] < 0)) {
+      throw new Error('Saved tokens response page is invalid');
     }
-    result.tncUrl = value.tncUrl;
+    result.page = {};
+    fields.forEach((field) => { result.page[field] = value.page[field]; });
   }
+  const url = supportedTermsUrl(value.tncUrl);
+  if (url) result.tncUrl = url;
   return result;
 };
 

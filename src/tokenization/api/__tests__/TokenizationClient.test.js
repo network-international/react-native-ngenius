@@ -190,17 +190,17 @@ describe('TokenizationClient', () => {
   });
 
   describe('getSavedTokens', () => {
-    it('builds the contract path with repeated tokens and consentOff', async () => {
+    it('uses the list-all path without undocumented query parameters', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
       await client.getSavedTokens({
         outletRef: OUTLET,
         tokens: ['tok_1', 'tok_9'],
-        consentOff: true,
+        skipConsent: true,
       });
       expect(calls[0].method).toBe('GET');
       expect(calls[0].body).toBeUndefined();
       expect(calls[0].url).toBe(
-        `${BASE_URL}/api/outlets/outlet-1/tokens?tokens=tok_1&tokens=tok_9&consentOff=true`
+        `${BASE_URL}/api/outlets/outlet-1/tokens`
       );
     });
 
@@ -208,8 +208,8 @@ describe('TokenizationClient', () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
       await client.getSavedTokens({ outletRef: 'outlet 1/a' });
       expect(calls[0].url).toBe(`${BASE_URL}/api/outlets/outlet%201%2Fa/tokens`);
-      await client.getSavedTokens({ outletRef: OUTLET, consentOff: false });
-      expect(calls[1].url).toBe(`${BASE_URL}/api/outlets/outlet-1/tokens?consentOff=false`);
+      await client.getSavedTokens({ outletRef: OUTLET, skipConsent: false });
+      expect(calls[1].url).toBe(`${BASE_URL}/api/outlets/outlet-1/tokens`);
     });
 
     it('treats zero tokens with a tncUrl as a valid first-time response', async () => {
@@ -222,13 +222,13 @@ describe('TokenizationClient', () => {
       });
     });
 
-    it('ignores tncUrl when consent is turned off', async () => {
+    it('preserves response tncUrl independently of UI consent mode', async () => {
       const client = createClient({
         respond: () => jsonResponse(200, { tokens: [], tncUrl: 'https://merchant.test/terms' }),
       });
       await expect(
-        client.getSavedTokens({ outletRef: OUTLET, consentOff: true })
-      ).resolves.toEqual({ tokens: [] });
+        client.getSavedTokens({ outletRef: OUTLET, skipConsent: true })
+      ).resolves.toEqual({ tokens: [], tncUrl: 'https://merchant.test/terms' });
     });
 
     it('parses VERIFIED, AWAIT_3DS and FAILED tokens including wallets', async () => {
@@ -254,13 +254,49 @@ describe('TokenizationClient', () => {
       expect(tokens[1].cardDetails).toBeNull();
     });
 
-    it('rejects invalid tokenRef query values before any request', async () => {
+    it('requires an outlet before sending a request', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
-      await expect(
-        client.getSavedTokens({ outletRef: OUTLET, tokens: ['tok 1'] })
-      ).rejects.toThrow('invalid tokenRef');
       await expect(client.getSavedTokens({ outletRef: '' })).rejects.toThrow('outletRef');
       expect(calls).toHaveLength(0);
+    });
+
+    it.each([[verifiedCard], [undefined]])('parses page metadata with tokens=%p', async (token) => {
+      const tokens = token ? [token] : [];
+      const page = { number: 0, size: 20, totalElements: tokens.length, totalPages: tokens.length ? 1 : 0 };
+      const client = createClient({ respond: () => jsonResponse(200, {
+        tokens, page: { ...page, privateField: 'drop-me' }, tncUrl: 'https://merchant.test/terms',
+      }) });
+      const result = await client.getSavedTokens({ outletRef: OUTLET });
+      expect(result.page).toEqual(page);
+      expect(result.tokens).toHaveLength(tokens.length);
+    });
+
+    it.each([null, undefined, '', 123, {}, 'javascript:secret', 'https://user:secret@example.com'])
+      ('safely omits missing or invalid terms URL %p', async (tncUrl) => {
+        const client = createClient({ respond: () => jsonResponse(200, { tokens: [], tncUrl }) });
+        await expect(client.getSavedTokens({ outletRef: OUTLET })).resolves.toEqual({ tokens: [] });
+      });
+
+    it.each([{}, [], { number: -1, size: 20, totalElements: 0, totalPages: 0 },
+      { number: 0, size: '20', totalElements: 0, totalPages: 0 },
+      { number: 0, size: 20, totalElements: Number.MAX_SAFE_INTEGER + 1, totalPages: 0 }])
+      ('rejects malformed page safely: %p', async (page) => {
+        const client = createClient({ respond: () => jsonResponse(200, { tokens: [], page }) });
+        await expect(client.getSavedTokens({ outletRef: OUTLET })).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+      });
+
+    it('does not log credentials, tokens or response bodies during parsing failures', async () => {
+      const spies = ['log', 'info', 'warn', 'error'].map((key) => jest.spyOn(console, key).mockImplementation(() => {}));
+      try {
+        const client = createClient({ respond: () => jsonResponse(200, {
+          tokens: [{ ...verifiedCard, tokenRef: 'secret-token', cardDetails: { ...verifiedCard.cardDetails, last4: 'secret-card' } }],
+          privateField: 'private-response',
+        }) });
+        const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+        expect(error.code).toBe('MALFORMED_RESPONSE');
+        expect(JSON.stringify(error)).not.toMatch(/secret-token|secret-card|private-response|test-access-token/);
+        spies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+      } finally { spies.forEach((spy) => spy.mockRestore()); }
     });
 
     it('maps malformed list bodies to MALFORMED_RESPONSE', async () => {
