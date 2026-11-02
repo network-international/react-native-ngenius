@@ -3,7 +3,7 @@
 ![Banner](assets/banner.jpg)
 
 ## Requirements
-- iOS `15.0+` (NISdk 6.1.5)
+- iOS `15.0+` (NISdk 6.1.6)
 - Android minSdk `21` (payment-sdk 5.2.7)
 - React Native: tested with 0.79. On Android the app must use Android Gradle Plugin 8 or later;
   older templates on AGP 7.x (for example React Native 0.70 with AGP 7.2.1) fail to build the SDK.
@@ -89,8 +89,8 @@ const makeGooglePayPayment = async () => {
 How to change the language, behaviour and colours of the N-Genius card payment page from a
 React Native app, with the same result on iOS and Android.
 
-Requires `@network-international/react-native-ngenius` **3.2.8** or later, which uses the
-native iOS SDK `NISdk` 6.1.5 and the Android SDK 5.2.7. After upgrading, run
+Requires `@network-international/react-native-ngenius` **3.2.9** or later, which uses the
+native iOS SDK `NISdk` 6.1.6 and the Android SDK 5.2.7. After upgrading, run
 `cd ios && pod update NISdk`.
 
 There are two parts:
