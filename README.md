@@ -3,8 +3,8 @@
 ![Banner](assets/banner.jpg)
 
 ## Requirements
-- iOS `15.0+` (NISdk 6.1.4)
-- Android minSdk `21` (payment-sdk 5.2.5)
+- iOS `15.0+` (NISdk 6.1.5)
+- Android minSdk `21` (payment-sdk 5.2.7)
 - React Native: tested with 0.79. On Android the app must use Android Gradle Plugin 8 or later;
   older templates on AGP 7.x (for example React Native 0.70 with AGP 7.2.1) fail to build the SDK.
 
@@ -89,8 +89,8 @@ const makeGooglePayPayment = async () => {
 How to change the language, behaviour and colours of the N-Genius card payment page from a
 React Native app, with the same result on iOS and Android.
 
-Requires `@network-international/react-native-ngenius` **3.2.7** or later, which uses the
-native iOS SDK `NISdk` 6.1.4 and the Android SDK 5.2.5. After upgrading, run
+Requires `@network-international/react-native-ngenius` **3.2.8** or later, which uses the
+native iOS SDK `NISdk` 6.1.5 and the Android SDK 5.2.7. After upgrading, run
 `cd ios && pod update NISdk`.
 
 There are two parts:
@@ -136,6 +136,8 @@ Use one palette and set each colour under its name on each platform:
 | Pay button background | `payment_sdk_pay_button_background_color` | `payButtonBackgroundColor` |
 | Pay button text | `payment_sdk_pay_button_text_color` | `payButtonTitleColor` |
 | Pay button text while pressed | `payment_sdk_pay_button_text_color_highlighted` | `payButtonTitleColorHighlighted` |
+| Pay button background before the card details are complete | `payment_sdk_pay_button_disabled_background_color` | `payButtonDisabledBackgroundColor` |
+| Pay button text before the card details are complete | `payment_sdk_pay_button_disabled_text_color` | `payButtonDisabledTitleColor` |
 | Card preview, solid colour | set the three colours below to the same value | `cardPreviewColor` |
 | Card preview, gradient (left to right) | `payment_sdk_card_start_color`, `payment_sdk_card_center_color`, `payment_sdk_card_end_color` | `cardPreviewStartColor`, `cardPreviewCenterColor` (optional), `cardPreviewEndColor` |
 | Card preview text | `payment_sdk_card_text_color` | `cardPreviewLabelColor` |
@@ -148,6 +150,11 @@ Use one palette and set each colour under its name on each platform:
 | Title text | `payment_sdk_toolbar_text_color` | `payPageTitleColor` |
 | Title bar button (back / Cancel) | `payment_sdk_toolbar_icon_color` | `navigationBarButtonColor` |
 | Loader while the order loads and during 3-D Secure | `payment_sdk_progress_loader_color` | `progressLoaderColor` |
+
+The page follows the device's light or dark setting. Colours you leave unset use the SDK's
+defaults for each mode; colours you set are used as given in both modes. To keep the page light
+only, force light mode on your app (Android `AppCompatDelegate.setDefaultNightMode`, iOS
+`overrideUserInterfaceStyle` on the window).
 
 One option exists on iOS only, because the Android page has no such element:
 `payButtonActivityIndicatorColor`, the spinner inside the pay button while paying. Android shows

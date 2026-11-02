@@ -2,6 +2,31 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.8] - 2026-11-02
+
+### Upgrade notes
+- Run `pod update NISdk` to pick up 6.1.5.
+- **The payment page now follows the device's dark mode.** Previously iOS always showed it light.
+  Apps that need a light-only page can force light mode on their own app or window; see the
+  customisation guide.
+
+### Added
+- **Dark mode** on both platforms (native iOS `NISdk` `6.1.4` → `6.1.5`, Android `5.2.5` → `5.2.7`).
+  Colours an app sets keep their value in both modes.
+- **Disabled pay button colours:** Android `payment_sdk_pay_button_disabled_background_color` /
+  `_text_color`, iOS `payButtonDisabledBackgroundColor` / `payButtonDisabledTitleColor`. Unset
+  keeps the current faded look.
+- AED and SAR amounts show the Dirham and Riyal symbols on the pay buttons and amount labels.
+
+### Fixed
+- **Arabic pay button** read amount-first, and the currency symbol sat between the word and the
+  amount. It now reads "إدفع" first with the symbol on the left of the amount, on both platforms.
+- Android: with `configureSDK({ language: "ar" })` on a phone set to another language, amounts used
+  that language's order; they now follow the payment screen's direction.
+- Android: the title colour now follows `payment_sdk_toolbar_text_color` on every screen.
+- iOS: the 3-D Secure loader was white on white; Visa instalment and Aani pay buttons now use the
+  pay button colours.
+
 ## [3.2.7] - 2026-10-19
 
 ### Upgrade notes
@@ -193,6 +218,11 @@ Fixes the broken Android build shipped in 3.1.0.
 
 Previous published release.
 
+[3.2.8]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.8
+[3.2.7]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.7
+[3.2.6]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.6
+[3.2.5]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.5
+[3.2.4]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.4
 [3.2.3]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.3
 [3.2.2]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.2
 [3.2.1]: https://github.com/network-international/react-native-ngenius/releases/tag/v3.2.1
