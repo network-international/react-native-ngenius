@@ -2,6 +2,16 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [3.2.9] - 2026-11-02
+
+### Upgrade notes
+- Run `pod update NISdk` to pick up 6.1.6.
+
+### Fixed
+- **iOS 27: the app crashed when the card payment screen opened.** The native iOS SDK created a
+  `UIScreen` object to read the screen width, which iOS 27 does not allow (`NISdk` `6.1.5` → `6.1.6`).
+  Android is unchanged (5.2.7).
+
 ## [3.2.8] - 2026-11-02
 
 ### Upgrade notes
@@ -218,6 +228,7 @@ Fixes the broken Android build shipped in 3.1.0.
 
 Previous published release.
 
+[3.2.9]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.9
 [3.2.8]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.8
 [3.2.7]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.7
 [3.2.6]: https://github.com/network-international/react-native-ngenius/releases/tag/3.2.6
