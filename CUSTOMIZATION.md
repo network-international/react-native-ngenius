@@ -4,7 +4,7 @@ How to change the language, behaviour and colours of the N-Genius card payment p
 React Native app, with the same result on iOS and Android.
 
 Requires `@network-international/react-native-ngenius` **3.2.8** or later, which uses the
-native iOS SDK `NISdk` 6.1.5 and the Android SDK 5.2.6. After upgrading, run
+native iOS SDK `NISdk` 6.1.5 and the Android SDK 5.2.7. After upgrading, run
 `cd ios && pod update NISdk`.
 
 There are two parts:

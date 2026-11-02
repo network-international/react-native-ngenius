@@ -11,7 +11,7 @@ All notable changes to `@network-international/react-native-ngenius` are documen
   customisation guide.
 
 ### Added
-- **Dark mode** on both platforms (native iOS `NISdk` `6.1.4` → `6.1.5`, Android `5.2.5` → `5.2.6`).
+- **Dark mode** on both platforms (native iOS `NISdk` `6.1.4` → `6.1.5`, Android `5.2.5` → `5.2.7`).
   Colours an app sets keep their value in both modes.
 - **Disabled pay button colours:** Android `payment_sdk_pay_button_disabled_background_color` /
   `_text_color`, iOS `payButtonDisabledBackgroundColor` / `payButtonDisabledTitleColor`. Unset
@@ -19,6 +19,10 @@ All notable changes to `@network-international/react-native-ngenius` are documen
 - AED and SAR amounts show the Dirham and Riyal symbols on the pay buttons and amount labels.
 
 ### Fixed
+- **Arabic pay button** read amount-first, and the currency symbol sat between the word and the
+  amount. It now reads "إدفع" first with the symbol on the left of the amount, on both platforms.
+- Android: with `configureSDK({ language: "ar" })` on a phone set to another language, amounts used
+  that language's order; they now follow the payment screen's direction.
 - Android: the title colour now follows `payment_sdk_toolbar_text_color` on every screen.
 - iOS: the 3-D Secure loader was white on white; Visa instalment and Aani pay buttons now use the
   pay button colours.
