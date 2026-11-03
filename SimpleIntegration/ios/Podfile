@@ -1,8 +1,8 @@
 require_relative '../node_modules/react-native/scripts/react_native_pods'
 require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
 
-# NISdk requires iOS 14.0; the RN 0.70 template default of 12.4 fails to resolve it.
-platform :ios, '14.0'
+# NISdk requires iOS 15.0; the RN 0.70 template default of 12.4 fails to resolve it.
+platform :ios, '15.0'
 install! 'cocoapods', :deterministic_uuids => false
 
 target 'SimpleIntegration' do
@@ -46,7 +46,7 @@ target 'SimpleIntegration' do
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |config|
         # NISdk's deployment target; pods inherit 12.4 from the template otherwise.
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
         # boost relies on std::unary_function, removed from libc++ in C++17 (Xcode 26).
         defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
         defs = [defs] if defs.is_a?(String)

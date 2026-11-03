@@ -1,21 +1,19 @@
-# Manual test checklist
+# React Native Tokenization POC – QA Testing Guide
 
-Run the demo using the [README commands](../README.md#test-and-demo) and the approved test environment configuration. Record the platform and device used.
+Use the SHA and artifact names in the accompanying BUILD_INFO.txt. Branch: NINGG-34386 (PR #75). SDK 3.2.9.
 
-- [ ] **Existing Card Payment:** tap **Pay 1 AED using Card**, check the native form opens, then cancel. Dismiss the existing failure alert. Confirm the normal payment flow still works with approved test data.
-- [ ] **Open / close / reopen:** tap **Open tokenization**, close with **Continue Shopping**, then reopen. Check that stale errors or results do not remain.
-- [ ] **Branding:** repeat with **Default theme** and **Merchant branding**. Check the header, text and button colours. The native Card form follows branding on iOS and uses vendor defaults on Android. After cancelling it, check that the normal Card Payment form uses its default colours.
-- [ ] **Skip consent OFF / ON:** with OFF, checkbox starts unchecked and Card / Apple Pay / Google Pay cannot launch. Tap the independently clickable demo Terms link, then accept and launch Card. Close/reopen and confirm acceptance resets. With ON, no consent block or reserved spacing appears and Card opens immediately. Repeat with default and merchant themes.
-- [ ] **Recurring consent:** cycle **Consent: Standard / Recurring / Reusable / Missing order**, reopening each time. Check that long text wraps, Recurring and Reusable show their terms reference, and Missing order uses standard copy.
-- [ ] **Apple Pay visibility:** on a supported iOS device, check that Apple Pay appears. It should be absent when unsupported.
-- [ ] **Native Card open / cancel:** tap **Add Card**, check the secure native form opens, then cancel. Check that tokenization returns and can be closed and reopened.
-- [ ] **POC result:** no NI token is created by the demo. Completed Card / Apple Pay screens report `niTokenCreated: false`. If Google Pay is available, its demo save request fails with the could-not-save message. Do not record a completed native screen as successful token creation.
+1. Android: install the SHA-named APK with `adb install -r <apk>`, then open SimpleIntegration. It includes the JS bundle; Metro is not needed.
+2. iOS Simulator: extract the SHA-named ZIP, run `xcrun simctl install booted <app>`, then `xcrun simctl launch booted org.reactjs.native.example.SimpleIntegration`. This app cannot be installed on a physical iPhone. A device build requires existing signing; no Team/profile/certificates were changed.
+3. Open **Tokenization sandbox QA**. Obtain a fresh short-lived TOKENIZATION_SDK Access-Token through the approved secure flow, paste it into the password input and tap **Open sandbox tokenization**. Do not put an API key in the app. The token stays in memory, clears on close, and the provider rejects it after five minutes. Paste a fresh token for every new session.
+4. Live QA always uses **skipConsent=true** and outlet `a6b162e9-7a75-403c-b238-6303b2df455c`. Saved Tokens calls `/tokens?consentOff=true`. HTTP 200 with an empty list and no tncUrl is valid. No consent block should appear. Use Retry for load errors; 401/403 requires a fresh authorized token.
+5. For UI checks without credentials, enable **UI preview (no network)**. Check default/merchant theme, EN/FR/AR, Arabic RTL, skip-consent ON/OFF, checkbox gating, and close/reopen reset. Preview responses are fixtures and do not prove sandbox E2E.
 
-## Limitations
+Current acceptance scope: Saved Tokens, token-provider wiring and UI. Card saving is unavailable in this build. Apple Pay encrypted native capture and Google Pay raw-token plumbing exist, but live UI wallet capture/submission is blocked until the agreed consentData JSON is supplied. No native Card or wallet E2E success is claimed. The low-level wallet client can preserve a supplied consentData body; the app does not invent one.
 
-- Real Card token creation is not connected.
-- Apple Pay tokenization is pending native work.
-- 3DS continuation is pending.
-- Android E2E is not verified.
+Future wallet checks require a physical Android/iPhone, approved UAT wallet configuration and, for Apple Pay, merchant entitlements/signing. Public UAT config can be entered as JSON with `googlePay` / `applePay` objects using the SDK config fields. Never include API keys in that config. Verify availability, open/cancel, a single submission, VERIFIED refresh, AWAIT_3DS pending and FAILED error after consent wiring is enabled. A simulator cannot establish real Apple Pay E2E.
 
-Consent persistence is mocked only. Live backend consent schema is pending; Card persistence also needs native `/cards` integration. Verify the existing **Pay 1 AED using Card** PAYMENT flow still opens. Android runtime checks require a device or emulator with Google Pay support.
+Backend-dependent: final consentOff=false deployment and tncUrl behavior. Do not test live consentOff=false in this build. Card 3DS is outside Drop 1.
+
+Defects must include build SHA, device/model, OS, language, theme, steps and expected/actual behavior. Never include PAN, CVV, API key, Access-Token or wallet payload in screenshots, logs or tickets.
+
+Developer build: copy `src/config.example.js` to ignored `src/config.js` (public defaults, credentials blank), install the demo dependencies and run `pod install` from `ios`. The legacy Android demo requires JDK 17 and a modern D8 compiler: set `NI_QA_D8_JAR` to an installed Android Build Tools `lib/d8.jar`, then run `./gradlew :app:assembleRelease`. No compiler binary is committed.
