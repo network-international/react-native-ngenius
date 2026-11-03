@@ -61,7 +61,7 @@ const { tokens } = await tokenizationClient.getSavedTokens({ outletRef, skipCons
 />
 ```
 
-`order` is the N-Genius create-order response. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
+`order` supplies display/wallet amount and currency context; native Card tokenization does not require a PAYMENT order. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
 
 With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), the unchecked checkbox must be accepted before Card or wallets can start. `skipConsent={true}` hides the entire consent block and enables actions immediately. Acceptance resets on close/reopen. Missing or invalid URLs leave the consent text visible without a link.
 
@@ -81,8 +81,10 @@ Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the s
 - Current sandbox QA uses `skipConsent=true`, mapping to `GET /api/outlets/{outletRef}/tokens?consentOff=true`. Empty `tokens`, pagination metadata and omitted `tncUrl` are supported. The UI displays masked saved-method details and refreshes after VERIFIED.
 - SimpleIntegration has a runtime short-lived Access-Token input (memory only) and a separate offline UI preview. Tokenization entry does not create a PAYMENT order or exchange an API key. EN/FR/AR and merchant theme controls are available on both platforms.
 - Apple Pay has a separate native capture method returning only the original encrypted `PKPaymentToken.paymentData`. Android returns the raw Google Pay `tokenizationData.token`. PAYMENT APIs remain separate.
-- The available PR contains an internal consent intent, **not a confirmed wire schema**. Until the agreed JSON is supplied, the tokenization UI stops wallet mutations before native capture with `CONSENT_CONTRACT_UNAVAILABLE`. The lower-level `addWallet` API preserves an explicitly supplied `consentData` object in the body. This is envelope support, not validation of an agreed schema.
-- Card tokenization is **not implemented**: the native SDKs do not expose a tokenization capture API, and the `/cards` card-data/consent request contract is absent from the available context. The tokenization Card action reports unavailable; it never starts a PAYMENT as a substitute. PAN/CVV never enter JS.
+- Consent uses Hossam’s confirmed 26 October contract. Both statuses include UTC clientTimestamp, channel, actual SDK version and basic React Native device metadata. NOT_COLLECTED uses merchantSelectedSkipConsent=true; COLLECTED includes the acceptance-event time, normalized locale and the validated terms URL shown to the shopper. Unknown fields and identifiers are stripped. No IP or server timestamp is supplied by the SDK.
+- Card tokenization is native on iOS and Android. Native entry, validation and HTTPS POST use `/api/outlets/{outletRef}/cards` with `{ card, consentData }`. JS receives a ready event, obtains fresh auth and prepares consent; PAN/CVV stay native. Only safe response fields return to JS. Redirects, response-body errors and credential persistence are disabled. Existing PAYMENT APIs stay separate.
+- Apple/Google capture connects to the real `/wallets` JSON body with the confirmed consentData and unchanged encryptedPayload. There is no consent placeholder or missing-contract block. Live E2E still requires current sandbox credentials and supported devices/UAT wallet config.
+- Custom JS transports/fetch mocks apply to JS API calls. They cannot carry plaintext cards; native Card submission is refused when such an override is installed. Offline preview can open/cancel the form, but never POSTs it.
 - Only VERIFIED creates a success callback. AWAIT_3DS stays pending; Card 3DS is outside Drop 1. No new continuation flow was added.
 - Live `consentOff=false` is not part of current QA. Its backend deployment and final `tncUrl` behavior remain backend-owned.
 

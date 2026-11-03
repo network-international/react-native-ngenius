@@ -13,7 +13,7 @@ import {
 } from '@network-international/react-native-ngenius';
 
 const OUTLET_REF = 'a6b162e9-7a75-403c-b238-6303b2df455c';
-const BASE_URL = 'https://paypage.sandbox.ngenius-payments.com';
+const BASE_URL = 'https://paypage-sandbox.platform.network.ae';
 const BRANDING = {
   buttonColour: '#002E5D',
   mainHeadingColour: '#002E5D',
@@ -59,23 +59,24 @@ export default function TokenizationQA() {
             token.current = '';
             throw new Error('Provide a fresh short-lived Access-Token');
           }
-          return /^Bearer /i.test(token.current)
-            ? token.current
-            : `Bearer ${token.current}`;
+          return token.current.replace(/^Bearer\s+/i, '');
         },
       }),
     [],
   );
   const previewClient = useMemo(
-    () => ({
-      getSavedTokens: async () => ({
-        tokens: [],
-        page: { number: 0, size: 20, totalElements: 0, totalPages: 0 },
+    () =>
+      createTokenizationClient({
+        baseUrl: BASE_URL,
+        getAccessToken: async () => 'offline-preview-only',
+        transport: async () => ({
+          status: 200,
+          text: JSON.stringify({
+            tokens: [],
+            page: { number: 0, size: 20, totalElements: 0, totalPages: 0 },
+          }),
+        }),
       }),
-      addWallet: async () => {
-        throw new Error('UI preview does not submit');
-      },
-    }),
     [],
   );
   const open = () => {
