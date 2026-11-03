@@ -1,0 +1,189 @@
+const {
+  NATIVE_CAPTURE_DEMO,
+  REAL_TOKENIZATION_API,
+} = require('./captureModes');
+
+const createTokenizationSession = () => {
+  let generation = 0;
+  let active = true;
+  let accepted = false;
+  let acceptedAt;
+  let inFlight = false;
+  let successEmitted = false;
+  let errorEmitted = false;
+  let cancelEmitted = false;
+
+  return {
+    start() {
+      generation += 1;
+      active = true;
+      accepted = false;
+      acceptedAt = undefined;
+      inFlight = false;
+      successEmitted = false;
+      errorEmitted = false;
+      cancelEmitted = false;
+    },
+    close() {
+      generation += 1;
+      active = false;
+      accepted = false;
+      acceptedAt = undefined;
+      inFlight = false;
+    },
+    generation() {
+      return generation;
+    },
+    isCurrent(id) {
+      return active && id === generation && !cancelEmitted;
+    },
+    setAccepted(value, now = () => new Date(), id = generation) {
+      if (!active || inFlight || cancelEmitted || id !== generation)
+        return false;
+      if (value !== true) {
+        accepted = false;
+        acceptedAt = undefined;
+        return true;
+      }
+      if (!accepted) acceptedAt = now().toISOString();
+      accepted = true;
+      return true;
+    },
+    acceptanceTimestamp() {
+      return acceptedAt;
+    },
+    canProceed(skipConsent) {
+      return active && !cancelEmitted && (skipConsent === true || accepted);
+    },
+    tryBeginNative() {
+      if (!active || inFlight || successEmitted || cancelEmitted) {
+        return false;
+      }
+      inFlight = true;
+      errorEmitted = false;
+      return true;
+    },
+    endNative() {
+      inFlight = false;
+    },
+    isInFlight() {
+      return inFlight;
+    },
+    emitSuccess(callback, payload) {
+      if (!active || successEmitted || cancelEmitted) {
+        return false;
+      }
+      successEmitted = true;
+      inFlight = false;
+      if (callback) {
+        callback(payload);
+      }
+      return true;
+    },
+    emitError(callback, payload) {
+      if (!active || errorEmitted || successEmitted || cancelEmitted) {
+        return false;
+      }
+      errorEmitted = true;
+      inFlight = false;
+      if (callback) {
+        callback(payload);
+      }
+      return true;
+    },
+    emitCancel(callback) {
+      if (!active || inFlight || cancelEmitted) {
+        return false;
+      }
+      cancelEmitted = true;
+      accepted = false;
+      acceptedAt = undefined;
+      generation += 1;
+      if (callback) {
+        callback();
+      }
+      return true;
+    },
+  };
+};
+
+const pocNativeResult = ({ method, status }) => ({
+  flow: 'TOKENIZATION',
+  method,
+  status,
+  niTokenCreated: false,
+  savedToken: null,
+  capture: NATIVE_CAPTURE_DEMO,
+});
+
+const pocErrorResult = error => {
+  const status = error && error.status ? error.status : 'Failed';
+  let message;
+  if (error && typeof error.error === 'string') {
+    message = error.error;
+  } else if (error && typeof error.message === 'string') {
+    message = error.message;
+  } else if (typeof status === 'string') {
+    message = status;
+  } else {
+    message = 'Failed';
+  }
+  return {
+    flow: 'TOKENIZATION',
+    status,
+    error: message,
+    niTokenCreated: false,
+    savedToken: null,
+    capture: NATIVE_CAPTURE_DEMO,
+  };
+};
+
+const savedTokenResult = ({ method, savedToken }) => ({
+  flow: 'TOKENIZATION',
+  method,
+  status: 'VERIFIED',
+  niTokenCreated: true,
+  savedToken: {
+    tokenRef: savedToken.tokenRef,
+    type: savedToken.type,
+    walletType: savedToken.walletType,
+    status: savedToken.status,
+    cardDetails: savedToken.cardDetails,
+  },
+  capture: REAL_TOKENIZATION_API,
+});
+
+const THREE_DS_CONTINUATION_UNAVAILABLE = 'THREE_DS_CONTINUATION_UNAVAILABLE';
+
+// AWAIT_3DS is unverified; with no native 3DS runner, do not expose it as a saved token.
+const awaitingThreeDSResult = ({ method }) => ({
+  flow: 'TOKENIZATION',
+  method,
+  status: 'AWAIT_3DS',
+  code: THREE_DS_CONTINUATION_UNAVAILABLE,
+  error: '3DS verification is required and is not available yet',
+  niTokenCreated: false,
+  savedToken: null,
+  capture: REAL_TOKENIZATION_API,
+});
+
+const apiErrorResult = ({ method, error }) => ({
+  flow: 'TOKENIZATION',
+  method,
+  status: 'FAILED',
+  code: error && typeof error.code === 'string' ? error.code : 'UNKNOWN_ERROR',
+  error: error && typeof error.message === 'string' ? error.message : 'Failed',
+  niTokenCreated: false,
+  savedToken: null,
+  capture: REAL_TOKENIZATION_API,
+});
+
+module.exports = {
+  createTokenizationSession,
+  pocNativeResult,
+  pocErrorResult,
+  savedTokenResult,
+  awaitingThreeDSResult,
+  apiErrorResult,
+  THREE_DS_CONTINUATION_UNAVAILABLE,
+};

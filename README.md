@@ -1,6 +1,6 @@
-# react-native-ni-sdk
+# React Native N-Genius SDK
 
-![Banner](assets/banner.jpg)
+React Native bindings for N-Genius card and wallet payments, with a tokenization POC for the add-card and wallet UI.
 
 ## Requirements
 - iOS `15.0+` (NISdk 6.1.6)
@@ -26,63 +26,84 @@ to 15.0 or later.
 
 **Android:** no extra setup is needed. The Android SDK is downloaded from JitPack automatically.
 
-## Basic usage example
-```javascript
+
+## Usage
+
+```jsx
 import {
   initiateCardPayment,
-  initiateSamsungPay,
-  initiateApplePay,
-  initiateGooglePay,
+  createTokenizationClient,
+  NgeniusTokenization,
 } from '@network-international/react-native-ngenius';
 
-// order is the order response received from NGenius create order API
-const makeCardPayment = async () => {
-    try {
-      const resp = await initiateCardPayment(order);
-    } catch (err) {
-      console.log({ err });
-    }
-};
+const payment = await initiateCardPayment(order);
 
-// order is the order response received from NGenius create order API
-// merchantName is the name of merchant's establishment
-// serviceId is the serviceId that is generated in the Samsung Pay developer portal
-const makeSamsungPayPayment = async () => {
-    try {
-      const resp = await initiateSamsungPay(order, merchantName, serviceId);
-    } catch (err) {
-      console.log({ err });
-    }
-};
+const tokenizationClient = createTokenizationClient({
+  baseUrl: tokenizationBaseUrl,
+  getAccessToken: () => merchantBackend.getTokenizationAccessToken(),
+});
+const { tokens } = await tokenizationClient.getSavedTokens({ outletRef, skipConsent: true });
 
-// order is the order response received from NGenius create order API
-// mid is the merchant ID that is generated in the Apple developer portal
-// countryCode is the country code of the transaction country Eg: AE for UAE
-const makeApplePayPayment = async () => {
-    try {
-      const resp = await initiateApplePay(order, { // order is the order response after creating an order
-        merchantIdentifier: '', // Merchant ID created in Apple's portal
-        countryCode: '', // Country code of the order Eg, AE
-        merchantName: '', // name of the merchant to be shown in Apple Pay button
-      });
-    } catch (err) {
-      console.log({ err });
-    }
-};
-
-const makeGooglePayPayment = async () => {
-    try {
-      const resp = await initiateGooglePay(order, {
-        merchantName: '', // name of the merchant
-        gateway: '', // gateway name
-        gatewayMerchantId: '', // gateway merchant ID
-        environment: 'TEST', // 'TEST' or 'PRODUCTION'
-      });
-    } catch (err) {
-      console.log({ err });
-    }
-};
+<NgeniusTokenization
+  visible={showTokenization}
+  order={order}
+  paymentMethods={['CARD', 'APPLE_PAY', 'GOOGLE_PAY']}
+  tokenizationClient={tokenizationClient}
+  outletRef={outletRef}
+  branding={branding}
+  language="en"
+  skipConsent={true}
+  applePayConfig={{ merchantIdentifier, countryCode, merchantName }}
+  googlePayConfig={{ merchantName, gateway, gatewayMerchantId, environment }}
+  onSuccess={handleResult}
+  onError={handleError}
+  onCancel={() => setShowTokenization(false)}
+/>
 ```
+
+`order` supplies display/wallet amount and currency context; native Card tokenization does not require a PAYMENT order. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
+
+With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), the unchecked checkbox must be accepted before Card or wallets can start. `skipConsent={true}` hides the entire consent block and enables actions immediately. Acceptance resets on close/reopen. Missing or invalid URLs leave the consent text visible without a link.
+
+## Supported methods
+
+- Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
+- Helpers: `isSamsungPaySupported(serviceId)`, `isApplePaySupported()`, `isGooglePaySupported(googlePayConfig)`, `configureSDK(config)`, `executeThreeDSTwo(paymentResponse)`.
+- Tokenization UI: `CARD`, `APPLE_PAY` (iOS), `GOOGLE_PAY` (Android).
+- Tokenization client: `getSavedTokens({ outletRef, skipConsent })`, `addWallet({ outletRef, walletType, encryptedPayload })`. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
+
+## Authentication
+
+Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the short-lived identity token; the SDK requests it for each call and sends it in `Access-Token`. It does not store, refresh or log the token. Keep API keys and Basic credentials on your backend. An unavailable token fails with `ACCESS_TOKEN_UNAVAILABLE` before sending a request.
+
+## POC status
+
+- Current sandbox QA uses `skipConsent=true`, mapping to `GET /api/outlets/{outletRef}/tokens?consentOff=true`. Empty `tokens`, pagination metadata and omitted `tncUrl` are supported. The UI displays masked saved-method details and refreshes after VERIFIED.
+- SimpleIntegration has a runtime short-lived Access-Token input (memory only) and a separate offline UI preview. Tokenization entry does not create a PAYMENT order or exchange an API key. EN/FR/AR and merchant theme controls are available on both platforms.
+- Apple Pay has a separate native capture method returning only the original encrypted `PKPaymentToken.paymentData`. Android returns the raw Google Pay `tokenizationData.token`. PAYMENT APIs remain separate.
+- Consent uses Hossam’s confirmed 26 October contract. Both statuses include UTC clientTimestamp, channel, actual SDK version and basic React Native device metadata. NOT_COLLECTED uses merchantSelectedSkipConsent=true; COLLECTED includes the acceptance-event time, normalized locale and the validated terms URL shown to the shopper. Unknown fields and identifiers are stripped. No IP or server timestamp is supplied by the SDK.
+- Card tokenization is native on iOS and Android. Native entry, validation and HTTPS POST use `/api/outlets/{outletRef}/cards` with `{ card, consentData }`. JS receives a ready event, obtains fresh auth and prepares consent; PAN/CVV stay native. Only safe response fields return to JS. Redirects, response-body errors and credential persistence are disabled. Existing PAYMENT APIs stay separate.
+- Apple/Google capture connects to the real `/wallets` JSON body with the confirmed consentData and unchanged encryptedPayload. There is no consent placeholder or missing-contract block. Live E2E still requires current sandbox credentials and supported devices/UAT wallet config.
+- Custom JS transports/fetch mocks apply to JS API calls. They cannot carry plaintext cards; native Card submission is refused when such an override is installed. Offline preview can open/cancel the form, but never POSTs it.
+- Only VERIFIED creates a success callback. AWAIT_3DS stays pending; Card 3DS is outside Drop 1. No new continuation flow was added.
+- Live `consentOff=false` is not part of current QA. Its backend deployment and final `tncUrl` behavior remain backend-owned.
+
+## Test and demo
+
+```sh
+npm install
+npm test -- --runInBand --watchman=false
+npm pack --dry-run
+
+cd SimpleIntegration
+npm install
+(cd ios && pod install)
+npm start
+```
+
+With Metro running, use `npm run ios` or `npm run android` from `SimpleIntegration` in another terminal. Android also has `./start-android.sh`. Use the approved test environment configuration and follow [the manual checklist](SimpleIntegration/FOR_TESTERS.md).
+
+[Canonical documentation in Confluence](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5451218947/React+Native+Tokenization+-+POC+Architecture+Implementation+Notes).
 
 ## Customising the payment page
 

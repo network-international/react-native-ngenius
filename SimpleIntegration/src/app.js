@@ -2,7 +2,7 @@ import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
-  View,
+  ScrollView,
   TouchableHighlight,
   ActivityIndicator,
   Switch,
@@ -22,7 +22,6 @@ import {
   executeThreeDSTwo,
 } from '@network-international/react-native-ngenius';
 
-
 import {
   createToken,
   createOrder,
@@ -33,6 +32,7 @@ import {
 } from './ngenius-apis';
 import { PAYPAGE_API_URL } from './config';
 import SavedCardFrame from './save-card-frame';
+import TokenizationQA from './tokenization-qa';
 
 const SAVE_CARD_KEY = 'SAVE_CARD_KEY';
 
@@ -46,7 +46,7 @@ const storeData = async (key, value) => {
   }
 };
 
-const getStoredData = async (key) => {
+const getStoredData = async key => {
   try {
     const jsonValue = await AsyncStorage.getItem(key);
     return jsonValue != null ? JSON.parse(jsonValue) : null;
@@ -92,14 +92,18 @@ const App = () => {
       setShowWallet(isApplePayEnabled);
     } else if (Platform.OS === 'android') {
       try {
-        const isSamsungPayEnabled = await isSamsungPaySupported("61458396ab0c44738b7670");
+        const isSamsungPayEnabled = await isSamsungPaySupported(
+          '61458396ab0c44738b7670',
+        );
         setShowWallet(isSamsungPayEnabled);
       } catch {
         setShowWallet(false);
       }
       // Check Google Pay availability
       try {
-        const isGooglePayEnabled = await isGooglePaySupported({ environment: 'PRODUCTION' });
+        const isGooglePayEnabled = await isGooglePaySupported({
+          environment: 'PRODUCTION',
+        });
         setShowGooglePay(isGooglePayEnabled);
       } catch (e) {
         setShowGooglePay(false);
@@ -126,14 +130,17 @@ const App = () => {
       setCreatingOrder(true);
       const tk = await createToken();
       const order = await createFixedOrder(tk, savedCard);
-      
+
       if (savedCard !== null) {
-        const savedCardLink = order._embedded?.payment?.[0]?._links?.['payment:saved-card'];
-        
+        const savedCardLink =
+          order._embedded?.payment?.[0]?._links?.['payment:saved-card'];
+
         if (!savedCardLink || !savedCardLink.href) {
-          throw new Error('payment:saved-card link not found in order response');
+          throw new Error(
+            'payment:saved-card link not found in order response',
+          );
         }
-        
+
         const paymentUrl = savedCardLink.href;
         const { cardholderName, expiry, cardToken } = savedCard;
         const paymentBody = {
@@ -141,64 +148,51 @@ const App = () => {
           cardToken,
           expiry,
         };
-        
-        const paymentResponse = await makePayment(tk, paymentUrl, paymentBody, "put");
+
+        const paymentResponse = await makePayment(
+          tk,
+          paymentUrl,
+          paymentBody,
+          'put',
+        );
 
         // Saved-card payment often completes without 3DS (e.g. CAPTURED). Only run 3DS2 when the
         // backend indicates it is required (e.g. state not terminal success, or response has 3ds2).
         const terminalSuccessStates = ['CAPTURED', 'PURCHASED', 'AUTHORISED'];
-        const needs3DS = paymentResponse?.state && !terminalSuccessStates.includes(paymentResponse.state)
-          && paymentResponse?.['3ds2'];
+        const needs3DS =
+          paymentResponse?.state &&
+          !terminalSuccessStates.includes(paymentResponse.state) &&
+          paymentResponse?.['3ds2'];
         if (needs3DS) {
           await executeThreeDSTwo(paymentResponse);
         }
 
-        Alert.alert(
-          'Success',
-          'Payment was successful',
-          [{ text: 'OK' }],
-          { cancelable: false },
-        );
+        Alert.alert('Success', 'Payment was successful', [{ text: 'OK' }], {
+          cancelable: false,
+        });
         return;
       }
-      
+
       await initiateCardPayment(order);
-      
+
       if (shouldSaveCard) {
         const token = await createToken();
         const paidOrder = await getOrder(token, order.reference);
         const cardTokenDetails = paidOrder?._embedded?.payment[0]?.savedCard;
-        
+
         if (cardTokenDetails) {
           await storeData(SAVE_CARD_KEY, cardTokenDetails);
           setSavedCard(cardTokenDetails);
         }
       }
-      
-      Alert.alert(
-        'Success',
-        'Payment was successful',
-        [{ text: 'OK' }],
-        { cancelable: false },
-      );
+
+      Alert.alert('Success', 'Payment was successful', [{ text: 'OK' }], {
+        cancelable: false,
+      });
     } catch (err) {
-      // Show what actually failed instead of a generic message: for an axios error the
-      // useful part is the status and the gateway's response body, which the generic
-      // alert used to hide.
-      const status = err?.response?.status;
-      const body = err?.response?.data;
-      const detail = [
-        err?.message,
-        status ? `HTTP ${status}` : null,
-        err?.config?.url,
-        body ? JSON.stringify(body).slice(0, 500) : null,
-      ].filter(Boolean).join('\n');
-      console.log('[Payment error]', detail);
       Alert.alert(
         'Error',
-        `Payment was not successful\n\n${detail}`,
-        [{ text: 'OK' }],
-        { cancelable: false },
+        'Payment did not complete. Check your approved payment configuration.',
       );
     } finally {
       setCreatingOrder(false);
@@ -253,72 +247,82 @@ const App = () => {
   const onClickGooglePay = useCallback(async () => {
     try {
       setCreatingOrder(true);
-      
+
       // Get token
       const tk = await createToken();
       let currentGooglePayConfig = googlePayConfig;
-      
+
       // Create order first to get merchant reference
       const order = await createFixedOrder(tk);
       setWalletStart(true);
-      
+
       // Get Google Pay config, passing order to try merchant reference if needed
       if (!currentGooglePayConfig) {
         currentGooglePayConfig = await getGooglePayConfig(tk, order);
         setGooglePayConfig(currentGooglePayConfig);
       }
-      
+
       // Check if Google Pay is supported for this order (as per payment-sdk-android pattern)
       const supportedWallets = order.paymentMethods?.wallet || [];
       const isGooglePaySupported = supportedWallets.includes('GOOGLE_PAY');
-      
+
       // Note: If wallet is not in paymentMethods, Google Pay may still work
       // but the outlet needs to be configured for Google Pay on the backend
-      
+
       // Extract Google Pay accept URL from order response (as per payment-sdk-android pattern)
       // URL is in order._embedded.payment[0]._links['payment:google_pay'].href
-      let googlePayAcceptUrl = 
+      let googlePayAcceptUrl =
         order._embedded?.payment?.[0]?._links?.['payment:google_pay']?.href ||
         order._embedded?.payment?.[0]?._links?.googlePayLink?.href;
-      
+
       // If URL not in links, construct it manually using order structure
       // Note: This is a fallback - if Google Pay is properly configured, the URL should be in _links
       if (!googlePayAcceptUrl) {
         // Use order.outletId (not merchant reference - merchant reference caused 404)
-        const outletId = order.outletId || order._embedded?.payment?.[0]?.outletId;
+        const outletId =
+          order.outletId || order._embedded?.payment?.[0]?.outletId;
         const orderRef = order.reference;
         const paymentRef = order._embedded?.payment?.[0]?.reference;
-        
+
         if (outletId && orderRef && paymentRef) {
           // Try paypage API endpoint (as per paypage-app pattern: /api/outlets/...)
           // paypage-app uses: /api/outlets/${outletRef}/orders/${orderRef}/payments/${paymentRef}/google-pay/accept
           // Instead of: /transactions/outlets/... (gateway API)
           googlePayAcceptUrl = `${PAYPAGE_API_URL}/api/outlets/${outletId}/orders/${orderRef}/payments/${paymentRef}/google-pay/accept`;
         } else {
-          throw new Error('Google Pay accept URL not found in order response and cannot be constructed. Missing outletId, orderRef, or paymentRef.');
+          throw new Error(
+            'Google Pay accept URL not found in order response and cannot be constructed. Missing outletId, orderRef, or paymentRef.',
+          );
         }
       }
-      
+
       // Initiate Google Pay payment with config
       const resp = await initiateGooglePay(order, {
-        merchantName: currentGooglePayConfig.merchantInfo?.name || 'Test Merchant',
+        merchantName:
+          currentGooglePayConfig.merchantInfo?.name || 'Test Merchant',
         gateway: currentGooglePayConfig.gatewayName || 'networkintl',
-        gatewayMerchantId: currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
+        gatewayMerchantId:
+          currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
         environment: currentGooglePayConfig.environment || 'PRODUCTION',
-        merchantId: currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
-        merchantOrigin: currentGooglePayConfig.merchantOrigin || 'http://applePayChub.com',
+        merchantId:
+          currentGooglePayConfig.merchantGatewayId || 'BCR2DN4T263KB4BO',
+        merchantOrigin:
+          currentGooglePayConfig.merchantOrigin || 'http://applePayChub.com',
       });
-      
+
       if (!resp.token) {
         throw new Error('Google Pay token not received');
       }
-      
+
       // Ensure token is a string (it should be JSON string from Google Pay)
-      const tokenString = typeof resp.token === 'string' ? resp.token : JSON.stringify(resp.token);
-      
+      const tokenString =
+        typeof resp.token === 'string'
+          ? resp.token
+          : JSON.stringify(resp.token);
+
       // Accept Google Pay payment using accept endpoint (as per payment-sdk-android pattern)
       await acceptGooglePay(tk, googlePayAcceptUrl, tokenString);
-      
+
       Alert.alert(
         'Success',
         'Google Pay payment was successful',
@@ -328,7 +332,9 @@ const App = () => {
     } catch (err) {
       Alert.alert(
         'Error',
-        `Google Pay payment failed: ${err.error || err.message || err.status || 'Unknown error'}`,
+        `Google Pay payment failed: ${
+          err.error || err.message || err.status || 'Unknown error'
+        }`,
         [{ text: 'OK' }],
         { cancelable: false },
       );
@@ -344,21 +350,21 @@ const App = () => {
   );
 
   const toggleSwitch = () => {
-    setIsEnglish((prev) => {
+    setIsEnglish(prev => {
       configureSDK({ language: !prev ? 'en' : 'ar' });
       return !prev;
     });
   };
 
   const toggleAmount = () => {
-    setShowAmount((prev) => {
+    setShowAmount(prev => {
       configureSDK({ shouldShowOrderAmount: !prev });
       return !prev;
     });
   };
 
   const toggleSaveCard = () => {
-    setShouldSaveCard((prev) => {
+    setShouldSaveCard(prev => {
       if (prev) {
         setSavedCard(null);
         storeData(SAVE_CARD_KEY, null);
@@ -375,10 +381,11 @@ const App = () => {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.welcome} testID="Label">
         NGenius React native SDK
       </Text>
+      <TokenizationQA />
       {savedCard && <SavedCardFrame cardDetails={savedCard} />}
       <TouchableHighlight
         disabled={creatingOrder}
@@ -394,8 +401,9 @@ const App = () => {
             Platform.OS === 'android' ? onClickSamsungPay : onClickApplePay
           }>
           <Text style={styles.buttonLabel}>
-            {`Pay 1 AED using ${Platform.OS === 'android' ? 'Samsung' : 'Apple'
-              } Pay`}
+            {`Pay 1 AED using ${
+              Platform.OS === 'android' ? 'Samsung' : 'Apple'
+            } Pay`}
           </Text>
         </TouchableHighlight>
       )}
@@ -458,13 +466,14 @@ const App = () => {
         style={styles.loader}
         animating={creatingOrder}
       />
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
+    paddingVertical: 50,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F5FCFF',
@@ -472,7 +481,7 @@ const styles = StyleSheet.create({
   welcome: {
     fontSize: 30,
     textAlign: 'center',
-    marginVertical: 50,
+    marginVertical: 20,
   },
   buttonLabel: { color: 'white', fontWeight: '700' },
   button: {
@@ -482,7 +491,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 5,
-    marginVertical: 20,
+    marginVertical: 10,
   },
   loader: {
     marginVertical: 0,

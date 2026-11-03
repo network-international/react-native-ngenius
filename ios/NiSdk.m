@@ -1,9 +1,43 @@
 #import "NiSdk.h"
+#import "NiTokenizationApplePay.h"
+#import "NiTokenizationCard.h"
+#import <React/RCTBridge.h>
+#import <React/RCTEventDispatcher.h>
 #import <PassKit/PassKit.h>
+#import <UIKit/UIKit.h>
+
+// NISdkColors fields are Swift-only, so colour mutation needs a Swift bridge.
+@interface NiSdkColorConfigurator : NSObject
++ (void)applyColors:(NSDictionary *)colors;
++ (void)resetColors;
+@end
 
 @interface NiSdk ()
+@property (nonatomic, weak) RCTBridge *bridge;
 @property (nonatomic) RCTResponseSenderBlock paymentResponseCallback;
+@property (nonatomic, strong) NiTokenizationApplePay *tokenizationApplePay;
+@property (nonatomic, strong) NiTokenizationCard *tokenizationCard;
 @end
+
+// UIKit silently drops a presentation over a parent that is still presenting
+// (e.g. a React Native Modal mid-dismiss). Retry for up to ~2s, then fail.
+static void NiSdkWhenParentFreeForPresentation(UIViewController *parent,
+                                               NSInteger attempt,
+                                               void (^onReady)(void),
+                                               void (^onFailed)(NSString *presentedClass)) {
+  if (!parent.presentedViewController) {
+    onReady();
+    return;
+  }
+  if (attempt >= 20) {
+    onFailed(NSStringFromClass([parent.presentedViewController class]));
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+                 dispatch_get_main_queue(), ^{
+    NiSdkWhenParentFreeForPresentation(parent, attempt + 1, onReady, onFailed);
+  });
+}
 
 @implementation NiSdk
 
@@ -40,8 +74,15 @@ RCT_EXPORT_METHOD(initiateCardPaymentUI:(NSDictionary *)orderResponse cardPayRes
         }
         dispatch_async(dispatch_get_main_queue(), ^(void){
             UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
-            NISdk *sdkInstance = [NISdk sharedInstance];
-            [sdkInstance showCardPaymentViewWithCardPaymentDelegate: self overParent:rootViewController for: orderResponse];
+            NiSdkWhenParentFreeForPresentation(rootViewController, 0, ^{
+                NISdk *sdkInstance = [NISdk sharedInstance];
+                [sdkInstance showCardPaymentViewWithCardPaymentDelegate: self overParent:rootViewController for: orderResponse];
+            }, ^(NSString *presentedClass) {
+                NSLog(@"[NiSdk] initiateCardPaymentUI: presentation FAILED, still presenting %@", presentedClass);
+                if (self.paymentResponseCallback) {
+                    self.paymentResponseCallback(@[@"Failed"]);
+                }
+            });
         });
     }
 }
@@ -86,14 +127,57 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
         dispatch_async(dispatch_get_main_queue(), ^(void){
             UIViewController *rootViewController = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
             NISdk *sdkInstance = [NISdk sharedInstance];
-            
-            [sdkInstance initiateApplePayWithApplePayDelegate: self
-            cardPaymentDelegate: self
-                     overParent: rootViewController
-                            for: orderResponse
-                           with: applePayRequest];
+            NiSdkWhenParentFreeForPresentation(rootViewController, 0, ^{
+                [sdkInstance initiateApplePayWithApplePayDelegate: self
+                cardPaymentDelegate: self
+                         overParent: rootViewController
+                                for: orderResponse
+                               with: applePayRequest];
+            }, ^(NSString *presentedClass) {
+                NSLog(@"[NiSdk] initiateApplePay: presentation FAILED, still presenting %@", presentedClass);
+                if (self.paymentResponseCallback) {
+                    self.paymentResponseCallback(@[@"Failed"]);
+                }
+            });
         });
     }
+}
+
+RCT_EXPORT_METHOD(presentTokenizationCard:(NSDictionary *)config result:(RCTResponseSenderBlock)result) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.tokenizationCard || self.tokenizationApplePay) { result(@[@"Failed", @{}]); return; }
+        NiTokenizationCard *card = [[NiTokenizationCard alloc] initWithConfig:config ready:^(NSString *requestId) { [self.bridge.eventDispatcher sendDeviceEventWithName:@"NiTokenizationCardReady" body:@{@"requestId": requestId}]; }
+          result:^(NSString *status, NSDictionary *response) { self.tokenizationCard = nil; result(@[status, response]); }];
+        self.tokenizationCard = card;
+        UIViewController *parent = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
+        NiSdkWhenParentFreeForPresentation(parent, 0, ^{ if (self.tokenizationCard == card) [card presentFrom:parent]; }, ^(NSString *presentedClass) { [card fail]; });
+    });
+}
+RCT_EXPORT_METHOD(submitTokenizationCard:(NSString *)requestId request:(NSDictionary *)request) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if ([self.tokenizationCard.requestId isEqualToString:requestId]) [self.tokenizationCard submit:request]; });
+}
+RCT_EXPORT_METHOD(cancelTokenizationCard:(NSString *)requestId) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if ([self.tokenizationCard.requestId isEqualToString:requestId]) [self.tokenizationCard cancel]; });
+}
+RCT_EXPORT_METHOD(failTokenizationCard:(NSString *)requestId) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if ([self.tokenizationCard.requestId isEqualToString:requestId]) [self.tokenizationCard fail]; });
+}
+
+RCT_EXPORT_METHOD(captureApplePayToken:(NSDictionary *)config callback:(RCTResponseSenderBlock)callback) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.tokenizationApplePay || self.tokenizationCard) { callback(@[@"Failed", @""]); return; }
+        self.tokenizationApplePay = [NiTokenizationApplePay new];
+        UIViewController *parent = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
+        NiSdkWhenParentFreeForPresentation(parent, 0, ^{
+            [self.tokenizationApplePay presentFrom:parent config:config completion:^(NSString *status, NSString *payload) {
+                self.tokenizationApplePay = nil;
+                callback(@[status, payload ?: @""]);
+            }];
+        }, ^(NSString *presentedClass) {
+            self.tokenizationApplePay = nil;
+            callback(@[@"Failed", @""]);
+        });
+    });
 }
 
 RCT_EXPORT_METHOD(isApplePaySupported:(RCTResponseSenderBlock)sendResponse) {
@@ -115,6 +199,17 @@ RCT_EXPORT_METHOD(configureSDK:(NSDictionary *)config) {
 RCT_EXPORT_METHOD(setLocale:(NSString *) language) {
     NISdk *sdkInstance = [NISdk sharedInstance];
     [sdkInstance setSDKLanguageWithLanguage: language];
+}
+
+RCT_EXPORT_METHOD(setSDKColors:(NSDictionary *)colors) {
+    if (![colors isKindOfClass:[NSDictionary class]]) {
+        return;
+    }
+    [NiSdkColorConfigurator applyColors:colors];
+}
+
+RCT_EXPORT_METHOD(resetSDKColors) {
+    [NiSdkColorConfigurator resetColors];
 }
 
 RCT_EXPORT_METHOD(executeThreeDSTwo:(NSDictionary *)paymentResponseDict

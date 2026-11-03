@@ -17,6 +17,13 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,c,m,swift}"
   s.requires_arc = true
+  s.swift_version = "5.0"
+  s.pod_target_xcconfig = {
+    "DEFINES_MODULE" => "YES",
+    "IPHONEOS_DEPLOYMENT_TARGET" => "15.0",
+    "SWIFT_INCLUDE_PATHS" => '$(inherited) "${PODS_CONFIGURATION_BUILD_DIR}/NISdk"',
+    "OTHER_SWIFT_FLAGS" => '$(inherited) -D COCOAPODS -I "${PODS_CONFIGURATION_BUILD_DIR}/NISdk" -Xcc -fmodule-map-file="${PODS_CONFIGURATION_BUILD_DIR}/NISdk/NISdk.modulemap"'
+  }
 
   s.dependency "React"
   s.dependency "NISdk", "6.1.6"

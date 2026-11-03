@@ -5,3 +5,9 @@ android/.gradle/
 ios/build/
 **/*.log
 .DS_Store
+src/**/__tests__/
+src/**/*.test.js
+**/xcuserdata/
+**/*.xcuserstate
+payment-sdk-android/
+package-lock.json
