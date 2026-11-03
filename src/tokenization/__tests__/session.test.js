@@ -139,3 +139,26 @@ describe('backend result model', () => {
     expect(JSON.stringify(result)).not.toContain('encryptedPayload');
   });
 });
+
+describe('confirmed consent acceptance timestamp lifecycle', () => {
+  const clock = value => () => new Date(value);
+  it('records the acceptance event once, clears on uncheck, and replaces on recheck', () => {
+    const session = createTokenizationSession(); session.start();
+    expect(session.acceptanceTimestamp()).toBeUndefined();
+    session.setAccepted(true, clock('2026-10-26T06:15:30.000Z'));
+    session.setAccepted(true, clock('2026-10-26T07:15:30.000Z'));
+    expect(session.acceptanceTimestamp()).toBe('2026-10-26T06:15:30.000Z');
+    session.setAccepted(false); expect(session.acceptanceTimestamp()).toBeUndefined();
+    session.setAccepted(true, clock('2026-10-26T07:15:30.000Z'));
+    expect(session.acceptanceTimestamp()).toBe('2026-10-26T07:15:30.000Z');
+    const previous = session.generation(); session.close(); session.start();
+    expect(session.setAccepted(true, clock('2026-10-26T08:15:30.000Z'), previous)).toBe(false);
+    expect(session.acceptanceTimestamp()).toBeUndefined();
+  });
+  it('clears the timestamp on cancel and refuses stale post-cancel events', () => {
+    const session = createTokenizationSession(); session.start();
+    session.setAccepted(true, clock('2026-10-26T06:15:30.000Z'));
+    session.emitCancel(); expect(session.acceptanceTimestamp()).toBeUndefined();
+    expect(session.setAccepted(true)).toBe(false);
+  });
+});

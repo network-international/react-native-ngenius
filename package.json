@@ -12,6 +12,7 @@
     "README.md",
     "CUSTOMIZATION.md",
     "android/src",
+    "!android/src/test/**",
     "android/build.gradle",
     "android/README.md",
     "index.js",

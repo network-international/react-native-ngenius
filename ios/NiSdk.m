@@ -1,5 +1,8 @@
 #import "NiSdk.h"
 #import "NiTokenizationApplePay.h"
+#import "NiTokenizationCard.h"
+#import <React/RCTBridge.h>
+#import <React/RCTEventDispatcher.h>
 #import <PassKit/PassKit.h>
 #import <UIKit/UIKit.h>
 
@@ -10,8 +13,10 @@
 @end
 
 @interface NiSdk ()
+@property (nonatomic, weak) RCTBridge *bridge;
 @property (nonatomic) RCTResponseSenderBlock paymentResponseCallback;
 @property (nonatomic, strong) NiTokenizationApplePay *tokenizationApplePay;
+@property (nonatomic, strong) NiTokenizationCard *tokenizationCard;
 @end
 
 // UIKit silently drops a presentation over a parent that is still presenting
@@ -138,9 +143,29 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
     }
 }
 
+RCT_EXPORT_METHOD(presentTokenizationCard:(NSDictionary *)config result:(RCTResponseSenderBlock)result) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.tokenizationCard || self.tokenizationApplePay) { result(@[@"Failed", @{}]); return; }
+        NiTokenizationCard *card = [[NiTokenizationCard alloc] initWithConfig:config ready:^(NSString *requestId) { [self.bridge.eventDispatcher sendDeviceEventWithName:@"NiTokenizationCardReady" body:@{@"requestId": requestId}]; }
+          result:^(NSString *status, NSDictionary *response) { self.tokenizationCard = nil; result(@[status, response]); }];
+        self.tokenizationCard = card;
+        UIViewController *parent = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
+        NiSdkWhenParentFreeForPresentation(parent, 0, ^{ if (self.tokenizationCard == card) [card presentFrom:parent]; }, ^(NSString *presentedClass) { [card fail]; });
+    });
+}
+RCT_EXPORT_METHOD(submitTokenizationCard:(NSString *)requestId request:(NSDictionary *)request) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if ([self.tokenizationCard.requestId isEqualToString:requestId]) [self.tokenizationCard submit:request]; });
+}
+RCT_EXPORT_METHOD(cancelTokenizationCard:(NSString *)requestId) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if ([self.tokenizationCard.requestId isEqualToString:requestId]) [self.tokenizationCard cancel]; });
+}
+RCT_EXPORT_METHOD(failTokenizationCard:(NSString *)requestId) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if ([self.tokenizationCard.requestId isEqualToString:requestId]) [self.tokenizationCard fail]; });
+}
+
 RCT_EXPORT_METHOD(captureApplePayToken:(NSDictionary *)config callback:(RCTResponseSenderBlock)callback) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.tokenizationApplePay) { callback(@[@"Failed", @""]); return; }
+        if (self.tokenizationApplePay || self.tokenizationCard) { callback(@[@"Failed", @""]); return; }
         self.tokenizationApplePay = [NiTokenizationApplePay new];
         UIViewController *parent = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
         NiSdkWhenParentFreeForPresentation(parent, 0, ^{

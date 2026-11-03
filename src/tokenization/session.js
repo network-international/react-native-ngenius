@@ -7,6 +7,7 @@ const createTokenizationSession = () => {
   let generation = 0;
   let active = true;
   let accepted = false;
+  let acceptedAt;
   let inFlight = false;
   let successEmitted = false;
   let errorEmitted = false;
@@ -17,6 +18,7 @@ const createTokenizationSession = () => {
       generation += 1;
       active = true;
       accepted = false;
+      acceptedAt = undefined;
       inFlight = false;
       successEmitted = false;
       errorEmitted = false;
@@ -26,12 +28,33 @@ const createTokenizationSession = () => {
       generation += 1;
       active = false;
       accepted = false;
+      acceptedAt = undefined;
       inFlight = false;
     },
-    generation() { return generation; },
-    isCurrent(id) { return active && id === generation && !cancelEmitted; },
-    setAccepted(value) { if (active && !inFlight && !cancelEmitted) accepted = value === true; },
-    canProceed(skipConsent) { return active && !cancelEmitted && (skipConsent === true || accepted); },
+    generation() {
+      return generation;
+    },
+    isCurrent(id) {
+      return active && id === generation && !cancelEmitted;
+    },
+    setAccepted(value, now = () => new Date(), id = generation) {
+      if (!active || inFlight || cancelEmitted || id !== generation)
+        return false;
+      if (value !== true) {
+        accepted = false;
+        acceptedAt = undefined;
+        return true;
+      }
+      if (!accepted) acceptedAt = now().toISOString();
+      accepted = true;
+      return true;
+    },
+    acceptanceTimestamp() {
+      return acceptedAt;
+    },
+    canProceed(skipConsent) {
+      return active && !cancelEmitted && (skipConsent === true || accepted);
+    },
     tryBeginNative() {
       if (!active || inFlight || successEmitted || cancelEmitted) {
         return false;
@@ -74,6 +97,7 @@ const createTokenizationSession = () => {
       }
       cancelEmitted = true;
       accepted = false;
+      acceptedAt = undefined;
       generation += 1;
       if (callback) {
         callback();
@@ -92,7 +116,7 @@ const pocNativeResult = ({ method, status }) => ({
   capture: NATIVE_CAPTURE_DEMO,
 });
 
-const pocErrorResult = (error) => {
+const pocErrorResult = error => {
   const status = error && error.status ? error.status : 'Failed';
   let message;
   if (error && typeof error.error === 'string') {

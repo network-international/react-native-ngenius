@@ -1,5 +1,11 @@
 const STRINGS = {
   en: {
+    CARD_NUMBER: "Card number",
+    CARD_EXPIRY: "Expiry (MM/YY)",
+    CARD_CVV: "Security code",
+    CARDHOLDER_NAME: "Cardholder name",
+    CARD_INPUT_INVALID: "Check the card details and expiry date.",
+
     CARD_TOKENIZATION_UNAVAILABLE: "Card saving is not available in this POC build.",
     SAVED_TOKENS: "Saved payment methods",
     SAVED_TOKENS_LOADING: "Loading saved methods",
@@ -38,6 +44,12 @@ const STRINGS = {
       'Additional verification is required to save this payment method. It is not available yet.',
   },
   fr: {
+    CARD_NUMBER: "Numéro de carte",
+    CARD_EXPIRY: "Expiration (MM/AA)",
+    CARD_CVV: "Code de sécurité",
+    CARDHOLDER_NAME: "Titulaire de la carte",
+    CARD_INPUT_INVALID: "Vérifiez la carte et sa date d’expiration.",
+
     CARD_TOKENIZATION_UNAVAILABLE: "L’enregistrement de carte n’est pas disponible dans cette version POC.",
     SAVED_TOKENS: "Moyens de paiement enregistrés",
     SAVED_TOKENS_LOADING: "Chargement des moyens enregistrés",
@@ -76,6 +88,12 @@ const STRINGS = {
       "Une vérification supplémentaire est requise pour enregistrer ce moyen de paiement. Elle n'est pas encore disponible.",
   },
   ar: {
+    CARD_NUMBER: "رقم البطاقة",
+    CARD_EXPIRY: "انتهاء الصلاحية (MM/YY)",
+    CARD_CVV: "رمز الأمان",
+    CARDHOLDER_NAME: "اسم حامل البطاقة",
+    CARD_INPUT_INVALID: "تحقق من بيانات البطاقة وتاريخ انتهاء الصلاحية.",
+
     CARD_TOKENIZATION_UNAVAILABLE: "حفظ البطاقة غير متاح في هذا الإصدار التجريبي.",
     SAVED_TOKENS: "وسائل الدفع المحفوظة",
     SAVED_TOKENS_LOADING: "جارٍ تحميل وسائل الدفع",

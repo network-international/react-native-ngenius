@@ -1,4 +1,5 @@
 const { supportedTermsUrl } = require('../termsUrl');
+const { serializeConsentData } = require('../consentData');
 const { REFERENCE_PATTERN } = require('./endpoints');
 
 const TOKEN_TYPES = ['CARD', 'WALLET'];
@@ -9,7 +10,7 @@ const THREE_DS_COMP_IND = ['Y', 'N', 'U'];
 const LAST4_PATTERN = /^[0-9]{4}$/;
 const EXPIRY_PATTERN = /^[0-9]{4}-(0[1-9]|1[0-2])$/;
 
-const isNonEmptyString = (value) => typeof value === 'string' && value.length > 0;
+const isNonEmptyString = value => typeof value === 'string' && value.length > 0;
 
 const optionalString = (value, name) => {
   if (value == null) {
@@ -21,7 +22,7 @@ const optionalString = (value, name) => {
   return value;
 };
 
-const parseCardDetails = (value) => {
+const parseCardDetails = value => {
   if (!value || typeof value !== 'object') {
     throw new Error('SavedCardResponse.cardDetails is invalid');
   }
@@ -41,7 +42,7 @@ const parseCardDetails = (value) => {
   };
   const cardholderName = optionalString(
     value.cardholderName,
-    'SavedCardResponse.cardDetails.cardholderName'
+    'SavedCardResponse.cardDetails.cardholderName',
   );
   if (cardholderName !== undefined) {
     details.cardholderName = cardholderName;
@@ -67,8 +68,11 @@ const CHALLENGE_FIELDS = [
 
 const copyStrings = (source, fields) => {
   const out = {};
-  fields.forEach((field) => {
-    const value = optionalString(source[field], `SavedCardResponse.3ds2.${field}`);
+  fields.forEach(field => {
+    const value = optionalString(
+      source[field],
+      `SavedCardResponse.3ds2.${field}`,
+    );
     if (value !== undefined) {
       out[field] = value;
     }
@@ -76,12 +80,18 @@ const copyStrings = (source, fields) => {
   return out;
 };
 
-const parseThreeDS2 = (value) => {
+const parseThreeDS2 = value => {
   if (!value || typeof value !== 'object') {
     throw new Error('SavedCardResponse.3ds2 is invalid');
   }
-  if (isNonEmptyString(value.acsURL) || isNonEmptyString(value.base64EncodedCReq)) {
-    if (!isNonEmptyString(value.acsURL) || !isNonEmptyString(value.base64EncodedCReq)) {
+  if (
+    isNonEmptyString(value.acsURL) ||
+    isNonEmptyString(value.base64EncodedCReq)
+  ) {
+    if (
+      !isNonEmptyString(value.acsURL) ||
+      !isNonEmptyString(value.base64EncodedCReq)
+    ) {
       throw new Error('SavedCardResponse.3ds2 challenge data is incomplete');
     }
     return { step: 'CHALLENGE', ...copyStrings(value, CHALLENGE_FIELDS) };
@@ -97,7 +107,10 @@ const parseThreeDS2 = (value) => {
 };
 
 // Saved-token lists can omit continuation data; verification responses need it.
-const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => {
+const parseSavedCardResponse = (
+  value,
+  { requireContinuation = false } = {},
+) => {
   if (!value || typeof value !== 'object') {
     throw new Error('SavedCardResponse is missing');
   }
@@ -129,10 +142,17 @@ const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => 
   }
 
   const result = { tokenRef, type, walletType, status, cardDetails };
-  const orderReference = optionalString(value.orderReference, 'SavedCardResponse.orderReference');
-  const paymentReference = optionalString(value.paymentReference, 'SavedCardResponse.paymentReference');
+  const orderReference = optionalString(
+    value.orderReference,
+    'SavedCardResponse.orderReference',
+  );
+  const paymentReference = optionalString(
+    value.paymentReference,
+    'SavedCardResponse.paymentReference',
+  );
   if (orderReference !== undefined) result.orderReference = orderReference;
-  if (paymentReference !== undefined) result.paymentReference = paymentReference;
+  if (paymentReference !== undefined)
+    result.paymentReference = paymentReference;
 
   if (value['3ds2'] != null) {
     if (status !== 'AWAIT_3DS') {
@@ -142,9 +162,11 @@ const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => 
   }
 
   if (requireContinuation && status === 'AWAIT_3DS') {
-    [orderReference, paymentReference].forEach((reference) => {
+    [orderReference, paymentReference].forEach(reference => {
       if (typeof reference !== 'string' || !REFERENCE_PATTERN.test(reference)) {
-        throw new Error('SavedCardResponse references are required for AWAIT_3DS');
+        throw new Error(
+          'SavedCardResponse references are required for AWAIT_3DS',
+        );
       }
     });
     if (!result.threeDS2) {
@@ -155,19 +177,28 @@ const parseSavedCardResponse = (value, { requireContinuation = false } = {}) => 
 };
 
 // Pagination is response metadata only; the list endpoint defines no query contract.
-const parseSavedTokensResponse = (value) => {
+const parseSavedTokensResponse = value => {
   if (!value || typeof value !== 'object' || !Array.isArray(value.tokens)) {
     throw new Error('Saved tokens response is invalid');
   }
-  const result = { tokens: value.tokens.map((token) => parseSavedCardResponse(token)) };
+  const result = {
+    tokens: value.tokens.map(token => parseSavedCardResponse(token)),
+  };
   if (value.page != null) {
     const fields = ['number', 'size', 'totalElements', 'totalPages'];
-    if (typeof value.page !== 'object' || fields.some((field) =>
-      !Number.isSafeInteger(value.page[field]) || value.page[field] < 0)) {
+    if (
+      typeof value.page !== 'object' ||
+      fields.some(
+        field =>
+          !Number.isSafeInteger(value.page[field]) || value.page[field] < 0,
+      )
+    ) {
       throw new Error('Saved tokens response page is invalid');
     }
     result.page = {};
-    fields.forEach((field) => { result.page[field] = value.page[field]; });
+    fields.forEach(field => {
+      result.page[field] = value.page[field];
+    });
   }
   const url = supportedTermsUrl(value.tncUrl);
   if (url) result.tncUrl = url;
@@ -175,20 +206,19 @@ const parseSavedTokensResponse = (value) => {
 };
 
 // Wallet payloads are opaque; changing their encoding can invalidate them.
-const mapAddWalletRequest = (input) => {
+const mapAddWalletRequest = input => {
   if (!input || WALLET_TYPES.indexOf(input.walletType) === -1) {
     throw new Error('walletType must be APPLE_PAY or GOOGLE_PAY');
   }
   if (!isNonEmptyString(input.encryptedPayload)) {
     throw new Error('encryptedPayload is required');
   }
-  const request = { walletType: input.walletType, encryptedPayload: input.encryptedPayload };
+  const request = {
+    walletType: input.walletType,
+    encryptedPayload: input.encryptedPayload,
+  };
   if (input.consentData !== undefined) {
-    if (!input.consentData || typeof input.consentData !== 'object' || Array.isArray(input.consentData)) {
-      throw new Error('consentData must be an object');
-    }
-    // The caller supplies the confirmed wire object. Never rename or invent its fields.
-    request.consentData = input.consentData;
+    request.consentData = serializeConsentData(input.consentData);
   }
   return request;
 };
@@ -207,7 +237,7 @@ const BROWSER_INFO_FIELDS = [
   'challengeWindowSize',
 ];
 
-const mapThreeDSAuthenticationsRequest = (input) => {
+const mapThreeDSAuthenticationsRequest = input => {
   if (!input || THREE_DS_COMP_IND.indexOf(input.threeDSCompInd) === -1) {
     throw new Error('threeDSCompInd must be Y, N or U');
   }
@@ -215,7 +245,7 @@ const mapThreeDSAuthenticationsRequest = (input) => {
     throw new Error('browserInfo is required');
   }
   const browserInfo = {};
-  BROWSER_INFO_FIELDS.forEach((field) => {
+  BROWSER_INFO_FIELDS.forEach(field => {
     if (input.browserInfo[field] !== undefined) {
       browserInfo[field] = input.browserInfo[field];
     }
@@ -227,7 +257,7 @@ const mapThreeDSAuthenticationsRequest = (input) => {
   };
 };
 
-const mapThreeDSChallengeResponseRequest = (input) => {
+const mapThreeDSChallengeResponseRequest = input => {
   if (!input || !isNonEmptyString(input.base64EncodedCRes)) {
     throw new Error('base64EncodedCRes is required');
   }

@@ -1,12 +1,10 @@
-// Lifecycle tests use a synthetic adapter only; live serialization has its own blocking tests.
-jest.mock('../consentData', () => ({ ...jest.requireActual('../consentData'), mapConsentRequest: ({ tokenData }) => tokenData }));
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text', Pressable: 'Pressable', Image: 'Image', Modal: 'Modal',
   SafeAreaView: 'SafeAreaView', ScrollView: 'ScrollView', TouchableOpacity: 'TouchableOpacity',
   ActivityIndicator: 'ActivityIndicator',
   Animated: { View: 'AnimatedView', Value: function Value(v) { this.value = v; },
     loop: () => ({ start() {}, stop() {} }), sequence: () => ({}), delay: () => ({}), timing: () => ({}) },
-  Platform: { OS: 'android' }, StatusBar: { currentHeight: 24 }, NativeModules: {},
+  Platform: { OS: 'android', Version: 35 }, Dimensions: { get: () => ({ width: 412, height: 915 }) }, StatusBar: { currentHeight: 24 }, NativeModules: {},
   StyleSheet: { create: (styles) => styles },
   Linking: { canOpenURL: jest.fn().mockResolvedValue(true), openURL: jest.fn().mockResolvedValue(undefined) },
 }));
@@ -91,7 +89,7 @@ it.each(['APPLE_PAY', 'GOOGLE_PAY'])('allows %s after explicit acceptance with d
   expect(fn).toHaveBeenCalledTimes(1);
   await act(async () => { capture.resolve({ status: 'Success', token: 'opaque-wallet' }); await flush(); });
   expect(fn).toHaveBeenCalledWith(order, ...(method === 'CARD' ? [] : [undefined]));
-  expect(props.tokenizationClient.addWallet).toHaveBeenCalledWith({ outletRef: 'outlet', walletType: method, encryptedPayload: 'opaque-wallet' });
+  expect(props.tokenizationClient.addWallet).toHaveBeenCalledWith({ outletRef: 'outlet', walletType: method, encryptedPayload: 'opaque-wallet', consentData: expect.objectContaining({ status: 'COLLECTED', channel: 'REACT_NATIVE' }) });
   expect(native.initiateApplePay).not.toHaveBeenCalled();
   expect(native.initiateCardPayment).not.toHaveBeenCalled();
 });
@@ -226,4 +224,11 @@ it.each(['GOOGLE_PAY'])('clears acceptance when %s native capture is cancelled',
   expect(byId(`tokenization-method-${method}`)[0].props.disabled).toBe(true);
   expect(props.onSuccess).not.toHaveBeenCalled();
   expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
+});
+
+it('does not require a PAYMENT order for the native Card boundary', async () => {
+  await open({ order: undefined, skipConsent: true });
+  await select('CARD');
+  expect(native.initiateCardPayment).not.toHaveBeenCalled();
+  expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'NATIVE_CARD_UNAVAILABLE' }));
 });

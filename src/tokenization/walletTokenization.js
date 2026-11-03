@@ -1,12 +1,14 @@
 const { mapConsentRequest } = require('./consentData');
 const { TokenizationApiError } = require('./api/errors');
-const { VERIFICATION_STATES, stateForSavedToken } = require('./verificationStates');
+const {
+  VERIFICATION_STATES,
+  stateForSavedToken,
+} = require('./verificationStates');
 const {
   savedTokenResult,
   awaitingThreeDSResult,
   apiErrorResult,
 } = require('./session');
-
 
 const runWalletTokenization = async ({
   method: METHOD = 'GOOGLE_PAY',
@@ -17,17 +19,10 @@ const runWalletTokenization = async ({
   captureWallet,
   onVerifying,
   consent,
-  serializeConsentRequest,
+  getConsentData,
   isCurrent = () => true,
 }) => {
   if (!isCurrent()) return { state: VERIFICATION_STATES.READY };
-  if (consent) {
-    try { mapConsentRequest({ tokenData: {}, consent, serialize: serializeConsentRequest }); }
-    catch (error) {
-      return { state: VERIFICATION_STATES.FAILED, result: apiErrorResult({ method: METHOD,
-        error: { code: 'CONSENT_CONTRACT_UNAVAILABLE', message: 'Wallet saving is not enabled in this POC build' } }) };
-    }
-  }
   let encryptedPayload;
   try {
     const response = await captureWallet(order, googlePayConfig);
@@ -40,7 +35,10 @@ const runWalletTokenization = async ({
       state: VERIFICATION_STATES.FAILED,
       result: apiErrorResult({
         method: METHOD,
-        error: { code: 'WALLET_CAPTURE_FAILED', message: 'Wallet capture did not complete' },
+        error: {
+          code: 'WALLET_CAPTURE_FAILED',
+          message: 'Wallet capture did not complete',
+        },
       }),
     };
   }
@@ -50,7 +48,10 @@ const runWalletTokenization = async ({
       state: VERIFICATION_STATES.FAILED,
       result: apiErrorResult({
         method: METHOD,
-        error: { code: 'WALLET_TOKEN_MISSING', message: 'Wallet did not return a payment token' },
+        error: {
+          code: 'WALLET_TOKEN_MISSING',
+          message: 'Wallet did not return a payment token',
+        },
       }),
     };
   }
@@ -61,7 +62,10 @@ const runWalletTokenization = async ({
   let savedToken;
   try {
     const tokenData = { outletRef, walletType: METHOD, encryptedPayload };
-    const request = consent ? mapConsentRequest({ tokenData, consent, serialize: serializeConsentRequest }) : tokenData;
+    const resolvedConsent = getConsentData ? getConsentData() : consent;
+    const request = resolvedConsent
+      ? mapConsentRequest({ tokenData, consent: resolvedConsent })
+      : tokenData;
     savedToken = await client.addWallet(request);
   } catch (error) {
     const safeError =
@@ -85,12 +89,19 @@ const runWalletTokenization = async ({
     state,
     result: apiErrorResult({
       method: METHOD,
-      error: { code: 'walletVerificationFailed', message: 'Wallet verification failed' },
+      error: {
+        code: 'walletVerificationFailed',
+        message: 'Wallet verification failed',
+      },
     }),
   };
 };
 
 const runGooglePayTokenization = ({ initiateGooglePay, ...args }) =>
-  runWalletTokenization({ ...args, method: 'GOOGLE_PAY', captureWallet: initiateGooglePay });
+  runWalletTokenization({
+    ...args,
+    method: 'GOOGLE_PAY',
+    captureWallet: initiateGooglePay,
+  });
 
 module.exports = { runWalletTokenization, runGooglePayTokenization };

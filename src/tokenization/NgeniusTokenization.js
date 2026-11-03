@@ -5,9 +5,11 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Modal, Platform } from 'react-native';
+import { Modal, Platform, Dimensions } from 'react-native';
 import TokenizationScreen from './ui/TokenizationScreen';
 import { captureApplePayToken } from './nativeWallets';
+import { startNativeCardTokenization } from './nativeCards';
+const { mapNativeCardColors } = require('./mapNativeCardColors');
 import {
   initiateGooglePay,
   isApplePaySupported,
@@ -91,12 +93,15 @@ const NgeniusTokenization = ({
   const onErrorRef = useRef(onError);
   const onCancelRef = useRef(onCancel);
   const nativeGateRef = useRef(null);
+  const nativeCardCancelRef = useRef(null);
   onSuccessRef.current = onSuccess;
   onErrorRef.current = onError;
   onCancelRef.current = onCancel;
 
   useEffect(() => {
     if (!visible) {
+      nativeCardCancelRef.current?.();
+      nativeCardCancelRef.current = null;
       sessionRef.current.close();
       setConsentAccepted(false);
       wasVisibleRef.current = false;
@@ -125,6 +130,8 @@ const NgeniusTokenization = ({
 
   useEffect(
     () => () => {
+      nativeCardCancelRef.current?.();
+      nativeCardCancelRef.current = null;
       sessionRef.current.close();
       wasVisibleRef.current = false;
       nativeGateRef.current = null;
@@ -297,24 +304,61 @@ const NgeniusTokenization = ({
       if (!visible || !sessionRef.current.canProceed(skipConsent)) return;
       const generation = sessionRef.current.generation();
       const isCurrent = () => sessionRef.current.isCurrent(generation);
-      const consentData = buildConsentData({
-        skipConsent,
-        accepted: consentAccepted,
-      });
+      const acceptedAt = sessionRef.current.acceptanceTimestamp();
+      const getConsentData = () =>
+        buildConsentData({
+          skipConsent,
+          accepted: consentAccepted,
+          acceptedAt,
+          tncUrl: consent?.url,
+          language,
+          platform: Platform.OS,
+          osVersion: Platform.Version,
+          screen: Dimensions.get('screen'),
+        });
       const activeOrder = sessionOrderRef.current || order;
       if (!sessionRef.current.tryBeginNative()) {
         return;
       }
-      if (!activeOrder) {
+      if (!activeOrder && method !== 'CARD') {
         finishError({ status: 'Error', error: 'Order not found' });
         return;
       }
       setStatus(VERIFICATION_STATES.SUBMITTING);
       setErrorMessage(undefined);
       if (method === 'CARD') {
-        finishError({
-          status: 'Failed',
-          error: t(language, 'CARD_TOKENIZATION_UNAVAILABLE'),
+        runAfterRnModalHidden(async () => {
+          if (!isCurrent()) return;
+          const attempt = startNativeCardTokenization({
+            client: tokenizationClient,
+            outletRef,
+            getConsentData,
+            isCurrent,
+            onVerifying: () => {
+              if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
+            },
+            presentation: {
+              colors: mapNativeCardColors(theme),
+              rtl: language.toLowerCase().startsWith('ar'),
+              labels: {
+                title: t(language, 'ADD_CARD'),
+                pan: t(language, 'CARD_NUMBER'),
+                expiry: t(language, 'CARD_EXPIRY'),
+                cvv: t(language, 'CARD_CVV'),
+                name: t(language, 'CARDHOLDER_NAME'),
+                submit: t(language, 'ADD_CARD'),
+                cancel: t(language, 'CANCEL'),
+                invalid: t(language, 'CARD_INPUT_INVALID'),
+              },
+            },
+          });
+          nativeCardCancelRef.current = attempt.cancel;
+          const outcome = await attempt.promise;
+          if (isCurrent()) {
+            nativeCardCancelRef.current = null;
+            restoreRnModal();
+            applyWalletOutcome(outcome);
+          }
         });
         return;
       }
@@ -327,7 +371,7 @@ const NgeniusTokenization = ({
             order: activeOrder,
             googlePayConfig: applePayConfig,
             captureWallet: captureApplePayToken,
-            consent: consentData,
+            getConsentData,
             isCurrent,
             onVerifying: () => {
               if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
@@ -347,7 +391,7 @@ const NgeniusTokenization = ({
           order: activeOrder,
           googlePayConfig,
           initiateGooglePay,
-          consent: consentData,
+          getConsentData,
           isCurrent,
           onVerifying: () => {
             if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
@@ -366,6 +410,8 @@ const NgeniusTokenization = ({
       skipConsent,
       language,
       consentAccepted,
+      consent?.url,
+      theme,
       order,
       applePayConfig,
       googlePayConfig,
@@ -378,6 +424,7 @@ const NgeniusTokenization = ({
     ],
   );
 
+  const renderedGeneration = sessionRef.current.generation();
   return (
     <Modal
       visible={Boolean(visible) && !hideForNative}
@@ -395,8 +442,15 @@ const NgeniusTokenization = ({
         consent={consent}
         consentAccepted={consentAccepted}
         onConsentChange={accepted => {
-          sessionRef.current.setAccepted(accepted);
-          setConsentAccepted(accepted);
+          if (
+            sessionRef.current.setAccepted(
+              accepted,
+              () => new Date(),
+              renderedGeneration,
+            )
+          ) {
+            setConsentAccepted(accepted);
+          }
         }}
         savedTokens={savedTokens}
         onRetrySavedTokens={() => setRefreshNonce(value => value + 1)}

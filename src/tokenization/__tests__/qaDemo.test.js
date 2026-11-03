@@ -25,7 +25,7 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   act(() => tree.root.findByProps({ testID: 'qa-access-token' }).props.onChangeText('fixture-short-lived'));
   act(() => tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress());
   const provider = sdk.createTokenizationClient.mock.calls[0][0].getAccessToken;
-  await expect(provider()).resolves.toBe('Bearer fixture-short-lived');
+  await expect(provider()).resolves.toBe('fixture-short-lived');
   const screen = tree.root.findByType('NgeniusTokenization');
   expect(screen.props.skipConsent).toBe(true);
   expect(screen.props.outletRef).toBe('a6b162e9-7a75-403c-b238-6303b2df455c');

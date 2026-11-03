@@ -18,7 +18,8 @@ const { TokenizationApiError } = require('./src/tokenization/api/errors');
 
 const { NiSdk } = NativeModules;
 
-export const SDK_VERSION = '3.2.9';
+const { SDK_VERSION: currentSdkVersion } = require('./src/version');
+export const SDK_VERSION = currentSdkVersion;
 
 // Helper function to get device info for User-Agent
 let deviceInfoCache = null;

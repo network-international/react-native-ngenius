@@ -1,13 +1,11 @@
+const { registerCardContext } = require('../cardContext');
 const { buildTokenizationHeaders } = require('./headers');
 const {
   errorFromResponse,
   errorFromMalformedResponse,
   TokenizationApiError,
 } = require('./errors');
-const {
-  TOKENIZATION_PATHS,
-  resolveTokenizationUrl,
-} = require('./endpoints');
+const { TOKENIZATION_PATHS, resolveTokenizationUrl } = require('./endpoints');
 const {
   parseSavedCardResponse,
   parseSavedTokensResponse,
@@ -19,7 +17,7 @@ const { createFetchTransport, parseJsonBody } = require('./transport');
 
 const ACCESS_TOKEN_UNAVAILABLE = 'ACCESS_TOKEN_UNAVAILABLE';
 
-const resolveAccessToken = async (getAccessToken) => {
+const resolveAccessToken = async getAccessToken => {
   let accessToken;
   try {
     accessToken = await getAccessToken();
@@ -43,19 +41,21 @@ const parseSuccess = (parse, body, status) => {
     throw new TokenizationApiError({
       status,
       code: 'MALFORMED_RESPONSE',
-      message: (error && error.message) || 'Response did not match the tokenization contract',
+      message:
+        (error && error.message) ||
+        'Response did not match the tokenization contract',
     });
   }
 };
 
-const threeDSIds = (args) => ({
+const threeDSIds = args => ({
   outletRef: args && args.outletRef,
   tokenRef: args && args.tokenRef,
   orderReference: args && args.orderReference,
   paymentReference: args && args.paymentReference,
 });
 
-const createTokenizationClient = (options) => {
+const createTokenizationClient = options => {
   if (!options || typeof options !== 'object') {
     throw new Error('createTokenizationClient options are required');
   }
@@ -67,7 +67,8 @@ const createTokenizationClient = (options) => {
   }
   const baseUrl = options.baseUrl;
   const getAccessToken = options.getAccessToken;
-  const transport = options.transport || createFetchTransport(options.fetchImpl);
+  const transport =
+    options.transport || createFetchTransport(options.fetchImpl);
 
   const request = async ({ method, path, query, body, parse }) => {
     const url = resolveTokenizationUrl(baseUrl, path, query);
@@ -98,10 +99,10 @@ const createTokenizationClient = (options) => {
     throw errorFromResponse({ status, body: parsedJson.body });
   };
 
-  const continuationParse = (body) =>
+  const continuationParse = body =>
     parseSavedCardResponse(body, { requireContinuation: true });
 
-  return {
+  const client = {
     getSavedTokens: async (args = {}) =>
       request({
         method: 'GET',
@@ -109,21 +110,23 @@ const createTokenizationClient = (options) => {
         query: args.skipConsent === true ? [['consentOff', 'true']] : [],
         parse: parseSavedTokensResponse,
       }),
-    addWallet: async (args) =>
+    addWallet: async args =>
       request({
         method: 'POST',
-        path: TOKENIZATION_PATHS.addWallet({ outletRef: args && args.outletRef }),
+        path: TOKENIZATION_PATHS.addWallet({
+          outletRef: args && args.outletRef,
+        }),
         body: mapAddWalletRequest(args),
         parse: parseSavedCardResponse,
       }),
-    authenticateThreeDS: async (args) =>
+    authenticateThreeDS: async args =>
       request({
         method: 'POST',
         path: TOKENIZATION_PATHS.threeDSAuthentications(threeDSIds(args)),
         body: mapThreeDSAuthenticationsRequest(args),
         parse: continuationParse,
       }),
-    submitThreeDSChallengeResponse: async (args) =>
+    submitThreeDSChallengeResponse: async args =>
       request({
         method: 'POST',
         path: TOKENIZATION_PATHS.threeDSChallengeResponse(threeDSIds(args)),
@@ -131,6 +134,25 @@ const createTokenizationClient = (options) => {
         parse: continuationParse,
       }),
   };
+  return registerCardContext(client, {
+    prepareRequest: async outletRef => {
+      // JS transports cannot receive plaintext cards. Do not bypass a caller's
+      // mock/custom transport by silently submitting a native request instead.
+      if (options.transport || options.fetchImpl)
+        throw new TokenizationApiError({
+          status: 0,
+          code: 'NATIVE_CARD_TRANSPORT_UNAVAILABLE',
+          message: 'Custom JS transport does not support native Card requests',
+        });
+      return {
+        url: resolveTokenizationUrl(
+          baseUrl,
+          TOKENIZATION_PATHS.addCard({ outletRef }),
+        ),
+        accessToken: await resolveAccessToken(getAccessToken),
+      };
+    },
+  });
 };
 
 module.exports = {

@@ -140,6 +140,22 @@ export interface SavedCardResponse {
   threeDS2?: Record<string, unknown>;
 }
 
+/** Confirmed React Native consent metadata; IP/server time are backend-owned. */
+export interface TokenizationConsentData {
+  status: 'COLLECTED' | 'NOT_COLLECTED';
+  merchantSelectedSkipConsent?: true;
+  clientTimestamp: string;
+  tncUrl?: string;
+  locale?: 'en' | 'fr' | 'ar';
+  channel: 'REACT_NATIVE';
+  sdk: { name: 'react-native-ngenius'; version: string };
+  device: {
+    platform: 'IOS' | 'ANDROID'; osVersion: string; timezoneOffsetMinutes: number;
+    /** React Native logical screen units. */
+    screenWidth?: number; screenHeight?: number;
+  };
+}
+
 export interface TokenizationClient {
   /** List-all endpoint. skipConsent=true sends the current sandbox consent-off query. */
   getSavedTokens(args: { outletRef: string; skipConsent?: boolean }): Promise<{
@@ -151,8 +167,8 @@ export interface TokenizationClient {
     outletRef: string;
     walletType: 'APPLE_PAY' | 'GOOGLE_PAY';
     encryptedPayload: string;
-    /** Confirmed backend wire object; the UI serializer is pending. */
-    consentData?: Record<string, unknown>;
+    /** The tokenization UI supplies the confirmed, allowlisted object. */
+    consentData?: TokenizationConsentData;
   }): Promise<SavedCardResponse>;
   authenticateThreeDS(args: {
     outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;

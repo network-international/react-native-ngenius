@@ -54,6 +54,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     private Callback isSamsungPayEnabledCallback;
     private Callback googlePayResponseCallback;
     private PaymentsClient paymentsClient;
+    private TokenizationCard tokenizationCard;
 
     private final ActivityEventListener cardActivityEventListener = new BaseActivityEventListener() {
 
@@ -142,6 +143,50 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     @Override
     public String getName() {
         return "NiSdk";
+    }
+
+    @ReactMethod
+    public void presentTokenizationCard(ReadableMap config, Callback result) {
+        final JSONObject options = new JSONObject(config.toHashMap());
+        reactContext.runOnUiQueueThread(() -> {
+            Activity activity = getCurrentActivity();
+            if (activity == null || activity.isFinishing() || activity.isDestroyed() || tokenizationCard != null) { result.invoke("Failed", Arguments.createMap()); return; }
+            Callback ready = args -> {
+                WritableMap event = Arguments.createMap(); event.putString("requestId", options.optString("requestId"));
+                reactContext.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                    .emit("NiTokenizationCardReady", event);
+            };
+            Callback finish = args -> { tokenizationCard = null; result.invoke(args); };
+            try {
+                tokenizationCard = new TokenizationCard(activity, options, ready, finish);
+                tokenizationCard.show();
+            } catch (RuntimeException ignored) {
+                if (tokenizationCard != null) tokenizationCard.fail();
+                else result.invoke("Failed", Arguments.createMap());
+            }
+        });
+    }
+
+    @ReactMethod
+    public void submitTokenizationCard(String id, ReadableMap request) {
+        final JSONObject options = new JSONObject(request.toHashMap());
+        reactContext.runOnUiQueueThread(() -> {
+            if (tokenizationCard != null && tokenizationCard.requestId.equals(id)) tokenizationCard.submit(options);
+        });
+    }
+
+    @ReactMethod
+    public void cancelTokenizationCard(String id) {
+        reactContext.runOnUiQueueThread(() -> {
+            if (tokenizationCard != null && tokenizationCard.requestId.equals(id)) tokenizationCard.cancel();
+        });
+    }
+
+    @ReactMethod
+    public void failTokenizationCard(String id) {
+        reactContext.runOnUiQueueThread(() -> {
+            if (tokenizationCard != null && tokenizationCard.requestId.equals(id)) tokenizationCard.fail();
+        });
     }
 
     @ReactMethod
