@@ -182,10 +182,15 @@ const mapAddWalletRequest = (input) => {
   if (!isNonEmptyString(input.encryptedPayload)) {
     throw new Error('encryptedPayload is required');
   }
-  return {
-    walletType: input.walletType,
-    encryptedPayload: input.encryptedPayload,
-  };
+  const request = { walletType: input.walletType, encryptedPayload: input.encryptedPayload };
+  if (input.consentData !== undefined) {
+    if (!input.consentData || typeof input.consentData !== 'object' || Array.isArray(input.consentData)) {
+      throw new Error('consentData must be an object');
+    }
+    // The caller supplies the confirmed wire object. Never rename or invent its fields.
+    request.consentData = input.consentData;
+  }
+  return request;
 };
 
 const BROWSER_INFO_FIELDS = [

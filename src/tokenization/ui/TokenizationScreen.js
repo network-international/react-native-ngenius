@@ -4,6 +4,7 @@ import BrandingHeader from './BrandingHeader';
 import MethodList from './MethodList';
 import ConsentCheckbox from './ConsentCheckbox';
 import StatusView from './StatusView';
+import SavedTokens from './SavedTokens';
 
 const { createTokenizationStyles } = require('../createStyles');
 const { t } = require('../strings');
@@ -29,6 +30,8 @@ const TokenizationScreen = ({
   status,
   tokenSaved = false,
   errorMessage,
+  savedTokens,
+  onRetrySavedTokens,
   onSelectMethod,
   onCancel,
 }) => {
@@ -62,6 +65,7 @@ const TokenizationScreen = ({
         testID="tokenization-scroll"
       >
         <BrandingHeader theme={theme} styles={styles} testID="tokenization-branding-header" />
+        <SavedTokens value={savedTokens} language={language} styles={styles} onRetry={onRetrySavedTokens} />
         {showMethods ? (
           <>
             {status === VERIFICATION_STATES.FAILED ? (

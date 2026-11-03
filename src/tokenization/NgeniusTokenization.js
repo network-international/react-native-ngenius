@@ -1,10 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Modal, Platform } from 'react-native';
 import TokenizationScreen from './ui/TokenizationScreen';
-import { withNativeCardTheme } from './applyNativeCardTheme';
+import { captureApplePayToken } from './nativeWallets';
 import {
-  initiateCardPayment,
-  initiateApplePay,
   initiateGooglePay,
   isApplePaySupported,
   isGooglePaySupported,
@@ -13,16 +17,14 @@ import {
 const { buildConsentData } = require('./consentData');
 const { resolveTokenizationTheme } = require('./resolveTheme');
 const { getTokenizationMethods } = require('./supportedMethods');
-const { mapNativeCardColors } = require('./mapNativeCardColors');
 const { t } = require('./strings');
-const { resolveConsentInformation, loadTncUrl } = require('./consentInformation');
-const {
-  createTokenizationSession,
-  pocNativeResult,
-  pocErrorResult,
-} = require('./session');
+const { resolveConsentInformation } = require('./consentInformation');
+const { createTokenizationSession, pocErrorResult } = require('./session');
 const { VERIFICATION_STATES } = require('./verificationStates');
-const { runGooglePayTokenization } = require('./walletTokenization');
+const {
+  runGooglePayTokenization,
+  runWalletTokenization,
+} = require('./walletTokenization');
 const {
   createNativePresentationGate,
   RN_MODAL_DISMISS_MS,
@@ -49,7 +51,17 @@ const NgeniusTokenization = ({
   const tokenizationClientRef = useRef(tokenizationClient);
   tokenizationClientRef.current = tokenizationClient;
   const [tnc, setTnc] = useState({ loaded: false, url: undefined });
-  const consent = resolveConsentInformation({ skipConsent, order, tncUrl: tnc.url });
+  const [savedTokens, setSavedTokens] = useState({
+    loading: false,
+    tokens: [],
+    failed: false,
+  });
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const consent = resolveConsentInformation({
+    skipConsent,
+    order,
+    tncUrl: tnc.url,
+  });
   const consentDiagnostic = tnc.loaded ? consent?.diagnostic : undefined;
   useEffect(() => {
     if (visible && consentDiagnostic) {
@@ -58,7 +70,7 @@ const NgeniusTokenization = ({
   }, [visible, consentDiagnostic]);
   const theme = useMemo(
     () => resolveTokenizationTheme(branding, { language }),
-    [branding, language]
+    [branding, language],
   );
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [status, setStatus] = useState(VERIFICATION_STATES.READY);
@@ -74,7 +86,7 @@ const NgeniusTokenization = ({
   }
   const wasVisibleRef = useRef(false);
   const sessionOrderRef = useRef(order);
-  const [sessionNonce, setSessionNonce] = useState(0);
+  const [, setSessionNonce] = useState(0);
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
   const onCancelRef = useRef(onCancel);
@@ -103,19 +115,22 @@ const NgeniusTokenization = ({
       setErrorMessage(undefined);
       setTokenSaved(false);
       setHideForNative(false);
-      setSessionNonce((n) => n + 1);
+      setSessionNonce(n => n + 1);
     } else if (!sessionOrderRef.current && order) {
       sessionOrderRef.current = order;
-      setSessionNonce((n) => n + 1);
+      setSessionNonce(n => n + 1);
     }
     wasVisibleRef.current = true;
   }, [visible, order]);
 
-  useEffect(() => () => {
-    sessionRef.current.close();
-    wasVisibleRef.current = false;
-    nativeGateRef.current = null;
-  }, []);
+  useEffect(
+    () => () => {
+      sessionRef.current.close();
+      wasVisibleRef.current = false;
+      nativeGateRef.current = null;
+    },
+    [],
+  );
 
   // Request in both consent modes; inline clients cannot cause refetch loops.
   useEffect(() => {
@@ -126,15 +141,35 @@ const NgeniusTokenization = ({
     setTnc({ loaded: false, url: undefined });
     let cancelled = false;
     const generation = sessionRef.current.generation();
-    loadTncUrl({ client: tokenizationClientRef.current, outletRef }).then((url) => {
-      if (!cancelled && sessionRef.current.isCurrent(generation)) {
-        setTnc({ loaded: true, url });
-      }
-    });
+    const client = tokenizationClientRef.current;
+    if (!client || !outletRef) {
+      setSavedTokens({ loading: false, tokens: [], failed: true });
+      return undefined;
+    }
+    setSavedTokens({ loading: true, tokens: [], failed: false });
+    Promise.resolve()
+      .then(() => client.getSavedTokens({ outletRef, skipConsent }))
+      .then(response => {
+        if (!cancelled && sessionRef.current.isCurrent(generation)) {
+          setTnc({ loaded: true, url: response.tncUrl });
+          setSavedTokens({
+            loading: false,
+            tokens: response.tokens,
+            page: response.page,
+            failed: false,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled && sessionRef.current.isCurrent(generation)) {
+          setTnc({ loaded: true, url: undefined });
+          setSavedTokens({ loading: false, tokens: [], failed: true });
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [visible, outletRef]);
+  }, [visible, outletRef, skipConsent, refreshNonce]);
 
   useEffect(() => {
     if (!visible) {
@@ -158,7 +193,7 @@ const NgeniusTokenization = ({
       if (Platform.OS === 'android') {
         try {
           const supported = await isGooglePaySupported(
-            googlePayConfig || { environment: 'PRODUCTION' }
+            googlePayConfig || { environment: 'PRODUCTION' },
           );
           if (!cancelled) {
             setGooglePaySupported(Boolean(supported));
@@ -188,30 +223,26 @@ const NgeniusTokenization = ({
     return () => clearTimeout(timer);
   }, [hideForNative]);
 
-  const methods = useMemo(
-    () =>
-      getTokenizationMethods(sessionOrderRef.current, {
-        paymentMethods,
-        platform: Platform.OS,
-        applePaySupported,
-        googlePaySupported,
-      }),
-    [sessionNonce, paymentMethods, applePaySupported, googlePaySupported]
-  );
+  const methods = getTokenizationMethods(sessionOrderRef.current, {
+    paymentMethods,
+    platform: Platform.OS,
+    applePaySupported,
+    googlePaySupported,
+  });
 
-  const finishSuccess = useCallback((result) => {
+  const finishSuccess = useCallback(result => {
     setStatus(VERIFICATION_STATES.SUCCESS);
     sessionRef.current.emitSuccess(onSuccessRef.current, result);
   }, []);
 
   const finishError = useCallback(
-    (error) => {
+    error => {
       const payload = pocErrorResult(error);
       setErrorMessage(payload.error || t(language, 'VERIFICATION_FAILED'));
       setStatus(VERIFICATION_STATES.FAILED);
       sessionRef.current.emitError(onErrorRef.current, payload);
     },
-    [language]
+    [language],
   );
 
   const applyWalletOutcome = useCallback(
@@ -225,6 +256,7 @@ const NgeniusTokenization = ({
       }
       if (state === VERIFICATION_STATES.SUCCESS) {
         setTokenSaved(true);
+        setRefreshNonce(value => value + 1);
         finishSuccess(result);
         return;
       }
@@ -236,7 +268,7 @@ const NgeniusTokenization = ({
       }
       sessionRef.current.emitError(onErrorRef.current, result);
     },
-    [finishSuccess, language]
+    [finishSuccess, language],
   );
 
   const handleDismiss = useCallback(() => {
@@ -251,36 +283,7 @@ const NgeniusTokenization = ({
     setHideForNative(false);
   }, []);
 
-  const completeNativeAttempt = useCallback(
-    async (method, runNative, generation) => {
-      if (!sessionRef.current.isCurrent(generation)) return;
-      try {
-        const response = await runNative();
-        if (!sessionRef.current.isCurrent(generation)) return;
-        finishSuccess(
-          pocNativeResult({
-            method,
-            status: response && response.status ? response.status : 'Success',
-          })
-        );
-      } catch (error) {
-        if (!sessionRef.current.isCurrent(generation)) return;
-        if (error && error.status === 'Aborted') {
-          sessionRef.current.endNative();
-          sessionRef.current.setAccepted(false);
-          setConsentAccepted(false);
-          setStatus(VERIFICATION_STATES.READY);
-        } else {
-          finishError(error || { status: 'Failed' });
-        }
-      } finally {
-        if (sessionRef.current.isCurrent(generation)) restoreRnModal();
-      }
-    },
-    [finishSuccess, finishError, restoreRnModal]
-  );
-
-  const runAfterRnModalHidden = useCallback((startNative) => {
+  const runAfterRnModalHidden = useCallback(startNative => {
     if (Platform.OS !== 'ios') {
       startNative();
       return;
@@ -290,11 +293,14 @@ const NgeniusTokenization = ({
   }, []);
 
   const onSelectMethod = useCallback(
-    async (method) => {
+    async method => {
       if (!visible || !sessionRef.current.canProceed(skipConsent)) return;
       const generation = sessionRef.current.generation();
       const isCurrent = () => sessionRef.current.isCurrent(generation);
-      const consentData = buildConsentData({ skipConsent, accepted: consentAccepted });
+      const consentData = buildConsentData({
+        skipConsent,
+        accepted: consentAccepted,
+      });
       const activeOrder = sessionOrderRef.current || order;
       if (!sessionRef.current.tryBeginNative()) {
         return;
@@ -306,23 +312,32 @@ const NgeniusTokenization = ({
       setStatus(VERIFICATION_STATES.SUBMITTING);
       setErrorMessage(undefined);
       if (method === 'CARD') {
-        runAfterRnModalHidden(() =>
-          completeNativeAttempt(
-            method,
-            () => withNativeCardTheme(mapNativeCardColors(theme), () => initiateCardPayment(activeOrder)),
-            generation
-          )
-        );
+        finishError({
+          status: 'Failed',
+          error: t(language, 'CARD_TOKENIZATION_UNAVAILABLE'),
+        });
         return;
       }
-      if (method === 'APPLE_PAY') {
-        runAfterRnModalHidden(() =>
-          completeNativeAttempt(
-            method,
-            () => initiateApplePay(activeOrder, applePayConfig),
-            generation
-          )
-        );
+      if (method === 'APPLE_PAY' && tokenizationClient && outletRef) {
+        runAfterRnModalHidden(async () => {
+          const outcome = await runWalletTokenization({
+            method: 'APPLE_PAY',
+            client: tokenizationClient,
+            outletRef,
+            order: activeOrder,
+            googlePayConfig: applePayConfig,
+            captureWallet: captureApplePayToken,
+            consent: consentData,
+            isCurrent,
+            onVerifying: () => {
+              if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
+            },
+          });
+          if (isCurrent()) {
+            restoreRnModal();
+            applyWalletOutcome(outcome);
+          }
+        });
         return;
       }
       if (method === 'GOOGLE_PAY' && tokenizationClient && outletRef) {
@@ -334,52 +349,33 @@ const NgeniusTokenization = ({
           initiateGooglePay,
           consent: consentData,
           isCurrent,
-          onVerifying: () => { if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING); },
+          onVerifying: () => {
+            if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
+          },
         });
         if (isCurrent()) applyWalletOutcome(outcome);
         return;
       }
-      if (method === 'GOOGLE_PAY') {
-        try {
-          const response = await initiateGooglePay(activeOrder, googlePayConfig);
-          if (!isCurrent()) return;
-          finishSuccess(
-            pocNativeResult({
-              method,
-              status: response && response.status ? response.status : 'Success',
-            })
-          );
-        } catch (error) {
-          if (!isCurrent()) return;
-          if (error && error.status === 'Aborted') {
-            sessionRef.current.endNative();
-            sessionRef.current.setAccepted(false);
-            setConsentAccepted(false);
-            setStatus(VERIFICATION_STATES.READY);
-            return;
-          }
-          finishError(error || { status: 'Failed' });
-        }
-        return;
-      }
-      finishError({ status: 'Error', error: 'Unsupported method' });
+      finishError({
+        status: 'Error',
+        error: 'Tokenization client and outlet are required',
+      });
     },
     [
       visible,
       skipConsent,
+      language,
       consentAccepted,
       order,
-      theme,
       applePayConfig,
       googlePayConfig,
       tokenizationClient,
       outletRef,
-      finishSuccess,
       finishError,
       applyWalletOutcome,
-      completeNativeAttempt,
+      restoreRnModal,
       runAfterRnModalHidden,
-    ]
+    ],
   );
 
   return (
@@ -392,17 +388,18 @@ const NgeniusTokenization = ({
         if (nativeGateRef.current) {
           nativeGateRef.current.onDismiss();
         }
-      }}
-    >
+      }}>
       <TokenizationScreen
         theme={theme}
         language={language}
         consent={consent}
         consentAccepted={consentAccepted}
-        onConsentChange={(accepted) => {
+        onConsentChange={accepted => {
           sessionRef.current.setAccepted(accepted);
           setConsentAccepted(accepted);
         }}
+        savedTokens={savedTokens}
+        onRetrySavedTokens={() => setRefreshNonce(value => value + 1)}
         methods={methods}
         status={status}
         tokenSaved={tokenSaved}

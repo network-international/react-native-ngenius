@@ -17,10 +17,10 @@ describe('internal consent intent and isolated serialization', () => {
     expect(Object.isFrozen(intent)).toBe(true);
   });
 
-  it.each([{ accepted: true }, { skipConsent: true }])('preserves live requests and allows mock serialization for %p', (state) => {
+  it.each([{ accepted: true }, { skipConsent: true }])('blocks unconfirmed live requests and allows isolated mock serialization for %p', (state) => {
     const tokenData = { walletType: 'GOOGLE_PAY', encryptedPayload: 'opaque' };
     const consent = buildConsentData(state);
-    expect(mapConsentRequest({ tokenData, consent })).toBe(tokenData);
+    expect(() => mapConsentRequest({ tokenData, consent })).toThrow('confirmed consent request contract');
     // This deliberately synthetic envelope is a mock, not a proposed backend schema.
     const serialize = jest.fn((input) => ({ mockToken: input.tokenData, mockConsent: input.consent }));
     expect(mapConsentRequest({ tokenData, consent, serialize })).toEqual({ mockToken: tokenData, mockConsent: consent });

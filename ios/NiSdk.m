@@ -1,4 +1,5 @@
 #import "NiSdk.h"
+#import "NiTokenizationApplePay.h"
 #import <PassKit/PassKit.h>
 #import <UIKit/UIKit.h>
 
@@ -10,6 +11,7 @@
 
 @interface NiSdk ()
 @property (nonatomic) RCTResponseSenderBlock paymentResponseCallback;
+@property (nonatomic, strong) NiTokenizationApplePay *tokenizationApplePay;
 @end
 
 // UIKit silently drops a presentation over a parent that is still presenting
@@ -134,6 +136,23 @@ RCT_EXPORT_METHOD(initiateApplePay:(NSDictionary *)orderResponse applePayConfig:
             });
         });
     }
+}
+
+RCT_EXPORT_METHOD(captureApplePayToken:(NSDictionary *)config callback:(RCTResponseSenderBlock)callback) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.tokenizationApplePay) { callback(@[@"Failed", @""]); return; }
+        self.tokenizationApplePay = [NiTokenizationApplePay new];
+        UIViewController *parent = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
+        NiSdkWhenParentFreeForPresentation(parent, 0, ^{
+            [self.tokenizationApplePay presentFrom:parent config:config completion:^(NSString *status, NSString *payload) {
+                self.tokenizationApplePay = nil;
+                callback(@[status, payload ?: @""]);
+            }];
+        }, ^(NSString *presentedClass) {
+            self.tokenizationApplePay = nil;
+            callback(@[@"Failed", @""]);
+        });
+    });
 }
 
 RCT_EXPORT_METHOD(isApplePaySupported:(RCTResponseSenderBlock)sendResponse) {

@@ -106,6 +106,7 @@ const createTokenizationClient = (options) => {
       request({
         method: 'GET',
         path: TOKENIZATION_PATHS.savedTokens({ outletRef: args.outletRef }),
+        query: args.skipConsent === true ? [['consentOff', 'true']] : [],
         parse: parseSavedTokensResponse,
       }),
     addWallet: async (args) =>
@@ -113,7 +114,7 @@ const createTokenizationClient = (options) => {
         method: 'POST',
         path: TOKENIZATION_PATHS.addWallet({ outletRef: args && args.outletRef }),
         body: mapAddWalletRequest(args),
-        parse: continuationParse,
+        parse: parseSavedCardResponse,
       }),
     authenticateThreeDS: async (args) =>
       request({

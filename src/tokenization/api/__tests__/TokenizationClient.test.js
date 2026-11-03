@@ -190,7 +190,7 @@ describe('TokenizationClient', () => {
   });
 
   describe('getSavedTokens', () => {
-    it('uses the list-all path without undocumented query parameters', async () => {
+    it('uses the list-all path with the sandbox consent-off query and ignores token filters', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
       await client.getSavedTokens({
         outletRef: OUTLET,
@@ -200,7 +200,7 @@ describe('TokenizationClient', () => {
       expect(calls[0].method).toBe('GET');
       expect(calls[0].body).toBeUndefined();
       expect(calls[0].url).toBe(
-        `${BASE_URL}/api/outlets/outlet-1/tokens`
+        `${BASE_URL}/api/outlets/outlet-1/tokens?consentOff=true`
       );
     });
 

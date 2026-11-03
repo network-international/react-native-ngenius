@@ -8,12 +8,18 @@ const buildConsentData = ({ skipConsent = false, accepted = false } = {}) => {
 };
 
 // A confirmed serializer can be installed here once Hossam supplies the contract.
-// Production deliberately preserves the deployed body. Tests may inject a mock.
+// Until that contract is supplied, UI mutations stop before native capture.
+// Tests can inject a deliberately synthetic serializer; it is never a live schema.
 const mapConsentRequest = ({ tokenData, consent, serialize }) => {
   if (!consent || !['COLLECTED', 'NOT_COLLECTED'].includes(consent.status)) {
     throw new Error('Consent intent is required');
   }
-  return serialize ? serialize({ tokenData, consent }) : tokenData;
+  if (!serialize) {
+    const error = new Error('The confirmed consent request contract is not available');
+    error.code = 'CONSENT_CONTRACT_UNAVAILABLE';
+    throw error;
+  }
+  return serialize({ tokenData, consent });
 };
 
 module.exports = { buildConsentData, mapConsentRequest };

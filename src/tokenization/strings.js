@@ -1,5 +1,11 @@
 const STRINGS = {
   en: {
+    CARD_TOKENIZATION_UNAVAILABLE: "Card saving is not available in this POC build.",
+    SAVED_TOKENS: "Saved payment methods",
+    SAVED_TOKENS_LOADING: "Loading saved methods",
+    SAVED_TOKENS_EMPTY: "No saved payment methods yet.",
+    SAVED_TOKENS_RETRY: "Could not load saved methods. Tap to retry.",
+
     CONSENT_ACCEPT: 'I agree to save my payment method under the terms below.',
     PAYMENT_DISCLAIMER_1: "By clicking \"Pay\", you agree to the",
     PAYMENT_DISCLAIMER_2: "Terms and Conditions",
@@ -32,6 +38,12 @@ const STRINGS = {
       'Additional verification is required to save this payment method. It is not available yet.',
   },
   fr: {
+    CARD_TOKENIZATION_UNAVAILABLE: "L’enregistrement de carte n’est pas disponible dans cette version POC.",
+    SAVED_TOKENS: "Moyens de paiement enregistrés",
+    SAVED_TOKENS_LOADING: "Chargement des moyens enregistrés",
+    SAVED_TOKENS_EMPTY: "Aucun moyen de paiement enregistré.",
+    SAVED_TOKENS_RETRY: "Chargement impossible. Touchez pour réessayer.",
+
     CONSENT_ACCEPT: 'J’accepte l’enregistrement de mon moyen de paiement selon les conditions ci-dessous.',
     PAYMENT_DISCLAIMER_1: "En cliquant sur \"Payer\", vous acceptez",
     PAYMENT_DISCLAIMER_2: "les termes et conditions",
@@ -64,6 +76,12 @@ const STRINGS = {
       "Une vérification supplémentaire est requise pour enregistrer ce moyen de paiement. Elle n'est pas encore disponible.",
   },
   ar: {
+    CARD_TOKENIZATION_UNAVAILABLE: "حفظ البطاقة غير متاح في هذا الإصدار التجريبي.",
+    SAVED_TOKENS: "وسائل الدفع المحفوظة",
+    SAVED_TOKENS_LOADING: "جارٍ تحميل وسائل الدفع",
+    SAVED_TOKENS_EMPTY: "لا توجد وسائل دفع محفوظة.",
+    SAVED_TOKENS_RETRY: "تعذر التحميل. اضغط لإعادة المحاولة.",
+
     CONSENT_ACCEPT: 'أوافق على حفظ وسيلة الدفع الخاصة بي وفقًا للشروط أدناه.',
     PAYMENT_DISCLAIMER_1: "بالضغط على \"الدفع\"، فإنك توافق على",
     PAYMENT_DISCLAIMER_2: "الشروط والأحكام",

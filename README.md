@@ -42,7 +42,7 @@ const tokenizationClient = createTokenizationClient({
   baseUrl: tokenizationBaseUrl,
   getAccessToken: () => merchantBackend.getTokenizationAccessToken(),
 });
-const { tokens } = await tokenizationClient.getSavedTokens({ outletRef });
+const { tokens } = await tokenizationClient.getSavedTokens({ outletRef, skipConsent: true });
 
 <NgeniusTokenization
   visible={showTokenization}
@@ -52,7 +52,7 @@ const { tokens } = await tokenizationClient.getSavedTokens({ outletRef });
   outletRef={outletRef}
   branding={branding}
   language="en"
-  skipConsent={false}
+  skipConsent={true}
   applePayConfig={{ merchantIdentifier, countryCode, merchantName }}
   googlePayConfig={{ merchantName, gateway, gatewayMerchantId, environment }}
   onSuccess={handleResult}
@@ -70,21 +70,21 @@ With a client and `outletRef`, opening calls `getSavedTokens` in both consent mo
 - Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
 - Helpers: `isSamsungPaySupported(serviceId)`, `isApplePaySupported()`, `isGooglePaySupported(googlePayConfig)`, `configureSDK(config)`, `executeThreeDSTwo(paymentResponse)`.
 - Tokenization UI: `CARD`, `APPLE_PAY` (iOS), `GOOGLE_PAY` (Android).
-- Tokenization client: `getSavedTokens({ outletRef })`, `addWallet({ outletRef, walletType, encryptedPayload })`. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
+- Tokenization client: `getSavedTokens({ outletRef, skipConsent })`, `addWallet({ outletRef, walletType, encryptedPayload })`. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
 
 ## Authentication
 
 Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the short-lived identity token; the SDK requests it for each call and sends it in `Access-Token`. It does not store, refresh or log the token. Keep API keys and Basic credentials on your backend. An unavailable token fails with `ACCESS_TOKEN_UNAVAILABLE` before sending a request.
 
-## POC limitations
+## POC status
 
-- Real Card token creation is not connected. PAN/CVV stay in native capture; there is no JS card-create method. Apple Pay tokenization needs native work. Both flows return `niTokenCreated: false`.
-- Google Pay sends the unchanged wallet token to `addWallet` when a client and `outletRef` are supplied. Only `VERIFIED` means success. `AWAIT_3DS` reports `THREE_DS_CONTINUATION_UNAVAILABLE`; native 3DS continuation is pending.
-- Saved Tokens returns `{ tokens, page?, tncUrl? }`; `page` contains `number`, `size`, `totalElements`, `totalPages`. No token filters or pagination query parameters are sent.
-- Consent state and mock serialization are implemented internally. Live consent persistence is blocked pending Hossam’s exact schema; no consent fields are sent to `/wallets` yet. Server time is preferred; no client audit timestamp or device data is collected.
-- Native `/cards` integration must accept safe consent metadata once confirmed. The existing PAYMENT Card flow receives no consent data.
-- iOS native Card colours follow branding and reset after closing. Android native Card uses vendor defaults; Android E2E is not verified.
-- The demo mocks the tokenization backend and creates no tokens. Card JWE and MCP are outside this POC.
+- Current sandbox QA uses `skipConsent=true`, mapping to `GET /api/outlets/{outletRef}/tokens?consentOff=true`. Empty `tokens`, pagination metadata and omitted `tncUrl` are supported. The UI displays masked saved-method details and refreshes after VERIFIED.
+- SimpleIntegration has a runtime short-lived Access-Token input (memory only) and a separate offline UI preview. Tokenization entry does not create a PAYMENT order or exchange an API key. EN/FR/AR and merchant theme controls are available on both platforms.
+- Apple Pay has a separate native capture method returning only the original encrypted `PKPaymentToken.paymentData`. Android returns the raw Google Pay `tokenizationData.token`. PAYMENT APIs remain separate.
+- The available PR contains an internal consent intent, **not a confirmed wire schema**. Until the agreed JSON is supplied, the tokenization UI stops wallet mutations before native capture with `CONSENT_CONTRACT_UNAVAILABLE`. The lower-level `addWallet` API preserves an explicitly supplied `consentData` object in the body. This is envelope support, not validation of an agreed schema.
+- Card tokenization is **not implemented**: the native SDKs do not expose a tokenization capture API, and the `/cards` card-data/consent request contract is absent from the available context. The tokenization Card action reports unavailable; it never starts a PAYMENT as a substitute. PAN/CVV never enter JS.
+- Only VERIFIED creates a success callback. AWAIT_3DS stays pending; Card 3DS is outside Drop 1. No new continuation flow was added.
+- Live `consentOff=false` is not part of current QA. Its backend deployment and final `tncUrl` behavior remain backend-owned.
 
 ## Test and demo
 

@@ -1,3 +1,5 @@
+// Lifecycle tests use a synthetic adapter only; live serialization has its own blocking tests.
+jest.mock('../consentData', () => ({ ...jest.requireActual('../consentData'), mapConsentRequest: ({ tokenData }) => tokenData }));
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text', Pressable: 'Pressable', Image: 'Image', Modal: 'Modal',
   SafeAreaView: 'SafeAreaView', ScrollView: 'ScrollView', TouchableOpacity: 'TouchableOpacity',
@@ -8,6 +10,7 @@ jest.mock('react-native', () => ({
   StyleSheet: { create: (styles) => styles },
   Linking: { canOpenURL: jest.fn().mockResolvedValue(true), openURL: jest.fn().mockResolvedValue(undefined) },
 }));
+jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn().mockResolvedValue({ token: 'opaque-wallet' }) }));
 jest.mock('../../nativePayments', () => ({
   initiateCardPayment: jest.fn().mockResolvedValue({ status: 'Success' }),
   initiateApplePay: jest.fn().mockResolvedValue({ status: 'Success' }),
@@ -23,6 +26,7 @@ const { Platform, Linking } = require('react-native');
 const NgeniusTokenization = require('../NgeniusTokenization').default;
 const TokenizationScreen = require('../ui/TokenizationScreen').default;
 const native = require('../../nativePayments');
+const appleCapture = require('../nativeWallets').captureApplePayToken;
 const { resolveTokenizationTheme } = require('../resolveTheme');
 const { resolveConsentInformation } = require('../consentInformation');
 const order = { action: 'VERIFY', paymentMethods: { card: ['VISA'], wallet: ['GOOGLE_PAY', 'APPLE_PAY'] } };
@@ -53,7 +57,7 @@ afterEach(() => { if (tree) act(() => tree.unmount()); tree = undefined; jest.us
 it.each([undefined, false, true])('loads saved tokens in skipConsent=%p and controls checkbox visibility', async (skipConsent) => {
   await open({ skipConsent });
   expect(props.tokenizationClient.getSavedTokens).toHaveBeenCalledTimes(1);
-  expect(props.tokenizationClient.getSavedTokens).toHaveBeenCalledWith({ outletRef: 'outlet' });
+  expect(props.tokenizationClient.getSavedTokens).toHaveBeenCalledWith({ outletRef: 'outlet', skipConsent: skipConsent === true });
   expect(byId('tokenization-consent')).toHaveLength(skipConsent === true ? 0 : 1);
   expect(byId('tokenization-consent-checkbox')).toHaveLength(skipConsent === true ? 0 : 1);
   if (skipConsent !== true) expect(checkbox().props.accessibilityState).toEqual({ checked: false });
@@ -71,10 +75,10 @@ it.each(['CARD', 'APPLE_PAY', 'GOOGLE_PAY'])('blocks %s buttons and action handl
   expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
 });
 
-it.each(['CARD', 'APPLE_PAY', 'GOOGLE_PAY'])('allows %s after explicit acceptance with duplicate protection', async (method) => {
+it.each(['APPLE_PAY', 'GOOGLE_PAY'])('allows %s after explicit acceptance with duplicate protection', async (method) => {
   Platform.OS = method === 'APPLE_PAY' ? 'ios' : 'android';
   const capture = deferred();
-  const fn = native[{ CARD: 'initiateCardPayment', APPLE_PAY: 'initiateApplePay', GOOGLE_PAY: 'initiateGooglePay' }[method]];
+  const fn = method === 'APPLE_PAY' ? appleCapture : native.initiateGooglePay;
   fn.mockReturnValueOnce(capture.promise);
   props = undefined;
   await open();
@@ -87,8 +91,9 @@ it.each(['CARD', 'APPLE_PAY', 'GOOGLE_PAY'])('allows %s after explicit acceptanc
   expect(fn).toHaveBeenCalledTimes(1);
   await act(async () => { capture.resolve({ status: 'Success', token: 'opaque-wallet' }); await flush(); });
   expect(fn).toHaveBeenCalledWith(order, ...(method === 'CARD' ? [] : [undefined]));
-  if (method === 'GOOGLE_PAY') expect(props.tokenizationClient.addWallet).toHaveBeenCalledWith({ outletRef: 'outlet', walletType: 'GOOGLE_PAY', encryptedPayload: 'opaque-wallet' });
-  else expect(props.onSuccess).toHaveBeenCalledTimes(1);
+  expect(props.tokenizationClient.addWallet).toHaveBeenCalledWith({ outletRef: 'outlet', walletType: method, encryptedPayload: 'opaque-wallet' });
+  expect(native.initiateApplePay).not.toHaveBeenCalled();
+  expect(native.initiateCardPayment).not.toHaveBeenCalled();
 });
 
 it('allows skipConsent immediately and renders no consent block, link or reserved spacing', async () => {
@@ -98,7 +103,8 @@ it('allows skipConsent immediately and renders no consent block, link or reserve
   expect(tree.root.findAll((node) => node.props.accessibilityRole === 'link')).toHaveLength(0);
   expect(byId('tokenization-method-CARD')[0].props.disabled).toBe(false);
   await select('CARD');
-  expect(native.initiateCardPayment).toHaveBeenCalledTimes(1);
+  expect(native.initiateCardPayment).not.toHaveBeenCalled();
+  expect(props.onError).toHaveBeenCalledTimes(1);
 });
 
 it.each(['en', 'fr', 'ar'])('keeps the terms link independently clickable and supports accessibility/RTL in %s', async (language) => {
@@ -143,10 +149,10 @@ it('ignores old saved-token responses after close/reopen', async () => {
 
 it('does not apply a native response to a newer session', async () => {
   const capture = deferred();
-  native.initiateCardPayment.mockReturnValueOnce(capture.promise);
+  native.initiateGooglePay.mockReturnValueOnce(capture.promise);
   await open();
   await press(checkbox());
-  await select('CARD');
+  await select('GOOGLE_PAY');
   await update({ visible: false });
   await update({ visible: true });
   await act(async () => { capture.resolve({ status: 'Success' }); await flush(); });
@@ -192,9 +198,9 @@ it('ignores a wallet save response belonging to a previous session', async () =>
 
 it('invalidates outstanding native work on unmount', async () => {
   const capture = deferred();
-  native.initiateCardPayment.mockReturnValueOnce(capture.promise);
+  native.initiateGooglePay.mockReturnValueOnce(capture.promise);
   await open({ skipConsent: true });
-  await select('CARD');
+  await select('GOOGLE_PAY');
   act(() => tree.unmount()); tree = undefined;
   await act(async () => { capture.resolve({ status: 'Success' }); await flush(); });
   expect(props.onSuccess).not.toHaveBeenCalled();
@@ -210,7 +216,7 @@ it('does not launch deferred iOS Card presentation after the session closes', as
   expect(native.initiateCardPayment).not.toHaveBeenCalled();
 });
 
-it.each(['CARD', 'GOOGLE_PAY'])('clears acceptance when %s native capture is cancelled', async (method) => {
+it.each(['GOOGLE_PAY'])('clears acceptance when %s native capture is cancelled', async (method) => {
   native[method === 'CARD' ? 'initiateCardPayment' : 'initiateGooglePay']
     .mockRejectedValueOnce({ status: 'Aborted' });
   await open();

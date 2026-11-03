@@ -141,8 +141,8 @@ export interface SavedCardResponse {
 }
 
 export interface TokenizationClient {
-  /** List-all endpoint. No filtering or pagination query contract is defined. */
-  getSavedTokens(args: { outletRef: string }): Promise<{
+  /** List-all endpoint. skipConsent=true sends the current sandbox consent-off query. */
+  getSavedTokens(args: { outletRef: string; skipConsent?: boolean }): Promise<{
     tokens: SavedCardResponse[];
     page?: { number: number; size: number; totalElements: number; totalPages: number };
     tncUrl?: string;
@@ -151,6 +151,8 @@ export interface TokenizationClient {
     outletRef: string;
     walletType: 'APPLE_PAY' | 'GOOGLE_PAY';
     encryptedPayload: string;
+    /** Confirmed backend wire object; the UI serializer is pending. */
+    consentData?: Record<string, unknown>;
   }): Promise<SavedCardResponse>;
   authenticateThreeDS(args: {
     outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;
