@@ -18,7 +18,7 @@ const { TokenizationApiError } = require('./src/tokenization/api/errors');
 
 const { NiSdk } = NativeModules;
 
-export const SDK_VERSION = '3.2.5';
+export const SDK_VERSION = '3.2.9';
 
 // Helper function to get device info for User-Agent
 let deviceInfoCache = null;
@@ -63,19 +63,30 @@ const configureSDK = (config) => {
     return;
   }
 
-  // Supported configs for android platform
+  // Same options on both platforms.
+  const nativeConfig = {};
+  if ('shouldShowOrderAmount' in config) {
+    nativeConfig.shouldShowOrderAmount = config.shouldShowOrderAmount;
+  }
+  if ('shouldShowCancelAlert' in config) {
+    nativeConfig.shouldShowCancelAlert = config.shouldShowCancelAlert;
+  }
+
   if (Platform.OS === 'android') {
-    if ('shouldShowOrderAmount' in config) {
-      NiSdk.configureSDK({
-        shouldShowOrderAmount: config.shouldShowOrderAmount
-      });
+    if ('language' in config) {
+      nativeConfig.language = config.language;
+    }
+    if (Object.keys(nativeConfig).length > 0) {
+      NiSdk.configureSDK(nativeConfig);
     }
   }
 
-  // Supported configs on iOS
   if (Platform.OS === 'ios') {
     if ('language' in config) {
       NiSdk.setLocale(config.language);
+    }
+    if (Object.keys(nativeConfig).length > 0) {
+      NiSdk.configureSDK(nativeConfig);
     }
   }
 }
