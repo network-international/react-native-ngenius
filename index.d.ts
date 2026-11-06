@@ -157,6 +157,8 @@ export interface TokenizationConsentData {
 }
 
 export interface TokenizationClient {
+  /** Draft contract, disabled unless enableDraftSessionSelection is explicitly true. */
+  selectSessionToken?(args: { outletRef: string; sessionRef: string; selectedToken: string }): Promise<{ status: 'SELECTED' }>;
   /** List-all endpoint. skipConsent=true sends the current sandbox consent-off query. */
   getSavedTokens(args: { outletRef: string; skipConsent?: boolean }): Promise<{
     tokens: SavedCardResponse[];
@@ -183,11 +185,14 @@ export interface TokenizationClient {
 export function createTokenizationClient(options: {
   baseUrl: string;
   getAccessToken: () => Promise<string>;
+  /** Opt in to the preliminary PUT session selectedToken contract. Default false. */
+  enableDraftSessionSelection?: boolean;
   transport?: (request: {
     url: string; method: string; headers: Record<string, string>; body?: unknown;
-  }) => Promise<{ status: number; text: string }>;
+    responseMode?: 'status-only';
+  }) => Promise<{ status: number; text?: string }>;
   fetchImpl?: typeof fetch;
-}): TokenizationClient;
+}): TokenizationClient & Required<Pick<TokenizationClient, 'selectSessionToken'>>;
 
 export class TokenizationApiError extends Error {
   status: number;
@@ -217,11 +222,32 @@ export interface NgeniusTokenizationProps {
   skipConsent?: boolean;
   tokenizationClient?: TokenizationClient;
   outletRef?: string;
+  /** NI session reference for the draft selectedToken operation only. No create-session implementation. */
+  sessionRef?: string;
+  modeConfig?: TokenizationModeConfig;
   applePayConfig?: ApplePayConfig;
   googlePayConfig?: GooglePayConfig;
   onSuccess?: (result: TokenizationResult) => void;
   onError?: (result: TokenizationResult) => void;
   onCancel?: () => void;
+  /** Emitted after HTTP 200, success animation and local closing. No chosen token/card data is returned. */
+  onSelectionComplete?: (result: TokenizationSelectionCompletion) => void;
+}
+
+export interface TokenizationSelectionCompletion {
+  flow: 'TOKENIZATION';
+  status: 'SELECTED';
+  canClose: true;
+}
+
+/** Optional plain-text UI overrides. NI consent wording and wallet artwork are not overrideable. */
+export interface TokenizationModeConfig {
+  returnButtonName?: string;
+  returnButtonStyle?: 'text' | 'link' | 'button';
+  labels?: Partial<Record<
+    'pageTitle' | 'savedMethodsTitle' | 'addMethodTitle' | 'addCard' |
+    'addAnotherCard' | 'usePaymentMethod' | 'selectionPending' |
+    'selectionSuccessTitle' | 'selectionSuccessMessage' | 'selectionError', string>>;
 }
 
 export const NgeniusTokenization: import('react').ComponentType<NgeniusTokenizationProps>;

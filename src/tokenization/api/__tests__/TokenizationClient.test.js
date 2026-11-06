@@ -120,6 +120,7 @@ describe('TokenizationClient', () => {
         'addWallet',
         'authenticateThreeDS',
         'getSavedTokens',
+        'selectSessionToken',
         'submitThreeDSChallengeResponse',
       ]);
     });
@@ -451,9 +452,10 @@ describe('TokenizationClient', () => {
 
   describe('fetch transport', () => {
     it('sends JSON over fetch and reads the response text', async () => {
+      const readBody = jest.fn(async () => JSON.stringify({ tokens: [] }));
       const fetchImpl = jest.fn(async () => ({
         status: 200,
-        text: async () => JSON.stringify({ tokens: [] }),
+        text: readBody,
       }));
       const client = createTokenizationClient({
         baseUrl: `${BASE_URL}/`,
@@ -461,6 +463,7 @@ describe('TokenizationClient', () => {
         fetchImpl,
       });
       await client.getSavedTokens({ outletRef: OUTLET });
+      expect(readBody).toHaveBeenCalledTimes(1);
       expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/tokens`, {
         method: 'GET',
         headers: {

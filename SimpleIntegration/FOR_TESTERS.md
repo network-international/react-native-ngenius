@@ -1,6 +1,10 @@
-# React Native Tokenization POC – QA Testing Guide
+# React Native Tokenization POC - QA Testing Guide
 
 Use the SHA and artifact names in the accompanying BUILD_INFO.txt. Branch: NINGG-34386 (PR #75). SDK 3.2.9.
+
+6 Nov update: use Add Card for DEV and UAT for now, per Hossam, and wait for the new deployed version. Record the actual environment and deployment/build when retesting. This guidance does not establish a successful live Add Card result. Session creation/lookup/validation, final selected-token persistence, collected-consent deployment and physical wallet E2E remain pending.
+
+Current UI source includes first-usable default selection, a blue local-choice radio, independent green Verified badges, explicit Wallet identity, PayPage SVG artwork, native Card Back, animated loading and a pinned configurable return control. Use a build matching the current PR SHA; older 6c9db81 artifacts do not contain these changes. Offline screenshots and simulated selection responses are demo/mock evidence.
 
 1. Android: install the SHA-named APK with `adb install -r <apk>`, then open SimpleIntegration. It includes the JS bundle; Metro is not needed.
 2. iOS Simulator: extract the SHA-named ZIP, run `xcrun simctl install booted <app>`, then `xcrun simctl launch booted org.reactjs.native.example.SimpleIntegration`. This app cannot be installed on a physical iPhone. A device build requires existing signing; no Team/profile/certificates were changed.

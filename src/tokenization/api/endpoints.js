@@ -8,7 +8,7 @@ const encodePathSegment = (value, name) => {
 };
 
 const referenceSegment = (value, name) => {
-  if (typeof value !== 'string' || !REFERENCE_PATTERN.test(value)) {
+  if (typeof value !== 'string' || value !== value.trim() || !REFERENCE_PATTERN.test(value)) {
     throw new Error(`${name} is invalid`);
   }
   return value;
@@ -27,6 +27,9 @@ const TOKENIZATION_PATHS = {
   // PAN/CVV must stay native; this path is not a JS card-creation API.
   addCard: ({ outletRef }) => `${outletPath(outletRef)}/cards`,
   addWallet: ({ outletRef }) => `${outletPath(outletRef)}/wallets`,
+  // Preliminary session-selection contract; the client requires explicit opt-in.
+  selectSessionToken: ({ outletRef, sessionRef }) =>
+    `${outletPath(outletRef)}/sessions/${referenceSegment(sessionRef, 'sessionRef')}/selectedToken`,
   threeDSAuthentications: (ids) => `${threeDSPath(ids)}/authentications`,
   threeDSChallengeResponse: (ids) => `${threeDSPath(ids)}/challenge-response`,
 };

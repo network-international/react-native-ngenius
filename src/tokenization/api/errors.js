@@ -73,9 +73,18 @@ const errorFromMalformedResponse = ({ status }) =>
     message: 'Response was not valid JSON',
   });
 
+// Selection errors must not contain an echoed token, session or response body.
+const errorFromSessionSelectionResponse = ({ status } = {}) =>
+  new TokenizationApiError({
+    status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
+    code: 'SESSION_SELECTION_FAILED',
+    message: 'Payment method selection could not be saved',
+  });
+
 module.exports = {
   TokenizationApiError,
   HTTP_ERROR_FALLBACK,
   errorFromResponse,
   errorFromMalformedResponse,
+  errorFromSessionSelectionResponse,
 };

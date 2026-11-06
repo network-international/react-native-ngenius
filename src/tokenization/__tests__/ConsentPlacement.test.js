@@ -88,7 +88,7 @@ it.each(['APPLE_PAY', 'GOOGLE_PAY'])('allows %s after explicit acceptance with d
   if (Platform.OS === 'ios') await act(async () => { tree.root.findByType('Modal').props.onDismiss(); await flush(); });
   expect(fn).toHaveBeenCalledTimes(1);
   await act(async () => { capture.resolve({ status: 'Success', token: 'opaque-wallet' }); await flush(); });
-  expect(fn).toHaveBeenCalledWith(order, ...(method === 'CARD' ? [] : [undefined]));
+  expect(fn).toHaveBeenCalledWith({ ...order, amount: { value: 0, formattedValue: '0.00' } }, ...(method === 'CARD' ? [] : [undefined]));
   expect(props.tokenizationClient.addWallet).toHaveBeenCalledWith({ outletRef: 'outlet', walletType: method, encryptedPayload: 'opaque-wallet', consentData: expect.objectContaining({ status: 'COLLECTED', channel: 'REACT_NATIVE' }) });
   expect(native.initiateApplePay).not.toHaveBeenCalled();
   expect(native.initiateCardPayment).not.toHaveBeenCalled();

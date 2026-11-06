@@ -6,6 +6,7 @@ const BrandingHeader = ({ theme, styles, testID }) => {
   const [logoFailed, setLogoFailed] = useState(false);
   const label = capitalizeHeading && footerText ? footerText.toUpperCase() : footerText;
   const showLogo = Boolean(logoUrl) && !logoFailed;
+  if (!showLogo && !label) return null;
 
   return (
     <View style={styles.header} testID={testID}>

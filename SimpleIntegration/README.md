@@ -26,12 +26,13 @@ See **[QUICK_START.md](./QUICK_START.md)** for:
 - Testing instructions
 - Screenshot/video capture instructions
 
-## Test Credentials
+## Test configuration
 
-The app is pre-configured with test credentials:
-- **API Key:** `MjBkZWYwZGYtYjJlYS00MzdhLWIyNjAtNjU2NDE1ODhlZDY0Ojc2ZTA0N2I2LTg5NGMtNDBmOS04NTQwLWUzYTUxNmY0MjQ2MA==`
-- **Outlet ID:** `7a25a4a6-d7a8-43e3-af16-e190ce2b0f10`
-- **Merchant ID:** `2078478434`
+For **Tokenization sandbox QA**, follow [FOR_TESTERS.md](FOR_TESTERS.md). Supply a fresh
+short-lived Access-Token through the runtime password input and approved secure flow.
+Do not embed API keys, Access-Tokens or wallet payloads in source, documentation or screenshots.
+Public environment settings belong in the ignored local configuration, using `config.example.js`
+as the template. Offline UI preview uses fixtures and does not prove backend E2E.
 
 ## Project Structure
 

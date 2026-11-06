@@ -18,12 +18,14 @@
 @end
 static NSDictionary *cardTestBody;
 static NSInteger cardTestStatus;
+static NSInteger cardTestRequestCount;
 @interface NativeCardStubProtocol : NSURLProtocol
 @end
 @implementation NativeCardStubProtocol
 + (BOOL)canInitWithRequest:(NSURLRequest *)request { return [request.URL.host isEqualToString:@"native-card.test"]; }
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
 - (void)startLoading {
+    cardTestRequestCount += 1;
     NSData *body = self.request.HTTPBody;
     if (!body && self.request.HTTPBodyStream) {
         NSInputStream *stream = self.request.HTTPBodyStream;
@@ -100,7 +102,7 @@ static NSInteger cardTestStatus;
 
 
 - (void)runNativeCardWithStatus:(NSInteger)status cancel:(BOOL)cancel {
-    cardTestBody = nil; cardTestStatus = status;
+    cardTestBody = nil; cardTestStatus = status; cardTestRequestCount = 0;
     XCTestExpectation *done = [self expectationWithDescription:@"Native Card result"];
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *parent = [[UIApplication.sharedApplication.delegate window] rootViewController];
@@ -126,6 +128,8 @@ static NSInteger cardTestStatus;
             }
             XCTAssertTrue([[(UITextField *)[card valueForKey:@"pan"] text] length] == 0);
             XCTAssertTrue([[(UITextField *)[card valueForKey:@"cvv"] text] length] == 0);
+            XCTAssertFalse([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
+            XCTAssertTrue([(UIView *)[card valueForKey:@"processingView"] isHidden]);
             cardTestBody = nil; card = nil; [done fulfill];
           }];
         NSURLSessionConfiguration *transport = NSURLSessionConfiguration.ephemeralSessionConfiguration;
@@ -135,12 +139,16 @@ static NSInteger cardTestStatus;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UITextField *pan = [card valueForKey:@"pan"]; UITextField *cvv = [card valueForKey:@"cvv"];
             XCTAssertTrue(pan.secureTextEntry); XCTAssertTrue(cvv.secureTextEntry);
+            XCTAssertFalse([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
+            XCTAssertTrue([(UIView *)[card valueForKey:@"processingView"] isHidden]);
             if (cancel) { [card cancel]; return; }
             pan.text = [@"4" stringByPaddingToLength:16 withString:@"1" startingAtIndex:0];
             cvv.text = [NSString stringWithFormat:@"%d", 100 + 20 + 3];
             [(UITextField *)[card valueForKey:@"expiry"] setText:@"12/99"];
             [(UITextField *)[card valueForKey:@"holder"] setText:@"QA Test"];
             [card prepare];
+            XCTAssertTrue([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
+            XCTAssertFalse([(UIView *)[card valueForKey:@"processingView"] isHidden]);
         });
     });
     [self waitForExpectations:@[done] timeout:20];
@@ -148,5 +156,71 @@ static NSInteger cardTestStatus;
 - (void)testNativeCardVerifiedRequestAndSafeBridgeResponse { [self runNativeCardWithStatus:200 cancel:NO]; }
 - (void)testNativeCardErrorDoesNotExposeResponseBody { [self runNativeCardWithStatus:401 cancel:NO]; }
 - (void)testNativeCardCancelClearsFieldsWithoutSubmitting { [self runNativeCardWithStatus:200 cancel:YES]; }
+
+- (void)runNativeCardBackWithRtl:(BOOL)rtl {
+    cardTestBody = nil; cardTestStatus = 200; cardTestRequestCount = 0;
+    XCTestExpectation *done = [self expectationWithDescription:@"Native Card visible Back result"];
+    __block NSInteger resultCount = 0;
+    __block NSInteger readyCount = 0;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *parent = [[UIApplication.sharedApplication.delegate window] rootViewController];
+        NSString *backLabel = rtl ? @"رجوع" : @"Retour";
+        __block NiTokenizationCard *card;
+        card = [[NiTokenizationCard alloc] initWithConfig:@{
+            @"requestId": @"native-back-fixture", @"rtl": @(rtl),
+            @"labels": @{ @"back": backLabel, @"processing": @"Saving fixture" }
+        } ready:^(NSString *requestId) {
+            readyCount += 1;
+        } result:^(NSString *result, NSDictionary *response) {
+            resultCount += 1;
+            XCTAssertTrue([result isEqualToString:@"Aborted"]);
+            XCTAssertEqual(response.count, 0);
+            for (NSString *key in @[@"pan", @"expiry", @"cvv", @"holder"]) {
+                XCTAssertEqual([[(UITextField *)[card valueForKey:key] text] length], 0);
+            }
+            XCTAssertFalse([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
+            XCTAssertTrue([(UIView *)[card valueForKey:@"processingView"] isHidden]);
+            XCTAssertNil(parent.presentedViewController);
+            card = nil;
+            [done fulfill];
+        }];
+        NSURLSessionConfiguration *transport = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+        transport.protocolClasses = @[NativeCardStubProtocol.class];
+        [card setValue:transport forKey:@"sessionConfiguration"];
+        [card presentFrom:parent];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UINavigationController *navigation = (UINavigationController *)parent.presentedViewController;
+            XCTAssertTrue([navigation isKindOfClass:UINavigationController.class]);
+            UISemanticContentAttribute expected = rtl ? UISemanticContentAttributeForceRightToLeft : UISemanticContentAttributeForceLeftToRight;
+            XCTAssertEqual(navigation.view.semanticContentAttribute, expected);
+            XCTAssertEqual(navigation.navigationBar.semanticContentAttribute, expected);
+            __block UIButton *back = nil;
+            [self findSubviewInView:navigation.view matching:^BOOL(UIView *view) {
+                if ([view isKindOfClass:UIButton.class] && [view.accessibilityIdentifier isEqualToString:@"tokenization-card-back"]) {
+                    back = (UIButton *)view;
+                    return YES;
+                }
+                return NO;
+            }];
+            XCTAssertNotNil(back);
+            XCTAssertEqualObjects(back.accessibilityLabel, backLabel);
+            XCTAssertEqual(back.semanticContentAttribute, expected);
+            XCTAssertTrue(back.bounds.size.width >= 44 && back.bounds.size.height >= 44);
+            // Arbitrary native-only text proves Back clears inputs without validation or submission.
+            for (NSString *key in @[@"pan", @"expiry", @"cvv", @"holder"]) {
+                [(UITextField *)[card valueForKey:key] setText:@"native-only fixture"];
+            }
+            [back sendActionsForControlEvents:UIControlEventTouchUpInside];
+            [back sendActionsForControlEvents:UIControlEventTouchUpInside];
+        });
+    });
+    [self waitForExpectations:@[done] timeout:20];
+    XCTAssertEqual(resultCount, 1);
+    XCTAssertEqual(readyCount, 0);
+    XCTAssertEqual(cardTestRequestCount, 0);
+    XCTAssertNil(cardTestBody);
+}
+- (void)testNativeCardVisibleBackClearsFieldsWithoutSubmitting { [self runNativeCardBackWithRtl:NO]; }
+- (void)testNativeCardVisibleBackPreservesRtlAndLocalizedLabel { [self runNativeCardBackWithRtl:YES]; }
 
 @end

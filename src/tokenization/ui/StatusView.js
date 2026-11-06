@@ -1,14 +1,20 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Animated } from 'react-native';
+import useReducedMotion from './useReducedMotion';
 
 const { VERIFICATION_STATES, isBusyState } = require('../verificationStates');
 
 const BounceDots = ({ styles }) => {
+  const reducedMotion = useReducedMotion();
   const a = useRef(new Animated.Value(0.3)).current;
   const b = useRef(new Animated.Value(0.3)).current;
   const c = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
+    if (reducedMotion) {
+      [a, b, c].forEach(value => value.setValue?.(0.6));
+      return undefined;
+    }
     const pulse = (value, delay) =>
       Animated.loop(
         Animated.sequence([
@@ -28,8 +34,9 @@ const BounceDots = ({ styles }) => {
       one.stop();
       two.stop();
       three.stop();
+      [a, b, c].forEach(value => value.stopAnimation?.());
     };
-  }, [a, b, c]);
+  }, [a, b, c, reducedMotion]);
 
   return (
     <View style={styles.dots} testID="tokenization-loading-dots">
@@ -48,8 +55,9 @@ const StatusView = ({
   loadingLabel,
   cancelLabel,
   onCancel,
+  hideClose = false,
 }) => (
-  <View style={styles.statusContainer} testID={`tokenization-status-${status}`}>
+  <View style={styles.statusContainer} testID={`tokenization-status-${status}`} accessibilityLiveRegion="polite">
     {isBusyState(status) ? (
       <>
         <BounceDots styles={styles} />
@@ -70,7 +78,7 @@ const StatusView = ({
         <Text style={styles.errorText}>{message}</Text>
       </View>
     ) : null}
-    {isBusyState(status) ? null : (
+    {isBusyState(status) || hideClose ? null : (
       <TouchableOpacity
         testID="tokenization-status-close"
         accessibilityRole="button"

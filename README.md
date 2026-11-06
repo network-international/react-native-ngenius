@@ -10,9 +10,14 @@ React Native bindings for N-Genius card and wallet payments, with a tokenization
 
 ## Getting started
 ```bash
-npm i @network-international/react-native-ngenius
+npm i @network-international/react-native-ngenius 'react-native-svg@>=9.13.6 <16'
 cd ios && pod install
 ```
+
+`react-native-svg` is a required peer for the PayPage scheme artwork. Choose a version in that
+range that also supports your app's React Native version, then rebuild the native app. This
+also applies to payment-only consumers because the package exports load the tokenization UI.
+The React Native 0.70.3 SimpleIntegration example pins `react-native-svg` 13.4.0.
 
 If `pod install` reports that no spec satisfies `NISdk`, your local CocoaPods index is older than
 the release: run `pod install --repo-update` instead.
@@ -61,9 +66,43 @@ const { tokens } = await tokenizationClient.getSavedTokens({ outletRef, skipCons
 />
 ```
 
-`order` supplies display/wallet amount and currency context; native Card tokenization does not require a PAYMENT order. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
+`order` supplies display and currency context; wallet tokenization uses a copied zero-value amount without changing the merchant order or legacy PAYMENT amounts. Native Card tokenization does not require a PAYMENT order. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
 
 With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), the unchecked checkbox must be accepted before Card or wallets can start. `skipConsent={true}` hides the entire consent block and enables actions immediately. Acceptance resets on close/reopen. Missing or invalid URLs leave the consent text visible without a link.
+
+The chooser hides the saved-method section for an empty list. It selects the first usable method
+on entry and preserves a still-valid shopper choice on refresh or native Card Back. A blue radio
+shows that local choice. The independent green Verified badge reflects the returned token status;
+it does not establish merchant-origin import, validation for the current session or payment success.
+Wallet rows name the wallet and display its funding card separately.
+
+Optional `modeConfig` customizes non-legal labels with localized NI defaults:
+
+```jsx
+modeConfig={{
+  returnButtonName: 'BACK',
+  returnButtonStyle: 'button', // text | link | button
+  labels: { pageTitle: 'Choose a payment method', usePaymentMethod: 'Continue' },
+}}
+```
+
+See [the UI refinement notes](docs/tokenization-ui-refinement.md) for supported labels. NI consent
+wording and official wallet artwork are not configurable through these labels.
+
+### Proposed session selection, pending backend contract
+
+`sessionRef` and `onSelectionComplete` support a preliminary selection adapter. The supplied
+`PUT /api/outlets/{outletRef}/sessions/{sessionRef}/selectedToken` route is disabled by default;
+`createTokenizationClient({ ..., enableDraftSessionSelection: true })` explicitly opts into it.
+This does not integrate session creation, lookup or validation, and the endpoint/body/error
+contract remains provisional.
+
+Submitting an existing method shows progress. Only HTTP 200 starts the brief confirmation and
+closing animation; other statuses keep the chooser open for retry or another method. Completion
+is `{ flow: 'TOKENIZATION', status: 'SELECTED', canClose: true }`, with no selected token/card data
+and no payment initiation. In session mode a successful Add Card/Wallet refreshes the list first;
+completion waits for the separate selection confirmation. Existing non-session callbacks remain
+available. Screenshot responses are demo/mock, not evidence of a deployed session API.
 
 ## Supported methods
 
@@ -85,8 +124,9 @@ Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the s
 - Card tokenization is native on iOS and Android. Native entry, validation and HTTPS POST use `/api/outlets/{outletRef}/cards` with `{ card, consentData }`. JS receives a ready event, obtains fresh auth and prepares consent; PAN/CVV stay native. Only safe response fields return to JS. Redirects, response-body errors and credential persistence are disabled. Existing PAYMENT APIs stay separate.
 - Apple/Google capture connects to the real `/wallets` JSON body with the confirmed consentData and unchanged encryptedPayload. There is no consent placeholder or missing-contract block. Live E2E still requires current sandbox credentials and supported devices/UAT wallet config.
 - Custom JS transports/fetch mocks apply to JS API calls. They cannot carry plaintext cards; native Card submission is refused when such an override is installed. Offline preview can open/cancel the form, but never POSTs it.
-- Only VERIFIED creates a success callback. AWAIT_3DS stays pending; Card 3DS is outside Drop 1. No new continuation flow was added.
+- Without session context, only VERIFIED creates the existing success callback. In session mode, VERIFIED refreshes the list and shows saved feedback; a separate selected-token HTTP 200 is required for the status-only completion above. AWAIT_3DS stays pending; Card 3DS is outside Drop 1. No new continuation flow was added.
 - Live `consentOff=false` is not part of current QA. Its backend deployment and final `tncUrl` behavior remain backend-owned.
+- Hossam's 6 Nov update: use Add Card for DEV and UAT for now, and wait for the new deployed version. This is environment guidance, not a recorded successful live Add Card retest. Final session integration, selected-token persistence, collected-consent deployment and physical wallet E2E remain pending.
 
 ## Test and demo
 

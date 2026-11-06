@@ -12,6 +12,9 @@
 @property (nonatomic, strong) UITextField *holder;
 @property (nonatomic, strong) UILabel *error;
 @property (nonatomic, strong) UIButton *submitButton;
+@property (nonatomic, strong) UIStackView *processingView;
+@property (nonatomic, strong) UIActivityIndicatorView *activityIndicator;
+@property (nonatomic, strong) UILabel *processingLabel;
 @property (nonatomic, strong) NSDictionary *card;
 // Native-only transport injection for XCTest; never read from bridge options.
 @property (nonatomic, strong) NSURLSessionConfiguration *sessionConfiguration;
@@ -96,8 +99,38 @@ static UIColor *NICardColor(id value, UIColor *fallback) {
     [self.submitButton.heightAnchor constraintEqualToConstant:50].active = YES;
     [self.submitButton addTarget:self action:@selector(prepare) forControlEvents:UIControlEventTouchUpInside];
     [stack addArrangedSubview:self.submitButton];
-    controller.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:labels[@"cancel"] ?: @"Cancel" style:UIBarButtonItemStylePlain target:self action:@selector(cancel)];
+    self.activityIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    self.activityIndicator.color = NICardColor(self.config[@"colors"][@"payPageLabelColor"], UIColor.labelColor);
+    self.activityIndicator.hidesWhenStopped = YES;
+    self.activityIndicator.accessibilityIdentifier = @"tokenization-card-spinner";
+    self.processingLabel = [UILabel new];
+    self.processingLabel.text = labels[@"processing"] ?: @"Saving payment method…";
+    self.processingLabel.textColor = self.activityIndicator.color;
+    self.processingLabel.numberOfLines = 0;
+    self.processingLabel.accessibilityIdentifier = @"tokenization-card-processing-label";
+    self.processingView = [[UIStackView alloc] initWithArrangedSubviews:@[self.activityIndicator, self.processingLabel]];
+    self.processingView.axis = UILayoutConstraintAxisHorizontal;
+    self.processingView.alignment = UIStackViewAlignmentCenter;
+    self.processingView.spacing = 12;
+    self.processingView.hidden = YES;
+    self.processingView.accessibilityIdentifier = @"tokenization-card-processing";
+    [stack addArrangedSubview:self.processingView];
+    NSString *backLabel = labels[@"back"] ?: @"Back";
+    UIImage *backImage = [UIImage systemImageNamed:@"chevron.backward"];
+    UIButton *back = [UIButton buttonWithType:UIButtonTypeSystem];
+    if (backImage) [back setImage:backImage forState:UIControlStateNormal];
+    else [back setTitle:backLabel forState:UIControlStateNormal];
+    back.semanticContentAttribute = controller.view.semanticContentAttribute;
+    back.accessibilityLabel = backLabel;
+    back.accessibilityIdentifier = @"tokenization-card-back";
+    [back.widthAnchor constraintEqualToConstant:44].active = YES;
+    [back.heightAnchor constraintEqualToConstant:44].active = YES;
+    [back addTarget:self action:@selector(cancel) forControlEvents:UIControlEventTouchUpInside];
+    controller.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:back];
     self.navigation = [[UINavigationController alloc] initWithRootViewController:controller];
+    self.navigation.view.semanticContentAttribute = controller.view.semanticContentAttribute;
+    self.navigation.navigationBar.semanticContentAttribute = controller.view.semanticContentAttribute;
+    self.navigation.navigationBar.tintColor = NICardColor(self.config[@"colors"][@"payPageTitleColor"], UIColor.labelColor);
     self.navigation.modalPresentationStyle = UIModalPresentationFullScreen;
     self.navigation.modalInPresentation = YES;
     [parent presentViewController:self.navigation animated:YES completion:nil];
@@ -131,6 +164,9 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
     self.prepared = YES; self.error.text = nil;
     for (UITextField *field in @[self.pan, self.expiry, self.cvv, self.holder]) field.enabled = NO;
     self.submitButton.enabled = NO; [self.navigation.view endEditing:YES];
+    self.processingView.hidden = NO;
+    [self.activityIndicator startAnimating];
+    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, self.processingLabel.text);
     if (self.ready) self.ready(self.requestId);
     self.ready = nil;
 }
@@ -185,6 +221,7 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
 - (void)finish:(NSString *)status response:(NSDictionary *)response {
     if (self.finished) return;
     self.finished = YES; self.ready = nil; self.card = nil; [self clearFields];
+    [self.activityIndicator stopAnimating]; self.processingView.hidden = YES;
     [self.task cancel]; self.task = nil; [self.session invalidateAndCancel]; self.session = nil;
     void (^callback)(NSString *, NSDictionary *) = self.result; self.result = nil;
     if (self.navigation.presentingViewController) [self.navigation dismissViewControllerAnimated:YES completion:^{ if (callback) callback(status, response ?: @{}); }];

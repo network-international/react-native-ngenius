@@ -14,6 +14,7 @@ const {
   mapThreeDSChallengeResponseRequest,
 } = require('./models');
 const { createFetchTransport, parseJsonBody } = require('./transport');
+const { createSessionTokenSelector } = require('./sessionTokenSelection');
 
 const ACCESS_TOKEN_UNAVAILABLE = 'ACCESS_TOKEN_UNAVAILABLE';
 
@@ -70,17 +71,19 @@ const createTokenizationClient = options => {
   const transport =
     options.transport || createFetchTransport(options.fetchImpl);
 
-  const request = async ({ method, path, query, body, parse }) => {
+  const sendRequest = async ({ method, path, query, body, responseMode }) => {
     const url = resolveTokenizationUrl(baseUrl, path, query);
     const accessToken = await resolveAccessToken(getAccessToken);
     let response;
     try {
-      response = await transport({
+      const transportRequest = {
         url,
         method,
         headers: buildTokenizationHeaders({ accessToken }),
         body,
-      });
+      };
+      if (responseMode === 'status-only') transportRequest.responseMode = responseMode;
+      response = await transport(transportRequest);
     } catch (error) {
       throw new TokenizationApiError({
         status: 0,
@@ -88,6 +91,11 @@ const createTokenizationClient = options => {
         message: 'Tokenization request could not be sent',
       });
     }
+    return response;
+  };
+
+  const request = async ({ parse, ...args }) => {
+    const response = await sendRequest(args);
     const status = response.status;
     const parsedJson = parseJsonBody(response.text);
     if (!parsedJson.ok) {
@@ -103,6 +111,10 @@ const createTokenizationClient = options => {
     parseSavedCardResponse(body, { requireContinuation: true });
 
   const client = {
+    selectSessionToken: createSessionTokenSelector({
+      enabled: options.enableDraftSessionSelection,
+      request: sendRequest,
+    }),
     getSavedTokens: async (args = {}) =>
       request({
         method: 'GET',

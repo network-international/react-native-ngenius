@@ -3,7 +3,7 @@ const createFetchTransport = (fetchImpl) => {
   if (typeof fetchFn !== 'function') {
     throw new Error('fetch is not available; supply a transport to createTokenizationClient');
   }
-  return async ({ url, method, headers, body }) => {
+  return async ({ url, method, headers, body, responseMode }) => {
     const init = {
       method,
       headers,
@@ -12,10 +12,10 @@ const createFetchTransport = (fetchImpl) => {
       init.body = JSON.stringify(body);
     }
     const response = await fetchFn(url, init);
-    const text = await response.text();
     return {
       status: response.status,
-      text,
+      // Draft selection acknowledges HTTP status only; other operations need JSON.
+      text: responseMode === 'status-only' ? undefined : await response.text(),
     };
   };
 };

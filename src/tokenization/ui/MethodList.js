@@ -1,28 +1,31 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import CardSchemeIcon from './CardSchemeIcon';
+import NativeWalletButton from '../NativeWalletButton';
 
 const WALLET_METHODS = ['APPLE_PAY', 'GOOGLE_PAY'];
 const methodTestId = (method) => `tokenization-method-${method}`;
 
-const WalletRow = ({ method, styles, payWith, mark, disabled, onSelect }) => (
-  <Pressable
+const WalletRow = ({ method, styles, payWith, label, disabled, onSelect }) => disabled ? (
+  <Pressable testID={methodTestId(method)} disabled accessibilityRole="button"
+    accessibilityState={{ disabled: true }} accessibilityLabel={label}
+    onPress={() => {}} style={[styles.methodButton, styles.blockedWalletRow]}>
+    <Text style={styles.blockedWalletLabel}>{label}</Text>
+  </Pressable>
+) : (
+  <NativeWalletButton
+    method={method}
     testID={methodTestId(method)}
     disabled={disabled}
     accessibilityRole="button"
     accessibilityState={{ disabled: Boolean(disabled) }}
-    accessibilityLabel={`${payWith} ${mark}`}
+    accessibilityLabel={`${payWith} ${method === 'APPLE_PAY' ? 'Apple Pay' : 'Google Pay'}`}
     onPress={() => { if (!disabled) onSelect(method); }}
-    style={({ pressed }) => [
+    style={[
       styles.methodButton,
       disabled ? styles.methodDisabled : null,
-      styles.walletButton,
-      pressed ? styles.walletButtonPressed : null,
     ]}
-  >
-    <Text style={styles.walletPayWith}>{payWith}</Text>
-    <Text style={styles.walletMark}>{mark}</Text>
-  </Pressable>
+  />
 );
 
 const CardRow = ({ styles, label, disabled, onSelect }) => (
@@ -69,7 +72,7 @@ const MethodList = ({
               method={method}
               styles={styles}
               payWith={payWithLabel}
-              mark={labels[method]}
+              label={labels[method]}
               disabled={disabled}
               onSelect={onSelect}
             />
@@ -83,9 +86,9 @@ const MethodList = ({
       ) : null}
       {showCard ? (
         <View testID="tokenization-card-section">
-          <Text style={styles.sectionTitle} testID="tokenization-title">
+          {cardSectionLabel ? <Text style={styles.sectionTitle} testID="tokenization-title">
             {cardSectionLabel}
-          </Text>
+          </Text> : null}
           <CardRow styles={styles} label={labels.CARD} disabled={disabled} onSelect={onSelect} />
         </View>
       ) : null}

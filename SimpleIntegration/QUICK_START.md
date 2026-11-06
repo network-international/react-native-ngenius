@@ -154,7 +154,7 @@ The demo app includes Google Pay integration for Android. To test:
 2. **Open the payment form**
 3. **Look for the Google Pay button**
 4. **Test credentials** are already configured in `src/ngenius-apis.js`:
-   - API Key: `MjBkZWYwZGYtYjJlYS00MzdhLWIyNjAtNjU2NDE1ODhlZDY0Ojc2ZTA0N2I2LTg5NGMtNDBmOS04NTQwLWUzYTUxNmY0MjQ2MA==`
+- **API Key:** obtain through the approved secure configuration flow; never commit credentials.
    - Outlet ID: `7a25a4a6-d7a8-43e3-af16-e190ce2b0f10`
    - MID: `2078478434`
 

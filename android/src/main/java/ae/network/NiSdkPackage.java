@@ -1,7 +1,6 @@
 package ae.network;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import com.facebook.react.ReactPackage;
@@ -17,6 +16,6 @@ public class NiSdkPackage implements ReactPackage {
 
     @Override
     public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
-        return Collections.emptyList();
+        return Arrays.<ViewManager>asList(new NIWalletButtonManager());
     }
 }
