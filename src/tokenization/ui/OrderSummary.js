@@ -7,6 +7,7 @@ export default function OrderSummary({ value, styles = {}, labels = {}, initialE
   useEffect(() => { setExpanded(initialExpanded === true); }, [value, initialExpanded]);
   if (!value) return null;
   const items = Array.isArray(value.items) ? value.items : [];
+  const hasItemPrices = items.some(item => Boolean(item.totalPrice));
   const amount = value.total || value.amount;
   const hasDetails = items.length > 0 || Boolean(value.shipping || value.tax);
   if (!amount && !hasDetails) return null;
@@ -32,7 +33,7 @@ export default function OrderSummary({ value, styles = {}, labels = {}, initialE
         <View testID="order-summary-details" style={styles.orderSummaryBody}>
           {items.length ? <View style={styles.orderSummaryColumns} accessibilityElementsHidden>
             <Text style={styles.orderSummaryColumnLabel}>{labels.items || 'Items'}</Text>
-            <Text style={styles.orderSummaryColumnLabel}>{labels.amount || 'Amount'}</Text>
+            {hasItemPrices ? <Text style={styles.orderSummaryColumnLabel}>{labels.amount || 'Amount'}</Text> : null}
           </View> : null}
           {items.map(item => (
             <View key={item.id} testID="order-summary-item" style={styles.orderSummaryItem}>

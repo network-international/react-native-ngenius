@@ -49,6 +49,7 @@ it('allows item-only detail without inventing a total or currency', () => {
   act(() => byId('order-summary-header')[0].props.onPress());
   expect(byId('order-summary-item')).toHaveLength(1);
   expect(byId('order-summary-total')).toHaveLength(0);
+  expect(tree.root.findAllByType('Text').some(node => node.props.children === 'Amount')).toBe(false);
   expect(JSON.stringify(tree.toJSON())).not.toContain('AED');
   expect(JSON.stringify(tree.toJSON())).not.toContain('0.00');
 });
