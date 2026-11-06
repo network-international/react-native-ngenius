@@ -79,12 +79,14 @@ it('keeps verification badges independent from local choice and session confirma
 });
 
 it('distinguishes a saved wallet prominently and renders the funding scheme as native vector artwork', async () => {
-  const wallet = { ...verified, tokenRef: 'wallet-ref', type: 'WALLET', walletType: 'APPLE_PAY', cardDetails: { scheme: 'MASTERCARD', last4: '4444', expiry: '2030-01' } };
+  const wallet = { ...verified, tokenRef: 'wallet-ref', type: 'WALLET', walletType: 'APPLE_PAY', cardDetails: { scheme: 'MASTERCARD', last4: '4444', expiry: '2031-07' } };
   await renderScreen({ savedTokens: { tokens: [verified, wallet] }, onSelectToken: jest.fn(), selectedTokenRef: wallet.tokenRef });
   const rows = byId('saved-token');
   expect(rows[0].props.accessibilityLabel).toContain('Card');
   expect(rows[1].props.accessibilityLabel).toContain('Apple Pay, Wallet, MASTERCARD •••• 4444');
-  expect(rows[1].props.accessibilityLabel).toContain('Expires 01/30');
+  expect(rows[1].props.accessibilityLabel).toContain('Expires 07/31');
+  expect(byId('saved-token-funding')[0].props.children).toBe('MASTERCARD •••• 4444');
+  expect(byId('saved-token-expiry').map(node => node.props.children)).toEqual(['Expires 12/30', 'Expires 07/31']);
   expect(byId('scheme-icon-visa')).toHaveLength(1);
   expect(byId('scheme-icon-mastercard')).toHaveLength(1);
   expect(tree.root.findAllByType('Path').length).toBeGreaterThan(1);

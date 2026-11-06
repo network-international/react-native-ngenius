@@ -31,8 +31,9 @@ export default function SavedTokens({ value, language, styles, onRetry, selected
           const title = wallet ? token.walletType === 'APPLE_PAY' ? t(language, 'APPLE_PAY') :
             token.walletType === 'GOOGLE_PAY' ? 'Google Pay' : t(language, 'WALLET') : funding || t(language, 'SAVED_PAYMENT_METHOD');
           const badge = t(language, wallet ? 'WALLET' : 'CARD');
-          const expiry = card?.expiry ? `${t(language, 'EXPIRES')} ${card.expiry.slice(5, 7)}/${card.expiry.slice(2, 4)}` : '';
-          const detail = [wallet ? funding : '', expiry, available ? '' : t(language, token.status === 'AWAIT_3DS' ? 'SAVED_TOKEN_PENDING' : 'SAVED_TOKEN_UNAVAILABLE')].filter(Boolean).join(' · ');
+          const expiry = card?.expiry ? `${t(language, 'EXPIRES')} ${card.expiry.slice(5, 7).padStart(2, '0')}/${card.expiry.slice(2, 4)}` : '';
+          const statusLabel = available ? '' : t(language, token.status === 'AWAIT_3DS' ? 'SAVED_TOKEN_PENDING' : 'SAVED_TOKEN_UNAVAILABLE');
+          const detail = [wallet ? funding : '', expiry, statusLabel].filter(Boolean).join(', ');
           return (
             <Pressable key={token.tokenRef} testID="saved-token" accessibilityRole="radio"
               accessibilityLabel={[title, badge, detail, available ? t(language, 'SAVED_TOKEN_VERIFIED') : '', selected ? t(language, 'LOCALLY_SELECTED') : ''].filter(Boolean).join(', ')}
@@ -44,7 +45,9 @@ export default function SavedTokens({ value, language, styles, onRetry, selected
               </View>
               <View style={styles.savedDetails}>
                 <Text style={styles.savedTitle}>{title}</Text>
-                {detail ? <Text style={styles.savedDescription}>{detail}</Text> : null}
+                {wallet && funding ? <Text testID="saved-token-funding" style={styles.savedDescription}>{funding}</Text> : null}
+                {expiry ? <Text testID="saved-token-expiry" style={styles.savedDescription}>{expiry}</Text> : null}
+                {statusLabel ? <Text style={styles.savedDescription}>{statusLabel}</Text> : null}
                 <View style={styles.savedBadges}>
                   <Text style={styles.methodTypeBadge}>{badge}</Text>
                   {available ? <View testID="saved-token-verified" style={styles.verifiedBadge}
