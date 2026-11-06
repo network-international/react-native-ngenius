@@ -36,12 +36,9 @@ to 15.0 or later.
 
 ```jsx
 import {
-  initiateCardPayment,
   createTokenizationClient,
   NgeniusTokenization,
 } from '@network-international/react-native-ngenius';
-
-const payment = await initiateCardPayment(order);
 
 const tokenizationClient = createTokenizationClient({
   baseUrl: tokenizationBaseUrl,
@@ -68,13 +65,16 @@ const { tokens } = await tokenizationClient.getSavedTokens({ outletRef, skipCons
 
 `order` supplies display and currency context; wallet tokenization uses a copied zero-value amount without changing the merchant order or legacy PAYMENT amounts. Native Card tokenization does not require a PAYMENT order. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
 
-With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), the unchecked checkbox must be accepted before Card or wallets can start. `skipConsent={true}` hides the entire consent block and enables actions immediately. Acceptance resets on close/reopen. Missing or invalid URLs leave the consent text visible without a link.
+With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), a click-to-agree notice appears beside the add-method actions. There is no checkbox. Each actionable Add Card/Wallet click records a fresh acceptance timestamp for that attempt and produces `COLLECTED` consent data. Opening legal links, expanding Saving terms, selecting an existing method and cancelling do not accept consent. `skipConsent={true}` removes the entire notice and produces `NOT_COLLECTED` with `merchantSelectedSkipConsent=true`. Missing or invalid terms URLs leave the notice text visible without a link. NI recurring-storage wording remains available through the accessible Saving terms control.
 
 The chooser hides the saved-method section for an empty list. It selects the first usable method
 on entry and preserves a still-valid shopper choice on refresh or native Card Back. A blue radio
 shows that local choice. The independent green Verified badge reflects the returned token status;
 it does not establish merchant-origin import, validation for the current session or payment success.
-Wallet rows name the wallet and display its funding card separately.
+Card and wallet rows both lead with the masked funding card, followed by expiry on its own
+`Expires MM/YY` line. A separate `Card` or `Wallet / Apple Pay` / `Wallet / Google Pay` tag
+identifies the source. Month values are zero-padded. The compact chooser uses a white panel,
+green shield and NI footer; loading feedback disappears when the list has loaded.
 
 Optional `modeConfig` customizes non-legal labels with localized NI defaults:
 
@@ -82,12 +82,59 @@ Optional `modeConfig` customizes non-legal labels with localized NI defaults:
 modeConfig={{
   returnButtonName: 'BACK',
   returnButtonStyle: 'button', // text | link | button
-  labels: { pageTitle: 'Choose a payment method', usePaymentMethod: 'Continue' },
+  showSecurityNote: true,
+  orderSummaryInitiallyExpanded: false,
+  privacyPolicyUrl: 'https://merchant.example/privacy',
+  labels: {
+    pageTitle: 'Complete your booking',
+    pageSubtitle: 'Choose your preferred way to pay',
+    usePaymentMethod: 'Continue',
+  },
 }}
 ```
 
 See [the UI refinement notes](docs/tokenization-ui-refinement.md) for supported labels. NI consent
-wording and official wallet artwork are not configurable through these labels.
+wording and official wallet artwork are not configurable through these labels. The subtitle is
+omitted unless supplied. Privacy Policy is linked only for a valid HTTP(S) URL. The security note
+defaults to “Card details are sent securely to Network International.”; set `showSecurityNote: false`
+to hide it. This copy does not claim application-level end-to-end encryption.
+
+### Optional order details
+
+`orderDetails` adds display context without starting a payment. All fields are optional:
+
+```jsx
+const orderDetails = {
+  language: 'en',
+  amount: { currencyCode: 'AED', value: '3910' },
+  orderSummary: {
+    items: [{
+      description: 'General admission',
+      quantity: '2',
+      category: 'Tickets',
+      totalPrice: { currencyCode: 'AED', value: '3000' },
+    }],
+    shipping: { currencyCode: 'AED', value: '500' },
+    tax: { currencyCode: 'AED', value: '410' },
+    total: { currencyCode: 'AED', value: '3910' },
+  },
+};
+
+<NgeniusTokenization orderDetails={orderDetails} {...tokenizationProps} />
+```
+
+Money accepts `{ currencyCode, value }`, where `value` is a nonnegative integer in minor units,
+as a safe integer number or a digit string. For example, AED `'3910'` displays as AED 39.10;
+currency precision follows the supplied ISO currency. If `value` is absent, `formattedValue`
+may supply a canonical major-unit decimal string such as `'39.10'`, without currency text or
+grouping. When both are supplied, `value` wins. Invalid or incomplete money is omitted.
+
+The summary starts collapsed; `modeConfig.orderSummaryInitiallyExpanded: true` opens its details
+initially. Its header prefers the supplied summary total, then amount. Missing amounts, currency,
+items, quantities, fees and totals are never inferred, summed or converted. With no usable details,
+no summary appears. `orderDetails` replaces the legacy `order` display context rather than merging
+fields; omitting it retains the legacy fallback. Language resolves from supported `language`, then
+`orderDetails.language`, then `order.language`, then English (EN/FR/AR, including region tags).
 
 ### Proposed session selection, pending backend contract
 
@@ -120,7 +167,7 @@ Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the s
 - Current sandbox QA uses `skipConsent=true`, mapping to `GET /api/outlets/{outletRef}/tokens?consentOff=true`. Empty `tokens`, pagination metadata and omitted `tncUrl` are supported. The UI displays masked saved-method details and refreshes after VERIFIED.
 - SimpleIntegration has a runtime short-lived Access-Token input (memory only) and a separate offline UI preview. Tokenization entry does not create a PAYMENT order or exchange an API key. EN/FR/AR and merchant theme controls are available on both platforms.
 - Apple Pay has a separate native capture method returning only the original encrypted `PKPaymentToken.paymentData`. Android returns the raw Google Pay `tokenizationData.token`. PAYMENT APIs remain separate.
-- Consent uses Hossam’s confirmed 26 October contract. Both statuses include UTC clientTimestamp, channel, actual SDK version and basic React Native device metadata. NOT_COLLECTED uses merchantSelectedSkipConsent=true; COLLECTED includes the acceptance-event time, normalized locale and the validated terms URL shown to the shopper. Unknown fields and identifiers are stripped. No IP or server timestamp is supplied by the SDK.
+- Consent uses Hossam’s confirmed 26 October payload contract. Both statuses include UTC clientTimestamp, channel, actual SDK version and basic React Native device metadata. NOT_COLLECTED uses merchantSelectedSkipConsent=true; COLLECTED uses the current Add Card/Wallet click timestamp, normalized locale and the validated terms URL shown to the shopper. Unknown fields and identifiers are stripped. No IP or server timestamp is supplied by the SDK.
 - Card tokenization is native on iOS and Android. Native entry, validation and HTTPS POST use `/api/outlets/{outletRef}/cards` with `{ card, consentData }`. JS receives a ready event, obtains fresh auth and prepares consent; PAN/CVV stay native. Only safe response fields return to JS. Redirects, response-body errors and credential persistence are disabled. Existing PAYMENT APIs stay separate.
 - Apple/Google capture connects to the real `/wallets` JSON body with the confirmed consentData and unchanged encryptedPayload. There is no consent placeholder or missing-contract block. Live E2E still requires current sandbox credentials and supported devices/UAT wallet config.
 - Custom JS transports/fetch mocks apply to JS API calls. They cannot carry plaintext cards; native Card submission is refused when such an override is installed. Offline preview can open/cancel the form, but never POSTs it.

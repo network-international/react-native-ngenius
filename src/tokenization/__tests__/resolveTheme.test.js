@@ -9,7 +9,7 @@ describe('resolveTokenizationTheme', () => {
     expect(theme.branding.buttonText).toBe(DESIGN_TOKENS.colors.buttonText);
     expect(theme.branding.pageBackground).toBe(DESIGN_TOKENS.colors.pageBackground);
     expect(theme.branding.fontFamily).toBeUndefined();
-    expect(theme.layout.sizes.buttonHeight).toBe(56);
+    expect(theme.layout.sizes.buttonHeight).toBe(48);
     expect(theme.layout.radius.lg).toBe(12);
   });
 
@@ -151,7 +151,7 @@ describe('resolveTokenizationTheme', () => {
     expect(theme.branding.pageBackground).toBe(DESIGN_TOKENS.colors.pageBackground);
     expect(theme.branding.surfaceBackground).toBe(DESIGN_TOKENS.colors.surface);
     expect(theme.branding.fontFamily).toBeUndefined();
-    expect(theme.layout.sizes.buttonHeight).toBe(56);
+    expect(theme.layout.sizes.buttonHeight).toBe(48);
   });
 
   it('does not map invented ThemeConfig fields such as primaryColor', () => {

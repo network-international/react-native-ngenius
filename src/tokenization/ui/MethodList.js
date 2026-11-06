@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
-import CardSchemeIcon from './CardSchemeIcon';
+import SecurityIcon from './SecurityIcon';
 import NativeWalletButton from '../NativeWalletButton';
 
 const WALLET_METHODS = ['APPLE_PAY', 'GOOGLE_PAY'];
@@ -28,7 +28,7 @@ const WalletRow = ({ method, styles, payWith, label, disabled, onSelect }) => di
   />
 );
 
-const CardRow = ({ styles, label, disabled, onSelect }) => (
+const CardRow = ({ styles, label, disabled, onSelect, iconColor }) => (
   <Pressable
     testID={methodTestId('CARD')}
     disabled={disabled}
@@ -43,7 +43,7 @@ const CardRow = ({ styles, label, disabled, onSelect }) => (
       pressed ? styles.cardButtonPressed : null,
     ]}
   >
-    <CardSchemeIcon styles={styles} />
+    <SecurityIcon kind="lock" color={iconColor || '#FFFFFF'} />
     <Text style={styles.cardButtonLabel}>{label}</Text>
   </Pressable>
 );
@@ -57,6 +57,8 @@ const MethodList = ({
   cardSectionLabel,
   disabled,
   onSelect,
+  securityLabel,
+  buttonIconColor,
 }) => {
   const wallets = WALLET_METHODS.filter((method) => methods.includes(method));
   const showCard = methods.includes('CARD');
@@ -80,16 +82,19 @@ const MethodList = ({
         </View>
       ) : null}
       {showDivider ? (
-        <Text style={styles.divider} testID="tokenization-methods-divider">
-          {dividerLabel}
-        </Text>
+        <View style={styles.dividerRow} testID="tokenization-methods-divider">
+          <View style={styles.dividerLine} /><Text style={styles.divider}>{dividerLabel}</Text><View style={styles.dividerLine} />
+        </View>
       ) : null}
       {showCard ? (
         <View testID="tokenization-card-section">
+          {securityLabel ? <View testID="tokenization-security-note" style={styles.securityNote}>
+            <Text style={styles.securityNoteLabel}>• {securityLabel}</Text>
+          </View> : null}
           {cardSectionLabel ? <Text style={styles.sectionTitle} testID="tokenization-title">
             {cardSectionLabel}
           </Text> : null}
-          <CardRow styles={styles} label={labels.CARD} disabled={disabled} onSelect={onSelect} />
+          <CardRow styles={styles} label={labels.CARD} disabled={disabled} onSelect={onSelect} iconColor={buttonIconColor} />
         </View>
       ) : null}
     </View>

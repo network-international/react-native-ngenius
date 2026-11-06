@@ -364,7 +364,7 @@ it('rejects a previous-session native Add Card handler after the merchant switch
   expect(startNativeCardTokenization).not.toHaveBeenCalled();
 });
 
-it.each(['session', 'outlet'])('replaces the order snapshot and clears old add feedback on a new %s context', async boundary => {
+it.each(['session', 'outlet', 'reopen'])('replaces the order snapshot and clears old add feedback on a new %s context', async boundary => {
   const firstOrder = {
     action: 'VERIFY', amount: { currencyCode: 'AED', value: 100 },
     paymentMethods: { card: ['VISA'], wallet: [] },
@@ -374,6 +374,7 @@ it.each(['session', 'outlet'])('replaces the order snapshot and clears old add f
     paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] },
   };
   native.isGooglePaySupported.mockResolvedValueOnce(true);
+  if (boundary === 'reopen') native.isGooglePaySupported.mockResolvedValueOnce(true);
   native.initiateGooglePay.mockResolvedValueOnce({ token: 'fixture-encrypted-wallet' });
   startNativeCardTokenization
     .mockReturnValueOnce({ promise: Promise.resolve({ state: 'SUCCESS', result: {} }), cancel: jest.fn() })
@@ -382,6 +383,7 @@ it.each(['session', 'outlet'])('replaces the order snapshot and clears old add f
   client.addWallet.mockResolvedValue({ ...card, type: 'WALLET', walletType: 'GOOGLE_PAY' });
   await open({ order: firstOrder, tokenizationClient: client });
   expect(screen().methods).toEqual(['CARD']);
+  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', formattedValue: '1.00' });
   await act(async () => { screen().onSelectMethod('CARD'); await flush(); });
   expect(screen().tokenSaved).toBe(true);
   await act(async () => { screen().onSelectMethod('CARD'); await flush(); });
@@ -391,14 +393,19 @@ it.each(['session', 'outlet'])('replaces the order snapshot and clears old add f
   // Ordinary order prop updates keep the active session's original snapshot.
   await update({ order: nextOrder });
   expect(screen().methods).toEqual(['CARD']);
+  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', formattedValue: '1.00' });
   expect(screen().tokenSaved).toBe(true);
   expect(screen().status).toBe('FAILED');
 
-  await update(boundary === 'session' ? { sessionRef: 'session-2' } : { outletRef: 'outlet-2' });
+  if (boundary === 'reopen') {
+    await update({ visible: false });
+    await update({ visible: true });
+  } else await update(boundary === 'session' ? { sessionRef: 'session-2' } : { outletRef: 'outlet-2' });
   expect(screen().status).toBe('READY');
   expect(screen().tokenSaved).toBe(false);
   expect(screen().errorMessage).toBeUndefined();
   expect(screen().methods).toEqual(['GOOGLE_PAY']);
+  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'USD', formattedValue: '2.00' });
   await act(async () => { screen().onSelectMethod('GOOGLE_PAY'); await flush(); });
   expect(native.initiateGooglePay).toHaveBeenCalledWith({
     ...nextOrder, amount: { ...nextOrder.amount, value: 0, formattedValue: '0.00' },

@@ -62,6 +62,8 @@ const resolveTokenizationTheme = (branding, options = {}) => {
       buttonHover,
       buttonText,
       textPrimary,
+      consentColor: normalizeColour(source.paymentFontColour) || DESIGN_TOKENS.colors.textSecondary,
+      linkColor: normalizeColour(source.paymentFontColour) || DESIGN_TOKENS.colors.terms,
       headingColor,
       pageBackground:
         normalizeColour(source.pageBackgroundColour) || DESIGN_TOKENS.colors.pageBackground,

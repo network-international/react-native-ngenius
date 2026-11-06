@@ -1,9 +1,11 @@
 const { t } = require('./strings');
+const { supportedTermsUrl } = require('./termsUrl');
 
 const LABEL_KEYS = [
-  'pageTitle', 'savedMethodsTitle', 'addMethodTitle', 'addCard',
+  'pageTitle', 'pageSubtitle', 'savedMethodsTitle', 'addMethodTitle', 'addCard',
   'addAnotherCard', 'usePaymentMethod', 'selectionPending',
   'selectionSuccessTitle', 'selectionSuccessMessage', 'selectionError',
+  'orderSummary', 'orderItems', 'orderAmount', 'orderShipping', 'orderTax', 'orderTotal',
 ];
 const plainLabel = value =>
   typeof value === 'string' && value.trim() && value.trim().length <= 200 &&
@@ -20,6 +22,9 @@ const resolveModeConfig = (value, language = 'en') => {
   return {
     returnButtonName: plainLabel(source.returnButtonName) || t(language, 'CONTINUE_SHOPPING'),
     returnButtonStyle: ['text', 'link', 'button'].includes(source.returnButtonStyle) ? source.returnButtonStyle : 'button',
+    showSecurityNote: source.showSecurityNote !== false,
+    orderSummaryInitiallyExpanded: source.orderSummaryInitiallyExpanded === true,
+    ...(supportedTermsUrl(source.privacyPolicyUrl) ? { privacyPolicyUrl: supportedTermsUrl(source.privacyPolicyUrl) } : {}),
     labels,
   };
 };

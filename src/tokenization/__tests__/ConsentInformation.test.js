@@ -157,15 +157,15 @@ describe('ConsentInformation', () => {
       paymentFontColour: '#123456',
       languages: [{ language: 'fr', bodyCopyFont: 'Georgia' }],
     });
-    expect(node.props.style).toMatchObject({
-      color: '#123456', fontFamily: 'Georgia', fontSize: 13, lineHeight: 16,
+    expect(Object.assign({}, ...node.props.style)).toMatchObject({
+      color: '#123456', fontFamily: 'Georgia', fontSize: 12, lineHeight: 18,
       paddingTop: 10, paddingBottom: 10, writingDirection: 'ltr',
     });
     expect(links(node)[0].props.style.color).toBe('#123456');
-    expect(render({ language: 'ar' }).props.style).toMatchObject({
-      fontFamily: 'Arial', textAlign: 'right', writingDirection: 'rtl', paddingTop: 12,
+    expect(Object.assign({}, ...render({ language: 'ar' }).props.style)).toMatchObject({
+      fontFamily: 'Arial', textAlign: 'right', writingDirection: 'rtl', paddingTop: 10,
     });
-    expect(render({}, { paymentFontColour: 'invalid' }).props.style.color)
-      .toBe(resolveTokenizationTheme().branding.textPrimary);
+    expect(Object.assign({}, ...render({}, { paymentFontColour: 'invalid' }).props.style).color)
+      .toBe(resolveTokenizationTheme().branding.consentColor);
   });
 });

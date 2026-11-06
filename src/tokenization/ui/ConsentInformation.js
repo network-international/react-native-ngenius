@@ -34,7 +34,7 @@ const ConsentInformation = ({ information, language, styles }) => {
   }
 
   return React.createElement(Text, {
-    style: styles.consentInformation,
+    style: [styles.consentInformation, styles.storageTermsInformation],
     testID: 'tokenization-consent-information',
   }, ...content);
 };

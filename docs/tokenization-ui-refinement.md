@@ -1,60 +1,47 @@
 # Tokenization UI refinement, 6 November 2026
 
-Status: frontend POC changes for PR #75, based on NINGG-34386 at 6c9db81. Final backend session integration and live E2E remain pending. No backend implementation, payment orchestration or release version change. Historical screenshots use explicit offline fixtures.
+Status: frontend POC changes for NINGG-34386, PR #75. Use the current PR SHA and matching build context for review. No backend implementation, payment orchestration or release version change. Offline previews and simulated selected-token responses are demo/mock evidence.
 
 ## Shopper experience
 
-- Loaded empty list: no Saved payment methods heading and no empty-list message. Show Add payment method, available wallet options, Card, and NI consent/T&C when consent is required.
-- Existing methods: masked scheme/last4, expiry, wallet source when applicable, one radio selection identified internally by tokenRef. AWAIT_3DS/FAILED records cannot be selected. Selection is not payment authorization.
-- The first usable method is selected on entry. The shopper can choose another; refresh preserves a still-valid explicit choice. Use this payment method submits the selected UUID privately to NI session storage. Only HTTP 200 shows the success animation, followed by local closing and onSelectionComplete({flow: TOKENIZATION, status: SELECTED, canClose: true}). The completion never exposes the selected token/card and does not represent payment or new-token creation. Errors remain open for retry or another selection.
-- The selected row remains selected when native Card returns through Back. A new launch selects the first usable method. Refresh removes a selection that is no longer in the authoritative current list.
-- 6 November refinement: a blue radio identifies the shopper's local choice without a visible Selected label. A separate green check with the Verified label reflects a token's backend-reported VERIFIED status, independently of whether that row is selected. It does not assert merchant-origin import, fresh validation for the current session, payment authorization, or successful payment. Screen readers retain the radio checked state and announce the separate verification status. Only the separate selectedToken HTTP 200 confirmation starts the acknowledgement and closing animation.
-- Add another card uses the existing native form. A visible leading Back uses the existing Aborted/cancel cleanup on iOS and Android. It returns to method selection without submitting a new card. PAN/CVV stay native.
-- Saved-list loading uses an animated skeleton. Submission/verification uses three animated dots. Native Card shows a spinner after valid input while waiting. Reduced-motion preferences stop decorative pulses.
-- Loading, loaded empty, and load failure are distinct states. Initial loading cannot flash an empty-list message. A load error offers Retry.
-- Consent remains an unchecked explicit checkbox for adding a new method. T&C is a separate accessible link using the response tncUrl. Opening it does not accept consent. skipConsent=true removes the entire consent block. Selecting an already saved method does not request fresh storage consent.
-- Before consent, wallet options are neutral blocked rows. When enabled, official PKPaymentButton/Google Pay PayButton render. Existing platform/readiness filtering and wallet SDK capture calls remain authoritative.
-- Merchant colors/fonts/logo, EN/FR/AR, RTL, secure native card capture, and existing payment SDK exports remain available.
+- A compact white panel uses the hosted Museum preview as its visual reference, with a green shield, NI footer, merchant theme overrides and optional title/subtitle. No successful-list “loaded” message remains on screen.
+- An empty list hides the saved-method heading and shows supported Add Card/Wallet actions. Loading uses an animated skeleton; a load failure offers Retry. Initial loading cannot flash the empty state.
+- Card and wallet rows lead with the same scheme and masked funding number. Expiry occupies its own `Expires MM/YY` line, with a zero-padded month. A separate `Card`, `Wallet / Apple Pay` or `Wallet / Google Pay` tag identifies the source. Seven NI PayPage scheme artworks plus a generic fallback are used; MC and CUP aliases map to Mastercard and UnionPay.
+- The first usable method is selected on entry. Refresh and native Card Back preserve a still-valid shopper choice; records absent from the authoritative refreshed list lose selection. AWAIT_3DS/FAILED records cannot be selected.
+- A blue radio indicates local selection. A separate green Verified badge reflects backend-reported VERIFIED status. It does not establish fresh session validation, merchant-origin import or payment authorization. Screen readers announce radio state and verification separately.
+- Add another card opens the existing native form. Back uses existing Aborted/cancel cleanup and returns without submitting. PAN/CVV stay native. Native entry, legacy payment functions and wallet capture capabilities are unchanged by this visual refinement.
+- Submission uses animated dots. Reduced-motion preferences stop decorative pulses. Official platform wallet buttons still use the existing supported-method and device-readiness filtering.
 
-## Design basis
+## Click-to-agree consent
 
-Real Visa, Mastercard, Amex, Diners, Discover, JCB, UnionPay and generic-card vector artworks are adapted from modern PayPage SVG components using react-native-svg. Wallet rows show the wallet brand and an explicit Wallet badge; the funding card is secondary.
+The user-approved flow replaces the checkbox with a notice beside Add Card/Wallet: continuing agrees to the displayed Terms and Conditions, and Privacy Policy when a valid link is supplied. Each actionable Add click records a fresh UTC acceptance timestamp for that attempt and prepares `COLLECTED` consent data. A retry is a new Add attempt. No acceptance is created by selecting an existing method, cancelling, opening a legal link or expanding Saving terms.
 
-Modern PayPage SavedCardsSelection is the internal visual reference: 64 px rows, 8 px radius, 12 px gap, 46 by 30 scheme badge, #DADADA border, #F5F9FC selected background, #0069B1 radio state. The existing PayPage button palette and merchant overrides are retained.
+`skipConsent=true` removes the whole notice and sends `NOT_COLLECTED` with `merchantSelectedSkipConsent=true`. The response `tncUrl` is linked only when valid; otherwise the notice remains plain text. NI recurring-storage wording is retained behind an accessible Saving terms expand/collapse control. Neither the NI legal wording nor wallet artwork is merchant-editable through labels.
 
-External primary references support separating selection, addition and confirmation; they do not establish comparative conversion performance:
+This changes frontend interaction, not the confirmed consent payload schema or backend deployment status. Live collected-consent validation remains pending.
 
-- [Stripe Mobile Payment Element](https://docs.stripe.com/payments/mobile/embedded): saved-method selection and recognizable masked identity.
-- [Stripe setup flow](https://docs.stripe.com/payments/mobile/accept-payment-embedded?platform=react-native&type=setup): selection/details sheet, loading/error handling, cancellation separate from payment success.
-- [Adyen tokenization](https://docs.adyen.com/standard/integration/drop-in/tokenization): stored-method reuse and explicit consent for storing new details.
-- [Apple Pay interface guidance](https://developer.apple.com/design/human-interface-guidelines/apple-pay) and [Google Pay Android brand guidelines](https://developers.google.com/pay/api/android/guides/brand-guidelines): official wallet buttons for actual wallet entry.
+## Optional amount and order summary
 
-## Scope and pending contract
+`orderDetails` accepts optional `language`, `amount` and `orderSummary`. The summary accepts `items` (description, quantity, category, totalPrice), shipping, tax and total. It is initially collapsed; `modeConfig.orderSummaryInitiallyExpanded: true` opens details initially. The header uses the supplied summary total, then amount. Without usable supplied data, it is absent. An amount alone does not create an expandable empty summary.
 
-The user-provided getSession sketches (advicedToken, selectedToken, allowedPaymentMethods, mcpEnabled, mcpCurrencies) are product/backend discussion input. This UI change does not add those wire fields or invent session behavior. The current client still uses Access-Token directly.
+Each money field uses `{ currencyCode, value }`. `value` is a nonnegative integer in minor units, as a safe integer number or digit string. AED `'3910'` means AED 39.10; JPY `'3910'` means JPY 3,910. Currency precision follows a recognized ISO currency. If `value` is absent, `formattedValue` may contain a canonical major-unit decimal string such as `'39.10'`, without grouping or currency text. A supplied `value` takes precedence. Invalid or incomplete money is omitted. Large integer strings retain their precision.
 
-The updated supplied diagram and transcript require selected-token storage inside NI, followed by a status-only handoff to the merchant app without charging. Merchant payment/session orchestration, accepted production consent terms, live populated-token responses, token lifecycle eligibility beyond current VERIFIED semantics, and real wallet E2E remain separate contract/QA work. The supplied draft PUT route is enabled only with enableDraftSessionSelection: true; the endpoint/body/error/idempotency contract is not final.
-
-## Review artifacts
-
-See [RN Implementation Notes](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5451218947) for screenshots and historical build context, and [the QA Testing Guide](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5615386697) for the current frontend/backend test scope. Native Card screenshots contain blank fields and no request payloads. The demo terms page is an explicitly labeled navigation fixture, not merchant legal wording.
-
-Hossam's 6 November update says to use Add Card for DEV and UAT for now and wait for the new deployed version. This is environment guidance, not a successful live Add Card retest or a final session contract. Record the actual deployed version when retesting.
-
-## Documentation preference
-
-Use commas, colons, parentheses, or a short hyphen. Do not use the long dash character (U+2014).
+The SDK does not invent missing amounts, currencies, quantities, fees or totals, multiply quantities, calculate totals or perform FX. Explicit `orderDetails` replaces rather than merges legacy `order` display context; omitting it uses `order`. Language falls back through supported component `language`, `orderDetails.language`, legacy `order.language`, then English. EN/FR/AR and region-tag inputs are supported. These display values do not initiate payment. Wallet tokenization still receives a copied zero-value order context; legacy payment calls retain their original amounts.
 
 ## Supported modeConfig
 
-All fields are optional. Missing or invalid values use NI localized defaults. Only the listed UI labels are supported; NI consent text and wallet artwork remain controlled by the SDK.
+All fields are optional. Missing or invalid values use localized NI defaults, except that subtitle and Privacy Policy link remain absent when not supplied.
 
 ```js
 modeConfig: {
   returnButtonName: 'BACK',
   returnButtonStyle: 'button', // text | link | button; default button
+  showSecurityNote: true,
+  orderSummaryInitiallyExpanded: false,
+  privacyPolicyUrl: 'https://merchant.example/privacy',
   labels: {
-    pageTitle: 'Choose a payment method',
+    pageTitle: 'Complete your booking',
+    pageSubtitle: 'Choose your preferred way to pay',
     usePaymentMethod: 'Continue',
     addCard: 'Add Card',
     addAnotherCard: 'Add another card'
@@ -62,17 +49,27 @@ modeConfig: {
 }
 ```
 
-Other supported labels: savedMethodsTitle, addMethodTitle, selectionPending, selectionSuccessTitle, selectionSuccessMessage, selectionError. Labels are plain text. The return control is visible at the root and emits cancellation, not a successful selection.
+Other supported labels: savedMethodsTitle, addMethodTitle, selectionPending, selectionSuccessTitle, selectionSuccessMessage, selectionError, orderSummary, orderItems, orderAmount, orderShipping, orderTax and orderTotal. Labels are plain text, at most 200 characters, without control characters. The return control emits cancellation, not successful selection.
 
-## Draft session selection adapter
+`privacyPolicyUrl` must be a valid HTTP(S) web URL; no placeholder link is generated. The security note defaults to “Card details are sent securely to Network International.” Set `showSecurityNote: false` to hide it. The green shield and NI footer do not imply payment success. No application-level end-to-end encryption claim is made.
+
+## Draft session selection and pending backend work
+
+The current client uses Access-Token directly. No create/get/validate-session integration is added. The supplied session sketches, MCP/currency conversion and later merchant payment/3DS remain contract discussion input.
 
 ```text
 PUT /api/outlets/{outletRef}/sessions/{sessionRef}/selectedToken
 { "selectedToken": "<UUID>" }
 ```
 
-The client requires explicit enableDraftSessionSelection: true and the component requires sessionRef. No create/get/validate-session API is invented. Submit shows progress; HTTP 200 shows a brief selected check and closes; all other statuses leave the chooser open. A successful empty response body is valid. No token/card data is forwarded through onSelectionComplete.
+This preliminary route requires explicit `enableDraftSessionSelection: true` on the client and `sessionRef` on the component. Final endpoint/body/error/idempotency behavior and persistence are pending. Only HTTP 200 starts the brief confirmation and local close, followed by `onSelectionComplete({ flow: 'TOKENIZATION', status: 'SELECTED', canClose: true })`. An empty success response body is valid. Other statuses leave the chooser open for retry or another choice. No selected token/card data is exposed through completion; no payment is initiated. In session mode, VERIFIED Add Card/Wallet refreshes the list and separate selection confirmation is still required. Existing non-session callbacks remain available.
 
-Wallet capture receives a copied zero-value order context; legacy payment functions keep the merchant order amount. New method creation may require backend verification independently of selecting an existing method.
+Hossam's 6 November guidance is to use Add Card for DEV and UAT for now and wait for the new deployed version. This is not a successful live Add Card retest. Final selected-token persistence, collected-consent deployment and physical wallet E2E remain pending. Record the actual deployed version when retesting.
 
-MCP/currency conversion and later merchant payment/3DS steps in the supplied target diagram remain separate pending integrations. This patch does not add FX APIs or change payment orchestration.
+## Review evidence
+
+[RN Implementation Notes](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5451218947) contains screenshots and per-build context; [QA Testing Guide](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5615386697) separates frontend checks from backend validation. Native Card screenshots use blank fields. Demo terms navigation and wallet/token responses are labeled fixtures, without secrets or payment payloads.
+
+Internal references are the hosted Museum preview for the compact shell and modern PayPage for NI card artwork. Official [Apple Pay](https://developer.apple.com/design/human-interface-guidelines/apple-pay) and [Google Pay](https://developers.google.com/pay/api/android/guides/brand-guidelines) guidance govern actual platform wallet buttons. These references do not establish comparative conversion performance.
+
+Use short hyphens, commas, colons or parentheses in new documentation. Do not use U+2014.

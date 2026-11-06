@@ -26,6 +26,7 @@ const { VERIFICATION_STATES } = require('./verificationStates');
 const { savedPaymentMethodSelection, defaultSelectedTokenRef } = require('./savedPaymentMethodSelection');
 const { resolveModeConfig } = require('./modeConfig');
 const { walletTokenizationOrder } = require('./walletTokenizationOrder');
+const { normalizeOrderDetails } = require('./orderDetails');
 const {
   runGooglePayTokenization,
   runWalletTokenization,
@@ -40,10 +41,11 @@ const FLOW = 'TOKENIZATION';
 
 const NgeniusTokenization = ({
   visible = false,
-  order,
+  order: legacyOrder,
+  orderDetails,
   paymentMethods,
   branding,
-  language = 'en',
+  language: languageProp,
   skipConsent = false,
   tokenizationClient,
   outletRef,
@@ -56,6 +58,13 @@ const NgeniusTokenization = ({
   modeConfig,
   onSelectionComplete,
 }) => {
+  // Explicit details never merge with or silently fall back to a legacy order.
+  const suppliedOrder = orderDetails == null ? legacyOrder : orderDetails;
+  const order = suppliedOrder && typeof suppliedOrder === 'object' && !Array.isArray(suppliedOrder)
+    ? suppliedOrder : undefined;
+  const language = [languageProp, orderDetails?.language, legacyOrder?.language]
+    .map(value => typeof value === 'string' ? value.toLowerCase().split(/[-_]/)[0] : undefined)
+    .find(value => ['en', 'fr', 'ar'].includes(value)) || 'en';
   const tokenizationClientRef = useRef(tokenizationClient);
   tokenizationClientRef.current = tokenizationClient;
   const [tnc, setTnc] = useState({ loaded: false, url: undefined });
@@ -75,17 +84,6 @@ const NgeniusTokenization = ({
   const onSelectionCompleteRef = useRef(onSelectionComplete);
   onSelectionCompleteRef.current = onSelectionComplete;
   const resolvedModeConfig = useMemo(() => resolveModeConfig(modeConfig, language), [modeConfig, language]);
-  const consent = resolveConsentInformation({
-    skipConsent,
-    order,
-    tncUrl: tnc.url,
-  });
-  const consentDiagnostic = tnc.loaded ? consent?.diagnostic : undefined;
-  useEffect(() => {
-    if (visible && consentDiagnostic) {
-      console.info('[TOKENIZATION_CONSENT]', { code: consentDiagnostic });
-    }
-  }, [visible, consentDiagnostic]);
   const theme = useMemo(
     () => resolveTokenizationTheme(branding, { language }),
     [branding, language],
@@ -104,6 +102,21 @@ const NgeniusTokenization = ({
   }
   const wasVisibleRef = useRef(false);
   const sessionOrderRef = useRef(order);
+  const presentationSource = sessionOrderRef.current;
+  const presentationOrder = useMemo(() => normalizeOrderDetails({
+    order: presentationSource, language,
+  }), [presentationSource, language]);
+  const consent = resolveConsentInformation({
+    skipConsent,
+    order: presentationSource,
+    tncUrl: tnc.url,
+  });
+  const consentDiagnostic = tnc.loaded ? consent?.diagnostic : undefined;
+  useEffect(() => {
+    if (visible && consentDiagnostic) {
+      console.info('[TOKENIZATION_CONSENT]', { code: consentDiagnostic });
+    }
+  }, [visible, consentDiagnostic]);
   const [, setSessionNonce] = useState(0);
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
@@ -370,7 +383,8 @@ const NgeniusTokenization = ({
   const selectionUiRef = useRef(null);
   selectionUiRef.current = {
     savedTokens, selectedTokenRef, status, visible, selectionStatus,
-    tokenizationSessionRef, outletRef,
+    tokenizationSessionRef, outletRef, skipConsent, termsUrl: consent?.url,
+    language, methods,
   };
   const onSelectMethod = useCallback(
     async method => {
@@ -378,16 +392,37 @@ const NgeniusTokenization = ({
       if (
         !visible || !current.visible || current.savedTokens.loading ||
         current.outletRef !== outletRef || current.tokenizationSessionRef !== tokenizationSessionRef ||
+        current.skipConsent !== skipConsent || current.termsUrl !== consent?.url || current.language !== language ||
+        !current.methods.includes(method) ||
+        ![VERIFICATION_STATES.READY, VERIFICATION_STATES.FAILED].includes(current.status) ||
         !['idle', 'failed'].includes(current.selectionStatus) || selectionAttemptRef.current ||
-        !sessionRef.current.isCurrent(renderedGeneration) || !sessionRef.current.canProceed(skipConsent)
+        !sessionRef.current.isCurrent(renderedGeneration) || sessionRef.current.isInFlight() ||
+        tokenizationClientRef.current !== tokenizationClient
       ) return;
       const generation = renderedGeneration;
       const isCurrent = () => sessionRef.current.isCurrent(generation);
+      const activeOrder = sessionOrderRef.current || order;
+      if (!activeOrder && method !== 'CARD') {
+        finishError({ status: 'Error', error: 'Order not found' });
+        return;
+      }
+      if (!tokenizationClient || !outletRef) {
+        finishError({ status: 'Error', error: 'Tokenization client and outlet are required' });
+        return;
+      }
+      // Clicking an actionable Add Card/Wallet control accepts the notice shown
+      // for this attempt. Record it before acquiring the native gate, whose
+      // in-flight state prevents later acceptance changes or duplicate clicks.
+      if (!sessionRef.current.setAccepted(false, undefined, generation)) return;
+      const accepted = skipConsent !== true;
+      if (accepted && !sessionRef.current.setAccepted(true, () => new Date(), generation)) return;
       const acceptedAt = sessionRef.current.acceptanceTimestamp();
+      if (!sessionRef.current.canProceed(skipConsent) || !sessionRef.current.tryBeginNative()) return;
+      setConsentAccepted(accepted);
       const getConsentData = () =>
         buildConsentData({
           skipConsent,
-          accepted: consentAccepted,
+          accepted,
           acceptedAt,
           tncUrl: consent?.url,
           language,
@@ -395,14 +430,6 @@ const NgeniusTokenization = ({
           osVersion: Platform.Version,
           screen: Dimensions.get('screen'),
         });
-      const activeOrder = sessionOrderRef.current || order;
-      if (!sessionRef.current.tryBeginNative()) {
-        return;
-      }
-      if (!activeOrder && method !== 'CARD') {
-        finishError({ status: 'Error', error: 'Order not found' });
-        return;
-      }
       setSelectionStatus('idle');
       setSelectionError(undefined);
       setStatus(VERIFICATION_STATES.SUBMITTING);
@@ -492,7 +519,6 @@ const NgeniusTokenization = ({
       visible,
       skipConsent,
       language,
-      consentAccepted,
       consent?.url,
       theme,
       order,
@@ -593,19 +619,9 @@ const NgeniusTokenization = ({
       <TokenizationScreen
         theme={theme}
         language={language}
+        orderSummary={presentationOrder}
         consent={consent}
         consentAccepted={consentAccepted}
-        onConsentChange={accepted => {
-          if (
-            sessionRef.current.setAccepted(
-              accepted,
-              () => new Date(),
-              renderedGeneration,
-            )
-          ) {
-            setConsentAccepted(accepted);
-          }
-        }}
         savedTokens={savedTokens}
         selectedTokenRef={selectedTokenRef}
         onSelectToken={onSelectToken}

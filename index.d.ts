@@ -215,10 +215,12 @@ export interface TokenizationResult {
 export interface NgeniusTokenizationProps {
   visible?: boolean;
   order?: NGeniusOrder;
+  /** Optional display/currency context. Takes precedence over order without merging fields. */
+  orderDetails?: TokenizationOrderDetails;
   paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY'>;
   branding?: Record<string, unknown>;
   language?: string;
-  /** Default false: explicit session-scoped checkbox acceptance is required. */
+  /** Default false: Add Card/Wallet clicks accept the displayed terms for that attempt. */
   skipConsent?: boolean;
   tokenizationClient?: TokenizationClient;
   outletRef?: string;
@@ -234,6 +236,30 @@ export interface NgeniusTokenizationProps {
   onSelectionComplete?: (result: TokenizationSelectionCompletion) => void;
 }
 
+/** Values are minor units (for example AED "3910" displays as AED 39.10). */
+export interface TokenizationMoney {
+  currencyCode?: string;
+  value?: number | string;
+  formattedValue?: string;
+}
+
+export interface TokenizationOrderDetails {
+  amount?: TokenizationMoney;
+  language?: string;
+  orderSummary?: {
+    items?: Array<{
+      description?: string;
+      totalPrice?: TokenizationMoney;
+      quantity?: number | string;
+      category?: string;
+    }>;
+    shipping?: TokenizationMoney;
+    tax?: TokenizationMoney;
+    total?: TokenizationMoney;
+  };
+  [key: string]: unknown;
+}
+
 export interface TokenizationSelectionCompletion {
   flow: 'TOKENIZATION';
   status: 'SELECTED';
@@ -244,10 +270,16 @@ export interface TokenizationSelectionCompletion {
 export interface TokenizationModeConfig {
   returnButtonName?: string;
   returnButtonStyle?: 'text' | 'link' | 'button';
+  showSecurityNote?: boolean;
+  /** Defaults false. A new order summary initially appears collapsed. */
+  orderSummaryInitiallyExpanded?: boolean;
+  /** Omitted when absent/invalid. No placeholder policy link is generated. */
+  privacyPolicyUrl?: string;
   labels?: Partial<Record<
-    'pageTitle' | 'savedMethodsTitle' | 'addMethodTitle' | 'addCard' |
+    'pageTitle' | 'pageSubtitle' | 'savedMethodsTitle' | 'addMethodTitle' | 'addCard' |
     'addAnotherCard' | 'usePaymentMethod' | 'selectionPending' |
-    'selectionSuccessTitle' | 'selectionSuccessMessage' | 'selectionError', string>>;
+    'selectionSuccessTitle' | 'selectionSuccessMessage' | 'selectionError' |
+    'orderSummary' | 'orderItems' | 'orderAmount' | 'orderShipping' | 'orderTax' | 'orderTotal', string>>;
 }
 
 export const NgeniusTokenization: import('react').ComponentType<NgeniusTokenizationProps>;

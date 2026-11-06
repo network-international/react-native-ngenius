@@ -4,6 +4,7 @@ import { VisaIcon, MastercardIcon, AmericanExpressIcon, DinersIcon, DiscoveryIco
 const ICONS = {
   VISA: VisaIcon,
   MASTERCARD: MastercardIcon,
+  MC: MastercardIcon,
   AMEX: AmericanExpressIcon,
   AMERICANEXPRESS: AmericanExpressIcon,
   DINERS: DinersIcon,
@@ -12,6 +13,7 @@ const ICONS = {
   DISCOVERY: DiscoveryIcon,
   JCB: JcbIcon,
   UNIONPAY: UnionPayIcon,
+  CUP: UnionPayIcon,
 };
 
 export default function SchemeIcon({ scheme }) {
