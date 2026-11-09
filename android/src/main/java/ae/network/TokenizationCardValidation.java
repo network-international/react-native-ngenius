@@ -36,12 +36,17 @@ final class TokenizationCardValidation {
             (year == now.get(Calendar.YEAR) && month < now.get(Calendar.MONTH) + 1)) return null;
         return String.format(Locale.ROOT, "%04d-%02d", year, month);
     }
-    static boolean validEndpoint(String value) {
+    static boolean validUsageType(String value) {
+        return "ONCE_OFF".equals(value) || "PERMANENT".equals(value);
+    }
+    static boolean validEndpoint(String value, String sessionRef) {
+        if (sessionRef == null || !sessionRef.matches("[A-Za-z0-9:_-]{1,100}")) return false;
         try {
             URI uri = new URI(value);
             return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null &&
                 uri.getUserInfo() == null && uri.getQuery() == null && uri.getFragment() == null &&
-                uri.getRawPath().matches(".*/api/outlets/[^/]+/cards");
+                uri.getRawPath().matches(".*/api/outlets/[^/]+/payment-tokenization-sessions/[^/]+/cards") &&
+                uri.getPath().endsWith("/payment-tokenization-sessions/" + sessionRef + "/cards");
         } catch (Exception ignored) { return false; }
     }
 }

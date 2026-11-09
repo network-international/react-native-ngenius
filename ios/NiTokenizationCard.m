@@ -173,13 +173,22 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
 - (void)submit:(NSDictionary *)options {
     if (self.finished || self.sent || !self.card) return;
     NSString *url = options[@"url"], *token = options[@"accessToken"];
+    NSString *sessionRef = options[@"sessionRef"], *usageType = options[@"usageType"];
     NSURLComponents *components = [url isKindOfClass:NSString.class] ? [NSURLComponents componentsWithString:url] : nil;
-    BOOL safeURL = [components.scheme.lowercaseString isEqualToString:@"https"] && components.host.length > 0 && !components.user && !components.password && !components.query && !components.fragment && NICardMatch(components.percentEncodedPath, @".*/api/outlets/[^/]+/cards");
-    if (!safeURL || ![token isKindOfClass:NSString.class] || token.length == 0 ||
+    BOOL safeURL = [components.scheme.lowercaseString isEqualToString:@"https"] &&
+        components.host.length > 0 && !components.user && !components.password && !components.query && !components.fragment &&
+        NICardMatch(components.percentEncodedPath, @".*/api/outlets/[^/]+/payment-tokenization-sessions/[^/]+/cards") &&
+        [sessionRef isKindOfClass:NSString.class] && NICardMatch(sessionRef, @"[A-Za-z0-9:_-]{1,100}") &&
+        [components.path hasSuffix:[NSString stringWithFormat:@"/payment-tokenization-sessions/%@/cards", sessionRef]];
+    BOOL validUsageType = [usageType isKindOfClass:NSString.class] &&
+        ([usageType isEqualToString:@"ONCE_OFF"] || [usageType isEqualToString:@"PERMANENT"]);
+    if (!safeURL || !validUsageType || ![token isKindOfClass:NSString.class] || token.length == 0 ||
         [token rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound ||
         ![options[@"consentData"] isKindOfClass:NSDictionary.class]) { [self fail]; return; }
     self.sent = YES;
-    NSData *payload = [NSJSONSerialization dataWithJSONObject:@{ @"card": self.card, @"consentData": options[@"consentData"] } options:0 error:nil];
+    NSData *payload = [NSJSONSerialization dataWithJSONObject:@{
+        @"card": self.card, @"usageType": usageType, @"consentData": options[@"consentData"]
+    } options:0 error:nil];
     self.card = nil; [self clearFields];
     if (!payload) { [self fail]; return; }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:components.URL];
@@ -194,7 +203,7 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
     self.task = [self.session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSDictionary *safe = nil;
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
-        if (!error && status >= 200 && status < 300 && data.length <= 65536) {
+        if (!error && status >= 200 && status < 300 && data.length > 0 && data.length <= 65536) {
             id body = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
             if ([body isKindOfClass:NSDictionary.class]) safe = [self safeResponse:body];
         }
@@ -203,11 +212,36 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
     [self.task resume];
 }
 - (NSDictionary *)safeResponse:(NSDictionary *)body {
+    NSArray *tokens = body[@"tokens"];
+    if (![tokens isKindOfClass:NSArray.class]) return nil;
+    NSMutableArray *safeTokens = [NSMutableArray arrayWithCapacity:tokens.count];
+    for (id token in tokens) {
+        if (![token isKindOfClass:NSDictionary.class]) return nil;
+        [safeTokens addObject:[self safeToken:token]];
+    }
+    NSMutableDictionary *safe = [@{ @"tokens": safeTokens } mutableCopy];
+    if ([body[@"tncUrl"] isKindOfClass:NSString.class]) safe[@"tncUrl"] = body[@"tncUrl"];
+    NSDictionary *page = body[@"page"];
+    if ([page isKindOfClass:NSDictionary.class]) {
+        NSMutableDictionary *safePage = [NSMutableDictionary new];
+        for (NSString *key in @[@"number", @"size", @"totalElements", @"totalPages"]) {
+            if ([page[key] isKindOfClass:NSNumber.class]) safePage[key] = page[key];
+        }
+        safe[@"page"] = safePage;
+    }
+    return safe;
+}
+- (NSDictionary *)safeToken:(NSDictionary *)body {
     NSMutableDictionary *safe = [NSMutableDictionary new];
     for (NSString *key in @[@"tokenRef", @"type", @"status", @"walletType"]) if ([body[key] isKindOfClass:NSString.class]) safe[key] = body[key];
-    if ([body[@"cardDetails"] isKindOfClass:NSDictionary.class]) {
+    NSDictionary *cardDetails = body[@"cardDetails"];
+    if ([cardDetails isKindOfClass:NSDictionary.class]) {
         NSMutableDictionary *details = [NSMutableDictionary new];
-        for (NSString *key in @[@"scheme", @"last4", @"expiry"]) if ([body[@"cardDetails"][key] isKindOfClass:NSString.class]) details[key] = body[@"cardDetails"][key];
+        if ([cardDetails[@"scheme"] isKindOfClass:NSString.class]) details[@"scheme"] = cardDetails[@"scheme"];
+        NSString *last4 = cardDetails[@"last4"], *expiry = cardDetails[@"expiry"];
+        if ([last4 isKindOfClass:NSString.class] && NICardMatch(last4, @"[0-9]{4}")) details[@"last4"] = last4;
+        if ([expiry isKindOfClass:NSString.class] && NICardMatch(expiry, @"[0-9]{4}-(0[1-9]|1[0-2])"))
+            details[@"expiry"] = expiry;
         safe[@"cardDetails"] = details;
     }
     return safe;

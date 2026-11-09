@@ -1,28 +1,25 @@
 import { NativeModules, DeviceEventEmitter } from 'react-native';
 const { cardContextFor } = require('./cardContext');
 const { serializeConsentData } = require('./consentData');
-const { parseSavedCardResponse } = require('./api/models');
-const {
-  stateForSavedToken,
-  VERIFICATION_STATES,
-} = require('./verificationStates');
-const {
-  savedTokenResult,
-  awaitingThreeDSResult,
-  apiErrorResult,
-} = require('./session');
+const { parseSavedTokensResponse } = require('./api/models');
+const { validReference } = require('./api/endpoints');
+const { validateUsageType } = require('./usageType');
+const { VERIFICATION_STATES } = require('./verificationStates');
+const { apiErrorResult } = require('./session');
 let counter = 0;
-const failure = code => ({
+const failure = (code, message = 'Card could not be saved') => ({
   state: VERIFICATION_STATES.FAILED,
   result: apiErrorResult({
     method: 'CARD',
-    error: { code, message: 'Card could not be saved' },
+    error: { code, message },
   }),
 });
 
 export const startNativeCardTokenization = ({
   client,
   outletRef,
+  sessionRef,
+  usageType,
   getConsentData,
   presentation,
   isCurrent = () => true,
@@ -54,6 +51,16 @@ export const startNativeCardTokenization = ({
     }
     finish({ state: VERIFICATION_STATES.READY });
   };
+  try {
+    validateUsageType(usageType);
+  } catch (error) {
+    finish(failure(error.code, error.message));
+    return { promise, cancel };
+  }
+  if (!validReference(sessionRef)) {
+    finish(failure('INVALID_SESSION_REF', 'Session reference is required'));
+    return { promise, cancel };
+  }
   if (
     !context ||
     typeof outletRef !== 'string' ||
@@ -82,14 +89,20 @@ export const startNativeCardTokenization = ({
           return;
         }
         try {
-          const request = await context.prepareRequest(outletRef);
+          const { url, accessToken } = await context.prepareRequest({ outletRef, sessionRef });
           if (terminal || !isCurrent()) {
             cancel();
             return;
           }
           const consentData = serializeConsentData(getConsentData());
           onVerifying?.();
-          native.submitTokenizationCard(requestId, { ...request, consentData });
+          native.submitTokenizationCard(requestId, {
+            url,
+            accessToken,
+            sessionRef,
+            usageType,
+            consentData,
+          });
         } catch {
           try {
             native.failTokenizationCard(requestId);
@@ -112,20 +125,10 @@ export const startNativeCardTokenization = ({
           return;
         }
         try {
-          const savedToken = parseSavedCardResponse(response);
-          if (savedToken.type !== 'CARD')
-            throw new Error('Unexpected token type');
-          const state = stateForSavedToken(savedToken);
-          finish(
-            state === VERIFICATION_STATES.SUCCESS
-              ? {
-                  state,
-                  result: savedTokenResult({ method: 'CARD', savedToken }),
-                }
-              : state === VERIFICATION_STATES.AWAITING_3DS
-              ? { state, result: awaitingThreeDSResult({ method: 'CARD' }) }
-              : failure('CARD_VERIFICATION_FAILED'),
-          );
+          finish({
+            state: VERIFICATION_STATES.SUCCESS,
+            updatedTokenList: parseSavedTokensResponse(response),
+          });
         } catch {
           finish(failure('MALFORMED_RESPONSE'));
         }

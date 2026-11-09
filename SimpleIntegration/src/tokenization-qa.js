@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import {
   NgeniusTokenization,
+  UsageType,
   createTokenizationClient,
 } from '@network-international/react-native-ngenius';
 
@@ -69,13 +70,34 @@ export default function TokenizationQA() {
       createTokenizationClient({
         baseUrl: BASE_URL,
         getAccessToken: async () => 'offline-preview-only',
-        transport: async () => ({
-          status: 200,
-          text: JSON.stringify({
-            tokens: [],
-            page: { number: 0, size: 20, totalElements: 0, totalPages: 0 },
-          }),
-        }),
+        transport: async ({ method }) => {
+          if (method === 'POST') {
+            return {
+              status: 201,
+              text: JSON.stringify({ sessionRef: 'preview-session' }),
+            };
+          }
+          if (method === 'PUT') {
+            return { status: 204 };
+          }
+          return {
+            status: 200,
+            text: JSON.stringify({
+              tokens: [
+                {
+                  tokenRef: 'preview-card',
+                  type: 'CARD',
+                  status: 'VERIFIED',
+                  cardDetails: {
+                    scheme: 'VISA',
+                    last4: '4242',
+                    expiry: '2030-12',
+                  },
+                },
+              ],
+            }),
+          };
+        },
       }),
     [],
   );
@@ -83,8 +105,9 @@ export default function TokenizationQA() {
     let parsed;
     try {
       parsed = walletConfig.trim() ? JSON.parse(walletConfig) : {};
-      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
         throw new Error();
+      }
     } catch {
       Alert.alert(
         'Wallet config',
@@ -188,12 +211,12 @@ export default function TokenizationQA() {
           branding={merchantTheme ? BRANDING : undefined}
           googlePayConfig={config.googlePay}
           applePayConfig={config.applePay}
-          onSuccess={() =>
-            Alert.alert(
-              'Payment method saved',
-              'VERIFIED. Saved Tokens is refreshing.',
-            )
-          }
+          getUsageType={() => UsageType.PERMANENT}
+          onSelectionComplete={() => {
+            setVisible(false);
+            clear();
+            Alert.alert('Payment method selected');
+          }}
           onError={() =>
             Alert.alert(
               'Tokenization incomplete',

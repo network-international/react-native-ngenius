@@ -10,6 +10,7 @@ const { parseSavedCardResponse } = require('../models');
 const BASE_URL = 'https://tokenization.test';
 const ACCESS_TOKEN = 'test-access-token';
 const OUTLET = 'outlet-1';
+const SESSION = 'session-1';
 
 const verifiedCard = {
   tokenRef: 'tok_1',
@@ -119,8 +120,9 @@ describe('TokenizationClient', () => {
       expect(Object.keys(client).sort()).toEqual([
         'addWallet',
         'authenticateThreeDS',
-        'getSavedTokens',
-        'selectSessionToken',
+        'createSession',
+        'getSession',
+        'selectToken',
         'submitThreeDSChallengeResponse',
       ]);
     });
@@ -129,7 +131,7 @@ describe('TokenizationClient', () => {
   describe('Access-Token', () => {
     it('sends the provider token as Access-Token with JSON content type only', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
-      await client.getSavedTokens({ outletRef: OUTLET });
+      await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
       expect(calls[0].headers).toEqual({
         [HEADER_ACCESS_TOKEN]: ACCESS_TOKEN,
         [HEADER_CONTENT_TYPE]: 'application/json',
@@ -152,8 +154,8 @@ describe('TokenizationClient', () => {
         getAccessToken,
         respond: () => jsonResponse(200, { tokens: [] }),
       });
-      await client.getSavedTokens({ outletRef: OUTLET });
-      await client.getSavedTokens({ outletRef: OUTLET });
+      await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
+      await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
       expect(getAccessToken).toHaveBeenCalledTimes(2);
       expect(calls.map((call) => call.headers[HEADER_ACCESS_TOKEN])).toEqual([
         'token-1',
@@ -171,7 +173,7 @@ describe('TokenizationClient', () => {
         getAccessToken,
         respond: () => jsonResponse(200, { tokens: [] }),
       });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
       expect(error).toBeInstanceOf(TokenizationApiError);
       expect(error.code).toBe(ACCESS_TOKEN_UNAVAILABLE);
       expect(error.status).toBe(0);
@@ -183,41 +185,77 @@ describe('TokenizationClient', () => {
       const client = createClient({
         respond: () => jsonResponse(401, { message: 'Unauthorized', code: 401, errors: [] }),
       });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
       expect(error.status).toBe(401);
       expect(error.code).toBe('UNAUTHORIZED');
       expect(JSON.stringify(error)).not.toContain(ACCESS_TOKEN);
     });
   });
 
-  describe('getSavedTokens', () => {
-    it('uses the list-all path with the sandbox consent-off query and ignores token filters', async () => {
+  describe('createSession', () => {
+    it('sends only the advised token references in order, including duplicates', async () => {
+      const client = createClient({ respond: () => jsonResponse(201, { sessionRef: SESSION, other: 'ignored' }) });
+      const advisedTokens = ['tok_1', 'tok_2', 'tok_1'];
+      await expect(client.createSession({
+        outletRef: OUTLET, advisedTokens, usageType: 'PERMANENT', skipConsent: true,
+      })).resolves.toEqual({ sessionRef: SESSION });
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: `${BASE_URL}/api/outlets/${OUTLET}/payment-tokenization-sessions`,
+        body: { advisedTokens },
+      });
+      expect(calls[0].body).toEqual({ advisedTokens });
+    });
+
+    it.each([undefined, []])('sends an empty list when there are no advised tokens (%p)', async advisedTokens => {
+      const client = createClient({ respond: () => jsonResponse(200, { sessionRef: SESSION }) });
+      await client.createSession({ outletRef: OUTLET, advisedTokens });
+      expect(calls[0].body).toEqual({ advisedTokens: [] });
+    });
+
+    it.each([null, 'tok_1', {}, ['tok_1', null], [''], new Array(1)])('rejects malformed advised tokens (%p)', async advisedTokens => {
+      const client = createClient({ respond: () => jsonResponse(201, { sessionRef: SESSION }) });
+      await expect(client.createSession({ outletRef: OUTLET, advisedTokens }))
+        .rejects.toMatchObject({ code: 'INVALID_ADVISED_TOKENS' });
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each([undefined, '', 42, '../session'])('requires a valid sessionRef from Create (%p)', async sessionRef => {
+      const client = createClient({ respond: () => jsonResponse(201, { sessionRef }) });
+      await expect(client.createSession({ outletRef: OUTLET })).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+    });
+  });
+
+  describe('getSession', () => {
+    it('uses the session path with the consent-off query and ignores unrelated fields', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
-      await client.getSavedTokens({
+      await client.getSession({
+        sessionRef: SESSION,
         outletRef: OUTLET,
-        tokens: ['tok_1', 'tok_9'],
+        usageType: 'PERMANENT',
+        advisedTokens: ['tok_1', 'tok_9'],
         skipConsent: true,
       });
       expect(calls[0].method).toBe('GET');
       expect(calls[0].body).toBeUndefined();
       expect(calls[0].url).toBe(
-        `${BASE_URL}/api/outlets/outlet-1/tokens?consentOff=true`
+        `${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1?consentOff=true`
       );
     });
 
     it('omits optional query parameters that were not provided', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
-      await client.getSavedTokens({ outletRef: 'outlet 1/a' });
-      expect(calls[0].url).toBe(`${BASE_URL}/api/outlets/outlet%201%2Fa/tokens`);
-      await client.getSavedTokens({ outletRef: OUTLET, skipConsent: false });
-      expect(calls[1].url).toBe(`${BASE_URL}/api/outlets/outlet-1/tokens`);
+      await client.getSession({ sessionRef: SESSION, outletRef: 'outlet 1/a' });
+      expect(calls[0].url).toBe(`${BASE_URL}/api/outlets/outlet%201%2Fa/payment-tokenization-sessions/session-1`);
+      await client.getSession({ sessionRef: SESSION, outletRef: OUTLET, skipConsent: false });
+      expect(calls[1].url).toBe(`${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1`);
     });
 
     it('treats zero tokens with a tncUrl as a valid first-time response', async () => {
       const client = createClient({
         respond: () => jsonResponse(200, { tokens: [], tncUrl: 'https://merchant.test/terms' }),
       });
-      await expect(client.getSavedTokens({ outletRef: OUTLET })).resolves.toEqual({
+      await expect(client.getSession({ sessionRef: SESSION, outletRef: OUTLET })).resolves.toEqual({
         tokens: [],
         tncUrl: 'https://merchant.test/terms',
       });
@@ -228,7 +266,7 @@ describe('TokenizationClient', () => {
         respond: () => jsonResponse(200, { tokens: [], tncUrl: 'https://merchant.test/terms' }),
       });
       await expect(
-        client.getSavedTokens({ outletRef: OUTLET, skipConsent: true })
+        client.getSession({ sessionRef: SESSION, outletRef: OUTLET, skipConsent: true })
       ).resolves.toEqual({ tokens: [], tncUrl: 'https://merchant.test/terms' });
     });
 
@@ -249,7 +287,7 @@ describe('TokenizationClient', () => {
             ],
           }),
       });
-      const { tokens } = await client.getSavedTokens({ outletRef: OUTLET });
+      const { tokens } = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
       expect(tokens.map((token) => token.status)).toEqual(['VERIFIED', 'AWAIT_3DS', 'FAILED']);
       expect(tokens[2]).toMatchObject({ type: 'WALLET', walletType: 'GOOGLE_PAY' });
       expect(tokens[1].cardDetails).toBeNull();
@@ -257,7 +295,7 @@ describe('TokenizationClient', () => {
 
     it('requires an outlet before sending a request', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
-      await expect(client.getSavedTokens({ outletRef: '' })).rejects.toThrow('outletRef');
+      await expect(client.getSession({ sessionRef: SESSION, outletRef: '' })).rejects.toThrow('outletRef');
       expect(calls).toHaveLength(0);
     });
 
@@ -267,7 +305,7 @@ describe('TokenizationClient', () => {
       const client = createClient({ respond: () => jsonResponse(200, {
         tokens, page: { ...page, privateField: 'drop-me' }, tncUrl: 'https://merchant.test/terms',
       }) });
-      const result = await client.getSavedTokens({ outletRef: OUTLET });
+      const result = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
       expect(result.page).toEqual(page);
       expect(result.tokens).toHaveLength(tokens.length);
     });
@@ -275,7 +313,7 @@ describe('TokenizationClient', () => {
     it.each([null, undefined, '', 123, {}, 'javascript:secret', 'https://user:secret@example.com'])
       ('safely omits missing or invalid terms URL %p', async (tncUrl) => {
         const client = createClient({ respond: () => jsonResponse(200, { tokens: [], tncUrl }) });
-        await expect(client.getSavedTokens({ outletRef: OUTLET })).resolves.toEqual({ tokens: [] });
+        await expect(client.getSession({ sessionRef: SESSION, outletRef: OUTLET })).resolves.toEqual({ tokens: [] });
       });
 
     it.each([{}, [], { number: -1, size: 20, totalElements: 0, totalPages: 0 },
@@ -283,7 +321,7 @@ describe('TokenizationClient', () => {
       { number: 0, size: 20, totalElements: Number.MAX_SAFE_INTEGER + 1, totalPages: 0 }])
       ('rejects malformed page safely: %p', async (page) => {
         const client = createClient({ respond: () => jsonResponse(200, { tokens: [], page }) });
-        await expect(client.getSavedTokens({ outletRef: OUTLET })).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+        await expect(client.getSession({ sessionRef: SESSION, outletRef: OUTLET })).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
       });
 
     it('does not log credentials, tokens or response bodies during parsing failures', async () => {
@@ -293,7 +331,7 @@ describe('TokenizationClient', () => {
           tokens: [{ ...verifiedCard, tokenRef: 'secret-token', cardDetails: { ...verifiedCard.cardDetails, last4: 'secret-card' } }],
           privateField: 'private-response',
         }) });
-        const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+        const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
         expect(error.code).toBe('MALFORMED_RESPONSE');
         expect(JSON.stringify(error)).not.toMatch(/secret-token|secret-card|private-response|test-access-token/);
         spies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
@@ -302,7 +340,7 @@ describe('TokenizationClient', () => {
 
     it('maps malformed list bodies to MALFORMED_RESPONSE', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tncUrl: 'x' }) });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
       expect(error.code).toBe('MALFORMED_RESPONSE');
     });
   });
@@ -390,7 +428,7 @@ describe('TokenizationClient', () => {
   });
 
   describe('errors', () => {
-    it('reads the backend error body and keeps only documented fields', async () => {
+    it('uses the HTTP status without exposing any session error body', async () => {
       const client = createClient({
         respond: () =>
           jsonResponse(400, {
@@ -408,17 +446,10 @@ describe('TokenizationClient', () => {
             card: { pan: '4111111111111111' },
           }),
       });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
-      expect(error.code).toBe('invalidWalletType');
-      expect(error.message).toBe('Bad Request');
-      expect(error.errors).toEqual([
-        {
-          message: 'Invalid walletType',
-          localizedMessage: '{error.processing.invalidWalletType}',
-          errorCode: 'invalidWalletType',
-          domain: 'processing',
-        },
-      ]);
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
+      expect(error.code).toBe('INVALID_REQUEST');
+      expect(error.message).toBe('Invalid request');
+      expect(error.errors).toEqual([]);
       const serialized = JSON.stringify(error);
       expect(serialized).not.toContain('leaked-payload');
       expect(serialized).not.toContain('4111111111111111');
@@ -426,16 +457,16 @@ describe('TokenizationClient', () => {
 
     it('falls back by HTTP status when the error body is not documented', async () => {
       const client = createClient({ respond: () => jsonResponse(500, undefined) });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
       expect(error.status).toBe(500);
       expect(error.code).toBe('INTERNAL_SERVER_ERROR');
     });
 
-    it('maps non-JSON bodies to MALFORMED_RESPONSE', async () => {
-      const client = createClient({ respond: () => ({ status: 502, text: '<html>' }) });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+    it('maps non-JSON success bodies to MALFORMED_RESPONSE', async () => {
+      const client = createClient({ respond: () => ({ status: 200, text: '<html>' }) });
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
       expect(error.code).toBe('MALFORMED_RESPONSE');
-      expect(error.status).toBe(502);
+      expect(error.status).toBe(200);
     });
 
     it('maps transport failures to NETWORK_ERROR without the request', async () => {
@@ -444,7 +475,7 @@ describe('TokenizationClient', () => {
           throw new Error(`failed ${ACCESS_TOKEN}`);
         },
       });
-      const error = await client.getSavedTokens({ outletRef: OUTLET }).catch((e) => e);
+      const error = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET }).catch((e) => e);
       expect(error.code).toBe('NETWORK_ERROR');
       expect(JSON.stringify(error)).not.toContain(ACCESS_TOKEN);
     });
@@ -462,9 +493,9 @@ describe('TokenizationClient', () => {
         getAccessToken: async () => ACCESS_TOKEN,
         fetchImpl,
       });
-      await client.getSavedTokens({ outletRef: OUTLET });
+      await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
       expect(readBody).toHaveBeenCalledTimes(1);
-      expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/tokens`, {
+      expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1`, {
         method: 'GET',
         headers: {
           [HEADER_ACCESS_TOKEN]: ACCESS_TOKEN,
@@ -477,7 +508,8 @@ describe('TokenizationClient', () => {
 
 describe('add card contract (native submission)', () => {
   it('models the card path without a JS card operation', () => {
-    expect(TOKENIZATION_PATHS.addCard({ outletRef: OUTLET })).toBe('/api/outlets/outlet-1/cards');
+    expect(TOKENIZATION_PATHS.addCard({ outletRef: OUTLET, sessionRef: SESSION }))
+      .toBe('/api/outlets/outlet-1/payment-tokenization-sessions/session-1/cards');
   });
 
   it('accepts non-UUID token references as documented', () => {

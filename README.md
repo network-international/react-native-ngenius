@@ -38,37 +38,51 @@ to 15.0 or later.
 import {
   createTokenizationClient,
   NgeniusTokenization,
+  UsageType,
 } from '@network-international/react-native-ngenius';
 
 const tokenizationClient = createTokenizationClient({
   baseUrl: tokenizationBaseUrl,
   getAccessToken: () => merchantBackend.getTokenizationAccessToken(),
 });
-const { tokens } = await tokenizationClient.getSavedTokens({ outletRef, skipConsent: true });
 
 <NgeniusTokenization
   visible={showTokenization}
   order={order}
-  paymentMethods={['CARD', 'APPLE_PAY', 'GOOGLE_PAY']}
+  paymentMethods={['CARD']}
   tokenizationClient={tokenizationClient}
   outletRef={outletRef}
+  advisedTokens={returningShopperTokenRefs}
+  getUsageType={() => UsageType.PERMANENT}
   branding={branding}
   language="en"
   skipConsent={true}
-  applePayConfig={{ merchantIdentifier, countryCode, merchantName }}
-  googlePayConfig={{ merchantName, gateway, gatewayMerchantId, environment }}
-  onSuccess={handleResult}
+  onSelectionComplete={({ sessionRef }) => handleSelectedSession(sessionRef)}
   onError={handleError}
   onCancel={() => setShowTokenization(false)}
 />
 ```
 
-`order` supplies display and currency context; wallet tokenization uses a copied zero-value amount without changing the merchant order or legacy PAYMENT amounts. Native Card tokenization does not require a PAYMENT order. Pass an explicit `paymentMethods` list; wallets also require native device support. `branding` accepts PayPage branding fields. Custom fonts must be registered by the host app.
+`order` supplies display and currency context. Native Card tokenization does not require a payment
+order. Pass an explicit `paymentMethods` list. `branding` accepts PayPage branding fields. Custom
+fonts must be registered by the host app.
 
-With a client and `outletRef`, opening calls `getSavedTokens` in both consent modes and loads `tncUrl`. With `skipConsent={false}` (default), a click-to-agree notice appears beside the add-method actions. There is no checkbox. Each actionable Add Card/Wallet click records a fresh acceptance timestamp for that attempt and produces `COLLECTED` consent data. Opening legal links, expanding Saving terms, selecting an existing method and cancelling do not accept consent. `skipConsent={true}` removes the entire notice and produces `NOT_COLLECTED` with `merchantSelectedSkipConsent=true`. Missing or invalid terms URLs leave the notice text visible without a link. NI recurring-storage wording remains available through the accessible Saving terms control.
+Opening the chooser creates a session with the supplied `advisedTokens` (empty by default), then
+loads the token list and `tncUrl` with Get Session. The chooser uses the returned list for the
+rest of the journey. Add Card updates the list directly from its response and reuses `sessionRef`.
+Each Add Card or Add Wallet action calls `getUsageType` with its `method`. Return
+`UsageType.ONCE_OFF` or `UsageType.PERMANENT`. The SDK blocks missing or invalid values with
+`INVALID_USAGE_TYPE` before sending a request. Usage type applies to the individual Add action.
+
+With `skipConsent={false}` (default), each actionable Add Card or Wallet click accepts the displayed
+terms for that attempt and records a fresh `COLLECTED` timestamp. Opening legal links, expanding
+Saving terms, selecting an existing method and cancelling do not accept consent. `skipConsent={true}`
+sends `?consentOff=true` on Get Session, hides the notice and sends `NOT_COLLECTED` with
+`skippedByMerchant: true` on Add. Missing or invalid terms URLs leave the notice text visible
+without a link. The accessible Saving terms control shows NI recurring-storage wording.
 
 The chooser hides the saved-method section for an empty list. It selects the first usable method
-on entry and preserves a still-valid shopper choice on refresh or native Card Back. A blue radio
+on entry and preserves a still-valid shopper choice after Add Card or native Card Back. A blue radio
 shows that local choice. The independent green Verified badge reflects the returned token status;
 it does not establish merchant-origin import, validation for the current session or payment success.
 Card and wallet rows both lead with the masked funding card, followed by expiry on its own
@@ -136,27 +150,21 @@ no summary appears. `orderDetails` replaces the legacy `order` display context r
 fields; omitting it retains the legacy fallback. Language resolves from supported `language`, then
 `orderDetails.language`, then `order.language`, then English (EN/FR/AR, including region tags).
 
-### Proposed session selection, pending backend contract
+### Complete token selection
 
-`sessionRef` and `onSelectionComplete` support a preliminary selection adapter. The supplied
-`PUT /api/outlets/{outletRef}/sessions/{sessionRef}/selectedToken` route is disabled by default;
-`createTokenizationClient({ ..., enableDraftSessionSelection: true })` explicitly opts into it.
-This does not integrate session creation, lookup or validation, and the endpoint/body/error
-contract remains provisional.
-
-Submitting an existing method shows progress. Only HTTP 200 starts the brief confirmation and
-closing animation; other statuses keep the chooser open for retry or another method. Completion
-is `{ flow: 'TOKENIZATION', status: 'SELECTED', canClose: true }`, with no selected token/card data
-and no payment initiation. In session mode a successful Add Card/Wallet refreshes the list first;
-completion waits for the separate selection confirmation. Existing non-session callbacks remain
-available. Screenshot responses are demo/mock, not evidence of a deployed session API.
+The shopper confirms a method using the chooser's primary action. The SDK sends
+`PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-token`
+with `{ tokenRef }` and waits for success before closing and calling `onSelectionComplete` with
+`sessionRef`. The merchant uses that reference to start payment on its backend via
+`POST /transactions/outlets/{outletRef}/payment/pts-session/{sessionRef}` with a Merchant Service
+Account credential. That payment step is outside the React Native tokenization SDK.
 
 ## Supported methods
 
 - Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
 - Helpers: `isSamsungPaySupported(serviceId)`, `isApplePaySupported()`, `isGooglePaySupported(googlePayConfig)`, `configureSDK(config)`, `executeThreeDSTwo(paymentResponse)`.
 - Tokenization UI: `CARD`, `APPLE_PAY` (iOS), `GOOGLE_PAY` (Android).
-- Tokenization client: `getSavedTokens({ outletRef, skipConsent })`, `addWallet({ outletRef, walletType, encryptedPayload })`. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
+- Tokenization client: `createSession`, `getSession`, `selectToken`, and the backend-pending `addWallet` contract. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
 
 ## Authentication
 
@@ -164,16 +172,15 @@ Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the s
 
 ## POC status
 
-- Current sandbox QA uses `skipConsent=true`, mapping to `GET /api/outlets/{outletRef}/tokens?consentOff=true`. Empty `tokens`, pagination metadata and omitted `tncUrl` are supported. The UI displays masked saved-method details and refreshes after VERIFIED.
-- SimpleIntegration has a runtime short-lived Access-Token input (memory only) and a separate offline UI preview. Tokenization entry does not create a PAYMENT order or exchange an API key. EN/FR/AR and merchant theme controls are available on both platforms.
-- Apple Pay has a separate native capture method returning only the original encrypted `PKPaymentToken.paymentData`. Android returns the raw Google Pay `tokenizationData.token`. PAYMENT APIs remain separate.
-- Consent uses Hossam’s confirmed 26 October payload contract. Both statuses include UTC clientTimestamp, channel, actual SDK version and basic React Native device metadata. NOT_COLLECTED uses merchantSelectedSkipConsent=true; COLLECTED uses the current Add Card/Wallet click timestamp, normalized locale and the validated terms URL shown to the shopper. Unknown fields and identifiers are stripped. No IP or server timestamp is supplied by the SDK.
-- Card tokenization is native on iOS and Android. Native entry, validation and HTTPS POST use `/api/outlets/{outletRef}/cards` with `{ card, consentData }`. JS receives a ready event, obtains fresh auth and prepares consent; PAN/CVV stay native. Only safe response fields return to JS. Redirects, response-body errors and credential persistence are disabled. Existing PAYMENT APIs stay separate.
-- Apple/Google capture connects to the real `/wallets` JSON body with the confirmed consentData and unchanged encryptedPayload. There is no consent placeholder or missing-contract block. Live E2E still requires current sandbox credentials and supported devices/UAT wallet config.
-- Custom JS transports/fetch mocks apply to JS API calls. They cannot carry plaintext cards; native Card submission is refused when such an override is installed. Offline preview can open/cancel the form, but never POSTs it.
-- Without session context, only VERIFIED creates the existing success callback. In session mode, VERIFIED refreshes the list and shows saved feedback; a separate selected-token HTTP 200 is required for the status-only completion above. AWAIT_3DS stays pending; Card 3DS is outside Drop 1. No new continuation flow was added.
-- Live `consentOff=false` is not part of current QA. Its backend deployment and final `tncUrl` behavior remain backend-owned.
-- Hossam's 6 Nov update: use Add Card for DEV and UAT for now, and wait for the new deployed version. This is environment guidance, not a recorded successful live Add Card retest. Final session integration, selected-token persistence, collected-consent deployment and physical wallet E2E remain pending.
+- SimpleIntegration has a short-lived Access-Token input and an offline UI preview. Sandbox QA uses
+  `skipConsent=true`. An empty Get Session token list or an omitted `tncUrl` is valid.
+- iOS and Android submit Add Card from the native form. PAN and CVV remain native. The SDK receives
+  allowlisted token list fields. Custom JS transports support the offline chooser, where the native
+  form can open and cancel without sending HTTP. Card 3DS remains outside this POC.
+- The Add Wallet mapper preserves the original encrypted payload. The built-in client reports
+  `ADD_WALLET_BACKEND_PENDING` before wallet capture until the session-based backend endpoint is
+  available. Legacy payment wallet APIs remain separate.
+- The [tokenization contract](docs/tokenization-contract.md) lists the session routes and consent fields.
 
 ## Test and demo
 

@@ -20,14 +20,4 @@ const resolveConsentInformation = ({ skipConsent, order, tncUrl } = {}) => {
   return { key, url, diagnostic };
 };
 
-const loadTncUrl = async ({ client, outletRef, skipConsent }) => {
-  if (!client || !outletRef) return undefined;
-  try {
-    const { tncUrl } = await client.getSavedTokens({ outletRef, skipConsent });
-    return tncUrl;
-  } catch (error) {
-    return undefined;
-  }
-};
-
-module.exports = { resolveConsentInformation, loadTncUrl };
+module.exports = { resolveConsentInformation };

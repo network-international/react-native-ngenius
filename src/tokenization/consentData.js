@@ -64,7 +64,7 @@ const buildConsentData = ({
     throw new Error('Consent clock is invalid');
   const result = {
     status: skipConsent === true ? 'NOT_COLLECTED' : 'COLLECTED',
-    ...(skipConsent === true ? { merchantSelectedSkipConsent: true } : {}),
+    ...(skipConsent === true ? { skippedByMerchant: true } : {}),
     clientTimestamp:
       skipConsent === true ? current.toISOString() : isoTimestamp(acceptedAt),
     channel: 'REACT_NATIVE',
@@ -97,7 +97,7 @@ const serializeConsentData = value => {
     throw new Error('Consent data is invalid');
   }
   const skipped = value.status === 'NOT_COLLECTED';
-  if (skipped && value.merchantSelectedSkipConsent !== true)
+  if (skipped && value.skippedByMerchant !== true)
     throw new Error('Merchant skip consent is required');
   const device = value.device || {};
   const output = buildConsentData({

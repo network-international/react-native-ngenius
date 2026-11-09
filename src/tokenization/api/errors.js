@@ -73,6 +73,11 @@ const errorFromMalformedResponse = ({ status }) =>
     message: 'Response was not valid JSON',
   });
 
+const errorFromSessionResponse = ({ status }) => new TokenizationApiError({
+  status,
+  ...(HTTP_ERROR_FALLBACK[status] || { code: 'UNKNOWN_ERROR', message: 'Request failed' }),
+});
+
 // Selection errors must not contain an echoed token, session or response body.
 const errorFromSessionSelectionResponse = ({ status } = {}) =>
   new TokenizationApiError({
@@ -85,6 +90,7 @@ module.exports = {
   TokenizationApiError,
   HTTP_ERROR_FALLBACK,
   errorFromResponse,
+  errorFromSessionResponse,
   errorFromMalformedResponse,
   errorFromSessionSelectionResponse,
 };

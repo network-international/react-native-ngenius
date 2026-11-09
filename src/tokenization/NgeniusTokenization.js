@@ -21,7 +21,10 @@ const { resolveTokenizationTheme } = require('./resolveTheme');
 const { getTokenizationMethods } = require('./supportedMethods');
 const { t } = require('./strings');
 const { resolveConsentInformation } = require('./consentInformation');
-const { createTokenizationSession, pocErrorResult } = require('./session');
+const { createTokenizationSession, apiErrorResult } = require('./session');
+const { invalidUsageType, validateUsageType } = require('./usageType');
+const { validReference } = require('./api/endpoints');
+const { isWalletTokenizationAvailable, walletBackendPendingError } = require('./api/addWallet');
 const { VERIFICATION_STATES } = require('./verificationStates');
 const { savedPaymentMethodSelection, defaultSelectedTokenRef } = require('./savedPaymentMethodSelection');
 const { resolveModeConfig } = require('./modeConfig');
@@ -51,10 +54,10 @@ const NgeniusTokenization = ({
   outletRef,
   applePayConfig,
   googlePayConfig,
-  onSuccess,
   onError,
   onCancel,
-  sessionRef: tokenizationSessionRef,
+  advisedTokens,
+  getUsageType,
   modeConfig,
   onSelectionComplete,
 }) => {
@@ -73,6 +76,10 @@ const NgeniusTokenization = ({
     tokens: [],
     failed: false,
   });
+  const [tokenizationSessionRef, setTokenizationSessionRef] = useState(null);
+  const backendSessionRef = useRef(null);
+  const advisedTokensRef = useRef(advisedTokens);
+  advisedTokensRef.current = advisedTokens;
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [selectedTokenRef, setSelectedTokenRef] = useState(null);
   const [selectionStatus, setSelectionStatus] = useState('idle');
@@ -118,13 +125,11 @@ const NgeniusTokenization = ({
     }
   }, [visible, consentDiagnostic]);
   const [, setSessionNonce] = useState(0);
-  const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
   const onCancelRef = useRef(onCancel);
   const nativeGateRef = useRef(null);
   const nativeCardCancelRef = useRef(null);
-  const selectionContextRef = useRef({ outletRef, tokenizationSessionRef });
-  onSuccessRef.current = onSuccess;
+  const previousOutletRef = useRef(outletRef);
   onErrorRef.current = onError;
   onCancelRef.current = onCancel;
 
@@ -139,6 +144,8 @@ const NgeniusTokenization = ({
       nativeCardCancelRef.current?.();
       nativeCardCancelRef.current = null;
       sessionRef.current.close();
+      backendSessionRef.current = null;
+      setTokenizationSessionRef(null);
       setConsentAccepted(false);
       wasVisibleRef.current = false;
       setStatus(VERIFICATION_STATES.READY);
@@ -184,9 +191,10 @@ const NgeniusTokenization = ({
   );
 
   useEffect(() => {
-    const previous = selectionContextRef.current;
-    selectionContextRef.current = { outletRef, tokenizationSessionRef };
-    if (previous.outletRef === outletRef && previous.tokenizationSessionRef === tokenizationSessionRef) return;
+    if (previousOutletRef.current === outletRef) return;
+    previousOutletRef.current = outletRef;
+    backendSessionRef.current = null;
+    setTokenizationSessionRef(null);
     selectionAttemptRef.current = null;
     clearTimeout(selectionTimerRef.current);
     nativeCardCancelRef.current?.();
@@ -205,50 +213,80 @@ const NgeniusTokenization = ({
     setSelectedTokenRef(null);
     setSelectionStatus('idle');
     setSelectionError(undefined);
-  }, [outletRef, tokenizationSessionRef, visible, order]);
+  }, [outletRef, visible, order]);
 
-  // Request in both consent modes; inline clients cannot cause refetch loops.
+  // Reuse the created backend session for retries and consent-mode changes.
   useEffect(() => {
     if (!visible) {
       setTnc({ loaded: false, url: undefined });
       return undefined;
     }
-    setTnc({ loaded: false, url: undefined });
-    let cancelled = false;
     const generation = sessionRef.current.generation();
-    const client = tokenizationClientRef.current;
-    if (!client || !outletRef) {
-      setSavedTokens({ loading: false, tokens: [], failed: true });
-      return undefined;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && sessionRef.current.isCurrent(generation);
+    let journey = backendSessionRef.current;
+    if (journey?.generation !== generation) {
+      setTnc({ loaded: false, url: undefined });
+      const client = tokenizationClientRef.current;
+      if (!client || !outletRef) {
+        setSavedTokens({ loading: false, tokens: [], failed: true });
+        return undefined;
+      }
+      const advised = advisedTokensRef.current;
+      journey = {
+        client,
+        generation,
+        advisedTokens: Array.isArray(advised) ? Array.from(advised) : advised,
+        listRevision: 0,
+      };
+      backendSessionRef.current = journey;
     }
     setSavedTokens({ loading: true, tokens: [], failed: false });
-    Promise.resolve()
-      .then(() => client.getSavedTokens({ outletRef, skipConsent }))
-      .then(response => {
-        if (!cancelled && sessionRef.current.isCurrent(generation)) {
-          setTnc({ loaded: true, url: response.tncUrl });
-          setSavedTokens({
-            loading: false,
-            tokens: response.tokens,
-            page: response.page,
-            failed: false,
+    const { client } = journey;
+    if (!journey.creation) {
+      journey.creation = Promise.resolve()
+        .then(() => {
+          if (!sessionRef.current.isCurrent(generation)) return undefined;
+          return client.createSession({
+            outletRef,
+            advisedTokens: journey.advisedTokens === undefined ? [] : journey.advisedTokens,
           });
-          setSelectedTokenRef(current =>
-            defaultSelectedTokenRef(response.tokens, current),
-          );
-        }
-      })
-      .catch(() => {
-        if (!cancelled && sessionRef.current.isCurrent(generation)) {
-          setTnc({ loaded: true, url: undefined });
-          setSavedTokens({ loading: false, tokens: [], failed: true });
-          setSelectedTokenRef(null);
-        }
-      });
+        })
+        .then(response => {
+          if (!validReference(response?.sessionRef)) throw new Error('Session reference is unavailable');
+          return response.sessionRef;
+        })
+        .catch(error => {
+          journey.creation = undefined;
+          throw error;
+        });
+    }
+    const revision = journey.listRevision;
+    const load = async () => {
+      try {
+        const reference = await journey.creation;
+        if (!isCurrent()) return;
+        setTokenizationSessionRef(reference);
+        const response = await client.getSession({ outletRef, sessionRef: reference, skipConsent });
+        if (!isCurrent() || journey.listRevision !== revision) return;
+        if (!Array.isArray(response?.tokens)) throw new Error('Session token list is unavailable');
+        setTnc({ loaded: true, url: response.tncUrl });
+        setSavedTokens({ loading: false, tokens: response.tokens, page: response.page, failed: false });
+        setSelectedTokenRef(current => revision === 0
+          ? defaultSelectedTokenRef(response.tokens, current)
+          : savedPaymentMethodSelection(response.tokens, current) ? current : null);
+      } catch {
+        if (!isCurrent() || journey.listRevision !== revision) return;
+        setTnc({ loaded: true, url: undefined });
+        setSavedTokens({ loading: false, tokens: [], failed: true });
+        setSelectedTokenRef(null);
+      }
+    };
+    load();
     return () => {
       cancelled = true;
     };
-  }, [visible, outletRef, tokenizationSessionRef, skipConsent, refreshNonce]);
+  }, [visible, outletRef, skipConsent, refreshNonce]);
 
   useEffect(() => {
     if (!visible) {
@@ -309,40 +347,27 @@ const NgeniusTokenization = ({
     googlePaySupported,
   });
 
-  const finishSuccess = useCallback(result => {
-    setStatus(VERIFICATION_STATES.SUCCESS);
-    sessionRef.current.emitSuccess(onSuccessRef.current, result);
-  }, []);
-
-  const finishError = useCallback(
-    error => {
-      const payload = pocErrorResult(error);
-      setErrorMessage(payload.error || t(language, 'VERIFICATION_FAILED'));
-      setStatus(VERIFICATION_STATES.FAILED);
-      sessionRef.current.emitError(onErrorRef.current, payload);
-    },
-    [language],
-  );
-
-  const applyWalletOutcome = useCallback(
-    ({ state, result }) => {
-      if (state === VERIFICATION_STATES.READY) {
+  const applyAddOutcome = useCallback(
+    ({ state, result, updatedTokenList }, previousTokens = []) => {
+      const journey = backendSessionRef.current;
+      if (state === VERIFICATION_STATES.SUCCESS && updatedTokenList && journey) {
+        const { tokens, page, tncUrl } = updatedTokenList;
+        journey.listRevision += 1;
+        setTnc(current => ({ loaded: true, url: tncUrl ?? current.url }));
+        setSavedTokens({ loading: false, tokens, page, failed: false });
+        setSelectedTokenRef(current => savedPaymentMethodSelection(tokens, current) ? current : null);
+        const previouslyVerified = new Set(previousTokens
+          .filter(token => token.status === 'VERIFIED')
+          .map(token => token.tokenRef));
+        setTokenSaved(tokens.some(token =>
+          token.status === 'VERIFIED' && !previouslyVerified.has(token.tokenRef),
+        ));
+      }
+      if (state === VERIFICATION_STATES.READY || state === VERIFICATION_STATES.SUCCESS) {
         sessionRef.current.endNative();
         sessionRef.current.setAccepted(false);
         setConsentAccepted(false);
         setStatus(VERIFICATION_STATES.READY);
-        return;
-      }
-      if (state === VERIFICATION_STATES.SUCCESS) {
-        setTokenSaved(true);
-        setRefreshNonce(value => value + 1);
-        if (tokenizationSessionRef) {
-          // Adding a method is separate from confirming the NI session's selection.
-          sessionRef.current.endNative();
-          setStatus(VERIFICATION_STATES.READY);
-          return;
-        }
-        finishSuccess(result);
         return;
       }
       if (state === VERIFICATION_STATES.AWAITING_3DS) {
@@ -353,7 +378,7 @@ const NgeniusTokenization = ({
       }
       sessionRef.current.emitError(onErrorRef.current, result);
     },
-    [finishSuccess, language, tokenizationSessionRef],
+    [language],
   );
 
   const handleDismiss = useCallback(() => {
@@ -380,34 +405,50 @@ const NgeniusTokenization = ({
   }, []);
 
   const renderedGeneration = sessionRef.current.generation();
+  const sessionClient = backendSessionRef.current?.client;
   const selectionUiRef = useRef(null);
   selectionUiRef.current = {
     savedTokens, selectedTokenRef, status, visible, selectionStatus,
     tokenizationSessionRef, outletRef, skipConsent, termsUrl: consent?.url,
-    language, methods,
+    language, methods, getUsageType,
   };
   const onSelectMethod = useCallback(
     async method => {
       const current = selectionUiRef.current;
       if (
-        !visible || !current.visible || current.savedTokens.loading ||
+        !visible || !current.visible || current.savedTokens.loading || current.savedTokens.failed ||
+        !tokenizationSessionRef || current.getUsageType !== getUsageType ||
         current.outletRef !== outletRef || current.tokenizationSessionRef !== tokenizationSessionRef ||
         current.skipConsent !== skipConsent || current.termsUrl !== consent?.url || current.language !== language ||
         !current.methods.includes(method) ||
         ![VERIFICATION_STATES.READY, VERIFICATION_STATES.FAILED].includes(current.status) ||
         !['idle', 'failed'].includes(current.selectionStatus) || selectionAttemptRef.current ||
         !sessionRef.current.isCurrent(renderedGeneration) || sessionRef.current.isInFlight() ||
-        tokenizationClientRef.current !== tokenizationClient
+        backendSessionRef.current?.client !== sessionClient
       ) return;
       const generation = renderedGeneration;
       const isCurrent = () => sessionRef.current.isCurrent(generation);
-      const activeOrder = sessionOrderRef.current || order;
-      if (!activeOrder && method !== 'CARD') {
-        finishError({ status: 'Error', error: 'Order not found' });
+      const rejectAction = error => {
+        if (!sessionRef.current.tryBeginNative()) return;
+        applyAddOutcome({
+          state: VERIFICATION_STATES.FAILED,
+          result: apiErrorResult({ method, error }),
+        });
+      };
+      let usageType;
+      try {
+        usageType = validateUsageType(getUsageType?.({ method }));
+      } catch {
+        rejectAction(invalidUsageType());
         return;
       }
-      if (!tokenizationClient || !outletRef) {
-        finishError({ status: 'Error', error: 'Tokenization client and outlet are required' });
+      if (method !== 'CARD' && !isWalletTokenizationAvailable(sessionClient)) {
+        rejectAction(walletBackendPendingError());
+        return;
+      }
+      const activeOrder = sessionOrderRef.current || order;
+      if (!activeOrder && method !== 'CARD') {
+        rejectAction({ code: 'ORDER_NOT_FOUND', message: 'Order not found' });
         return;
       }
       // Clicking an actionable Add Card/Wallet control accepts the notice shown
@@ -438,8 +479,10 @@ const NgeniusTokenization = ({
         runAfterRnModalHidden(async () => {
           if (!isCurrent()) return;
           const attempt = startNativeCardTokenization({
-            client: tokenizationClient,
+            client: sessionClient,
             outletRef,
+            sessionRef: tokenizationSessionRef,
+            usageType,
             getConsentData,
             isCurrent,
             onVerifying: () => {
@@ -467,17 +510,19 @@ const NgeniusTokenization = ({
           if (isCurrent()) {
             nativeCardCancelRef.current = null;
             restoreRnModal();
-            applyWalletOutcome(outcome);
+            applyAddOutcome(outcome, current.savedTokens.tokens);
           }
         });
         return;
       }
-      if (method === 'APPLE_PAY' && tokenizationClient && outletRef) {
+      if (method === 'APPLE_PAY') {
         runAfterRnModalHidden(async () => {
           const outcome = await runWalletTokenization({
             method: 'APPLE_PAY',
-            client: tokenizationClient,
+            client: sessionClient,
             outletRef,
+            sessionRef: tokenizationSessionRef,
+            usageType,
             order: walletTokenizationOrder(activeOrder),
             googlePayConfig: applePayConfig,
             captureWallet: captureApplePayToken,
@@ -489,15 +534,17 @@ const NgeniusTokenization = ({
           });
           if (isCurrent()) {
             restoreRnModal();
-            applyWalletOutcome(outcome);
+            applyAddOutcome(outcome, current.savedTokens.tokens);
           }
         });
         return;
       }
-      if (method === 'GOOGLE_PAY' && tokenizationClient && outletRef) {
+      if (method === 'GOOGLE_PAY') {
         const outcome = await runGooglePayTokenization({
-          client: tokenizationClient,
+          client: sessionClient,
           outletRef,
+          sessionRef: tokenizationSessionRef,
+          usageType,
           order: walletTokenizationOrder(activeOrder),
           googlePayConfig,
           initiateGooglePay,
@@ -507,13 +554,9 @@ const NgeniusTokenization = ({
             if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
           },
         });
-        if (isCurrent()) applyWalletOutcome(outcome);
+        if (isCurrent()) applyAddOutcome(outcome, current.savedTokens.tokens);
         return;
       }
-      finishError({
-        status: 'Error',
-        error: 'Tokenization client and outlet are required',
-      });
     },
     [
       visible,
@@ -524,10 +567,10 @@ const NgeniusTokenization = ({
       order,
       applePayConfig,
       googlePayConfig,
-      tokenizationClient,
+      sessionClient,
       outletRef,
-      finishError,
-      applyWalletOutcome,
+      getUsageType,
+      applyAddOutcome,
       restoreRnModal,
       runAfterRnModalHidden,
       renderedGeneration,
@@ -555,8 +598,8 @@ const NgeniusTokenization = ({
       !canSelect(current) || current.selectedTokenRef !== tokenRef ||
       !savedPaymentMethodSelection(current.savedTokens.tokens, tokenRef)
     ) return;
-    const client = tokenizationClientRef.current;
-    if (!tokenizationSessionRef || typeof client?.selectSessionToken !== 'function') {
+    const client = backendSessionRef.current?.client;
+    if (!tokenizationSessionRef || typeof client?.selectToken !== 'function') {
       setSelectionStatus('failed');
       setSelectionError(resolvedModeConfig.labels.selectionError || t(language, 'SELECTION_UNAVAILABLE'));
       return;
@@ -574,19 +617,19 @@ const NgeniusTokenization = ({
         latest.tokenizationSessionRef === tokenizationSessionRef && latest.outletRef === outletRef;
     };
     try {
-      const response = await client.selectSessionToken({ outletRef, sessionRef: tokenizationSessionRef, selectedToken: tokenRef });
+      const response = await client.selectToken({ outletRef, sessionRef: tokenizationSessionRef, tokenRef });
       if (!isCurrent()) return;
       if (response?.status !== 'SELECTED') throw new Error('Selection was not confirmed');
       sessionRef.current.endNative();
       selectionUiRef.current = { ...selectionUiRef.current, selectionStatus: 'confirmed' };
       setSelectionStatus('confirmed');
-      // The backend owns selectedToken. The merchant receives only a close/result signal.
+      // Payment can use the session reference after the backend confirms selection.
       selectionTimerRef.current = setTimeout(() => {
         if (!isCurrent()) return;
         selectionAttemptRef.current = null;
         setSelectionClosed(true);
         sessionRef.current.close();
-        onSelectionCompleteRef.current?.({ flow: 'TOKENIZATION', status: 'SELECTED', canClose: true });
+        onSelectionCompleteRef.current?.({ flow: 'TOKENIZATION', status: 'SELECTED', canClose: true, sessionRef: tokenizationSessionRef });
       }, 1100);
     } catch {
       if (!isCurrent()) return;

@@ -29,13 +29,18 @@ import android.widget.TextView;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.WritableMap;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -205,16 +210,27 @@ final class TokenizationCard {
         if (finished || sent || !prepared || card == null) return;
         String endpoint = options.optString("url");
         String accessToken = options.optString("accessToken");
+        Object sessionRef = options.opt("sessionRef");
+        String usageType = options.optString("usageType");
         JSONObject consent = options.optJSONObject("consentData");
-        if (!TokenizationCardValidation.validEndpoint(endpoint) || accessToken.isEmpty() ||
-            accessToken.contains("\r") || accessToken.contains("\n") || consent == null) { finish("Failed", null); return; }
+        if (!(sessionRef instanceof String) || !TokenizationCardValidation.validEndpoint(endpoint, (String) sessionRef) ||
+            !TokenizationCardValidation.validUsageType(usageType) || accessToken.isEmpty() ||
+            accessToken.contains("\r") || accessToken.contains("\n") || consent == null) {
+            finish("Failed", null);
+            return;
+        }
         sent = true;
         final byte[] payload;
-        try { payload = new JSONObject().put("card", card).put("consentData", consent).toString().getBytes(StandardCharsets.UTF_8); }
-        catch (Exception ignored) { finish("Failed", null); return; }
+        try {
+            payload = new JSONObject()
+                .put("card", card)
+                .put("usageType", usageType)
+                .put("consentData", consent)
+                .toString().getBytes(StandardCharsets.UTF_8);
+        } catch (Exception ignored) { finish("Failed", null); return; }
         card = null; pan.setText(""); cvv.setText(""); expiry.setText(""); name.setText("");
         worker.execute(() -> {
-            JSONObject safeResponse = null;
+            Map<String, Object> safeResponse = null;
             try {
                 if (finished) return;
                 HttpURLConnection request = (HttpURLConnection) new URL(endpoint).openConnection(); connection = request;
@@ -238,20 +254,43 @@ final class TokenizationCard {
                 }
             } catch (Exception ignored) { /* Never forward a response body or exception containing card data. */ }
             finally { Arrays.fill(payload, (byte) 0); if (connection != null) { connection.disconnect(); connection = null; } }
-            final JSONObject response = safeResponse;
+            final Map<String, Object> response = safeResponse;
             main.post(() -> finish(response == null ? "Failed" : "Response", response));
         });
     }
-    private static JSONObject safeResponse(JSONObject source) throws Exception {
-        JSONObject safe = new JSONObject();
+    private static Map<String, Object> safeResponse(JSONObject source) throws Exception {
+        JSONArray tokens = source.getJSONArray("tokens");
+        List<Map<String, Object>> safeTokens = new ArrayList<>(tokens.length());
+        for (int i = 0; i < tokens.length(); i++) {
+            safeTokens.add(safeToken(tokens.getJSONObject(i)));
+        }
+        Map<String, Object> safe = new HashMap<>();
+        safe.put("tokens", safeTokens);
+        if (source.opt("tncUrl") instanceof String) safe.put("tncUrl", source.getString("tncUrl"));
+        JSONObject page = source.optJSONObject("page");
+        if (page != null) {
+            Map<String, Object> safePage = new HashMap<>();
+            for (String field : new String[]{"number", "size", "totalElements", "totalPages"}) {
+                if (page.opt(field) instanceof Number) safePage.put(field, page.get(field));
+            }
+            safe.put("page", safePage);
+        }
+        return safe;
+    }
+    private static Map<String, Object> safeToken(JSONObject source) throws Exception {
+        Map<String, Object> safe = new HashMap<>();
         for (String field : new String[]{"tokenRef", "type", "status", "walletType"}) {
             if (source.opt(field) instanceof String) safe.put(field, source.getString(field));
         }
         JSONObject details = source.optJSONObject("cardDetails");
         if (details != null) {
-            JSONObject masked = new JSONObject();
-            for (String field : new String[]{"scheme", "last4", "expiry"}) {
-                if (details.opt(field) instanceof String) masked.put(field, details.getString(field));
+            Map<String, Object> masked = new HashMap<>();
+            if (details.opt("scheme") instanceof String) masked.put("scheme", details.getString("scheme"));
+            String last4 = details.optString("last4");
+            String expiry = details.optString("expiry");
+            if (details.opt("last4") instanceof String && last4.matches("[0-9]{4}")) masked.put("last4", last4);
+            if (details.opt("expiry") instanceof String && expiry.matches("[0-9]{4}-(0[1-9]|1[0-2])")) {
+                masked.put("expiry", expiry);
             }
             safe.put("cardDetails", masked);
         }
@@ -259,7 +298,7 @@ final class TokenizationCard {
     }
     void cancel() { finish("Aborted", null); }
     void fail() { finish("Failed", null); }
-    private void finish(String status, JSONObject response) {
+    private void finish(String status, Map<String, Object> response) {
         if (finished) return;
         finished = true; card = null;
         if (connection != null) connection.disconnect();
@@ -269,17 +308,8 @@ final class TokenizationCard {
         dialog.setOnCancelListener(null); dialog.dismiss();
         Callback callback = result; result = null;
         if (callback != null) {
-            WritableMap safe = response == null ? Arguments.createMap() : Arguments.makeNativeMap(jsonMap(response));
+            WritableMap safe = response == null ? Arguments.createMap() : Arguments.makeNativeMap(response);
             callback.invoke(status, safe);
         }
-    }
-    private static java.util.Map<String, Object> jsonMap(JSONObject object) {
-        java.util.Map<String, Object> map = new java.util.HashMap<>();
-        java.util.Iterator<String> fields = object.keys();
-        while (fields.hasNext()) {
-            String field = fields.next(); Object value = object.opt(field);
-            map.put(field, value instanceof JSONObject ? jsonMap((JSONObject) value) : value);
-        }
-        return map;
     }
 }

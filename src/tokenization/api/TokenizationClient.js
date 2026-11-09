@@ -2,6 +2,7 @@ const { registerCardContext } = require('../cardContext');
 const { buildTokenizationHeaders } = require('./headers');
 const {
   errorFromResponse,
+  errorFromSessionResponse,
   errorFromMalformedResponse,
   TokenizationApiError,
 } = require('./errors');
@@ -9,11 +10,13 @@ const { TOKENIZATION_PATHS, resolveTokenizationUrl } = require('./endpoints');
 const {
   parseSavedCardResponse,
   parseSavedTokensResponse,
-  mapAddWalletRequest,
+  mapCreateSessionRequest,
+  parseCreateSessionResponse,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 } = require('./models');
 const { createFetchTransport, parseJsonBody } = require('./transport');
+const { addWalletBackendPending } = require('./addWallet');
 const { createSessionTokenSelector } = require('./sessionTokenSelection');
 
 const ACCESS_TOKEN_UNAVAILABLE = 'ACCESS_TOKEN_UNAVAILABLE';
@@ -94,14 +97,16 @@ const createTokenizationClient = options => {
     return response;
   };
 
-  const request = async ({ parse, ...args }) => {
+  const request = async ({ parse, sanitizeError = false, ...args }) => {
     const response = await sendRequest(args);
-    const status = response.status;
-    const parsedJson = parseJsonBody(response.text);
+    const status = response?.status;
+    const success = Number.isInteger(status) && status >= 200 && status < 300;
+    if (sanitizeError && !success) throw errorFromSessionResponse({ status });
+    const parsedJson = parseJsonBody(response?.text);
     if (!parsedJson.ok) {
       throw errorFromMalformedResponse({ status });
     }
-    if (status >= 200 && status < 300) {
+    if (success) {
       return parseSuccess(parse, parsedJson.body, status);
     }
     throw errorFromResponse({ status, body: parsedJson.body });
@@ -111,26 +116,26 @@ const createTokenizationClient = options => {
     parseSavedCardResponse(body, { requireContinuation: true });
 
   const client = {
-    selectSessionToken: createSessionTokenSelector({
-      enabled: options.enableDraftSessionSelection,
-      request: sendRequest,
-    }),
-    getSavedTokens: async (args = {}) =>
-      request({
-        method: 'GET',
-        path: TOKENIZATION_PATHS.savedTokens({ outletRef: args.outletRef }),
-        query: args.skipConsent === true ? [['consentOff', 'true']] : [],
-        parse: parseSavedTokensResponse,
-      }),
-    addWallet: async args =>
+    createSession: async args =>
       request({
         method: 'POST',
-        path: TOKENIZATION_PATHS.addWallet({
-          outletRef: args && args.outletRef,
-        }),
-        body: mapAddWalletRequest(args),
-        parse: parseSavedCardResponse,
+        path: TOKENIZATION_PATHS.createSession({ outletRef: args?.outletRef }),
+        body: mapCreateSessionRequest(args?.advisedTokens),
+        parse: parseCreateSessionResponse,
+        sanitizeError: true,
       }),
+    getSession: async args =>
+      request({
+        method: 'GET',
+        path: TOKENIZATION_PATHS.getSession({
+          outletRef: args?.outletRef, sessionRef: args?.sessionRef,
+        }),
+        query: args?.skipConsent === true ? [['consentOff', 'true']] : [],
+        parse: parseSavedTokensResponse,
+        sanitizeError: true,
+      }),
+    selectToken: createSessionTokenSelector({ request: sendRequest }),
+    addWallet: addWalletBackendPending,
     authenticateThreeDS: async args =>
       request({
         method: 'POST',
@@ -147,7 +152,7 @@ const createTokenizationClient = options => {
       }),
   };
   return registerCardContext(client, {
-    prepareRequest: async outletRef => {
+    prepareRequest: async ({ outletRef, sessionRef }) => {
       // JS transports cannot receive plaintext cards. Do not bypass a caller's
       // mock/custom transport by silently submitting a native request instead.
       if (options.transport || options.fetchImpl)
@@ -159,7 +164,7 @@ const createTokenizationClient = options => {
       return {
         url: resolveTokenizationUrl(
           baseUrl,
-          TOKENIZATION_PATHS.addCard({ outletRef }),
+          TOKENIZATION_PATHS.addCard({ outletRef, sessionRef }),
         ),
         accessToken: await resolveAccessToken(getAccessToken),
       };

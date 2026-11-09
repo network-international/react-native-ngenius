@@ -1,173 +1,194 @@
-const { runGooglePayTokenization } = require('../walletTokenization');
-const { createTokenizationClient } = require('../api/TokenizationClient');
+const { runGooglePayTokenization, runWalletTokenization } = require('../walletTokenization');
+const { UsageType } = require('../usageType');
 const { VERIFICATION_STATES } = require('../verificationStates');
+const { buildConsentData } = require('../consentData');
+const { inputs, skipped } = require('./fixtures/consent');
 
-const GOOGLE_PAY_TOKEN = '{"signature":"sig","protocolVersion":"ECv2","signedMessage":"msg"}';
+const payload = '{ "opaque": "encrypted bytes" }\n';
 const order = { amount: { value: 100, currencyCode: 'AED' } };
 const googlePayConfig = { merchantName: 'Demo', gateway: 'networkintl', gatewayMerchantId: 'm' };
-
-const verified = {
-  tokenRef: 'tok_9',
+const wallet = {
+  tokenRef: 'wallet-token',
   type: 'WALLET',
   walletType: 'GOOGLE_PAY',
   status: 'VERIFIED',
   cardDetails: { scheme: 'MASTERCARD', last4: '5100', expiry: '2029-06' },
-  orderReference: 'ord-9',
-  paymentReference: 'pay-9',
 };
-const awaiting = {
-  ...verified,
-  status: 'AWAIT_3DS',
-  '3ds2': {
-    threeDSServerTransID: '8a880dc0-d2d2-4067-bcb1-b08d1690b26e',
-    threeDSMethodData: 'method-data',
-    threeDSMethodNotificationURL: 'https://paypage.test/notification',
-    messageVersion: '2.2.0',
-  },
+const tokenList = {
+  tokens: [wallet, {
+    ...wallet,
+    tokenRef: 'existing-token',
+    type: 'CARD',
+    walletType: null,
+  }],
+  tncUrl: 'https://merchant.example/terms',
 };
 
-const setup = ({ respond, native } = {}) => {
-  const calls = [];
-  const client = createTokenizationClient({
-    baseUrl: 'https://tokenization.test',
-    getAccessToken: async () => 'test-access-token',
-    transport: async (request) => {
-      calls.push(request);
-      return respond(request);
-    },
-  });
-  const initiateGooglePay = jest.fn(
-    native || (async () => ({ status: 'Success', token: GOOGLE_PAY_TOKEN }))
-  );
+const setup = (overrides = {}) => {
+  const addWallet = jest.fn().mockResolvedValue(tokenList);
+  const createSession = jest.fn();
+  const getSession = jest.fn();
+  const initiateGooglePay = jest.fn().mockResolvedValue({ token: payload });
   const onVerifying = jest.fn();
-  const run = () =>
-    runGooglePayTokenization({
-      client,
-      outletRef: 'outlet-1',
-      order,
-      googlePayConfig,
-      initiateGooglePay,
-      onVerifying,
-    });
-  return { calls, initiateGooglePay, onVerifying, run };
+  const client = { supportsAddWallet: true, addWallet, createSession, getSession };
+  const action = {
+    client,
+    outletRef: 'outlet-1',
+    sessionRef: 'session-1',
+    usageType: UsageType.ONCE_OFF,
+    order,
+    googlePayConfig,
+    initiateGooglePay,
+    onVerifying,
+    consent: skipped(),
+  };
+  return {
+    action,
+    client,
+    addWallet,
+    createSession,
+    getSession,
+    initiateGooglePay,
+    onVerifying,
+    run: () => runGooglePayTokenization({ ...action, ...overrides }),
+  };
 };
 
-const json = (status, body) => ({ status, text: JSON.stringify(body) });
-
-describe('Google Pay tokenization slice', () => {
-  it('sends the Google Pay token unchanged and succeeds only on VERIFIED', async () => {
-    const { calls, initiateGooglePay, onVerifying, run } = setup({
-      respond: () => json(200, verified),
-    });
-    const outcome = await run();
-    expect(initiateGooglePay).toHaveBeenCalledWith(order, googlePayConfig);
-    expect(onVerifying).toHaveBeenCalledTimes(1);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe('https://tokenization.test/api/outlets/outlet-1/wallets');
-    expect(calls[0].body).toEqual({ walletType: 'GOOGLE_PAY', encryptedPayload: GOOGLE_PAY_TOKEN });
-    expect(outcome.state).toBe(VERIFICATION_STATES.SUCCESS);
-    expect(outcome.result).toMatchObject({
-      method: 'GOOGLE_PAY',
-      status: 'VERIFIED',
-      niTokenCreated: true,
-      savedToken: { tokenRef: 'tok_9', walletType: 'GOOGLE_PAY' },
-    });
-    expect(JSON.stringify(outcome)).not.toContain('signedMessage');
+it('returns the injected Add Wallet response directly without reloading the session', async () => {
+  const { addWallet, createSession, getSession, initiateGooglePay, onVerifying, run } = setup();
+  const outcome = await run();
+  expect(initiateGooglePay).toHaveBeenCalledWith(order, googlePayConfig);
+  expect(onVerifying).toHaveBeenCalledTimes(1);
+  expect(addWallet).toHaveBeenCalledTimes(1);
+  expect(addWallet).toHaveBeenCalledWith({
+    outletRef: 'outlet-1',
+    sessionRef: 'session-1',
+    walletType: 'GOOGLE_PAY',
+    encryptedPayload: payload,
+    usageType: UsageType.ONCE_OFF,
+    consentData: skipped(),
   });
+  expect(outcome).toEqual({ state: VERIFICATION_STATES.SUCCESS, updatedTokenList: tokenList });
+  expect(createSession).not.toHaveBeenCalled();
+  expect(getSession).not.toHaveBeenCalled();
+});
 
-  it('ends AWAIT_3DS in a controlled pending state without exposing the token', async () => {
-    const { run } = setup({ respond: () => json(200, awaiting) });
-    const outcome = await run();
-    expect(outcome.state).toBe(VERIFICATION_STATES.AWAITING_3DS);
-    expect(outcome.result).toMatchObject({
-      status: 'AWAIT_3DS',
-      code: 'THREE_DS_CONTINUATION_UNAVAILABLE',
-      niTokenCreated: false,
-      savedToken: null,
-    });
-    expect(JSON.stringify(outcome)).not.toContain('tok_9');
+it.each([true, false])('passes confirmed Apple Pay consent to an injected adapter (skipped=%s)', async skipConsent => {
+  const { action, addWallet } = setup();
+  const acceptedAt = '2026-10-26T06:15:30.000Z';
+  const capturedAt = '2026-10-26T06:17:30.000Z';
+  let now = new Date(acceptedAt);
+  const outcome = await runWalletTokenization({
+    ...action,
+    method: 'APPLE_PAY',
+    usageType: UsageType.PERMANENT,
+    captureWallet: async () => {
+      now = new Date(capturedAt);
+      return { token: payload };
+    },
+    getConsentData: () => buildConsentData({
+      ...inputs,
+      skipConsent,
+      accepted: !skipConsent,
+      acceptedAt,
+      language: 'ar',
+      tncUrl: 'https://merchant.example/terms',
+      now: () => now,
+    }),
   });
+  expect(outcome.state).toBe(VERIFICATION_STATES.SUCCESS);
+  expect(addWallet.mock.calls[0][0]).toMatchObject({
+    walletType: 'APPLE_PAY',
+    usageType: UsageType.PERMANENT,
+    encryptedPayload: payload,
+  });
+  const { consentData } = addWallet.mock.calls[0][0];
+  expect(consentData).toMatchObject({
+    status: skipConsent ? 'NOT_COLLECTED' : 'COLLECTED',
+    clientTimestamp: skipConsent ? capturedAt : acceptedAt,
+    channel: 'REACT_NATIVE',
+  });
+  if (skipConsent) {
+    expect(consentData.skippedByMerchant).toBe(true);
+    expect(consentData).not.toHaveProperty('locale');
+  } else {
+    expect(consentData.locale).toBe('ar');
+    expect(consentData.tncUrl).toBe('https://merchant.example/terms');
+  }
+});
 
-  it('treats a FAILED wallet as failure', async () => {
-    const { run } = setup({ respond: () => json(200, { ...verified, status: 'FAILED' }) });
-    const outcome = await run();
-    expect(outcome.state).toBe(VERIFICATION_STATES.FAILED);
-    expect(outcome.result.niTokenCreated).toBe(false);
+it('does not open a wallet sheet without explicit Add Wallet support', async () => {
+  const { client, addWallet, initiateGooglePay, onVerifying, run } = setup();
+  delete client.supportsAddWallet;
+  expect(await run()).toMatchObject({
+    state: VERIFICATION_STATES.FAILED,
+    result: { code: 'ADD_WALLET_BACKEND_PENDING', niTokenCreated: false },
   });
+  expect(initiateGooglePay).not.toHaveBeenCalled();
+  expect(onVerifying).not.toHaveBeenCalled();
+  expect(addWallet).not.toHaveBeenCalled();
+});
 
-  it('maps 422 walletVerificationFailed to a failure result', async () => {
-    const { run } = setup({
-      respond: () =>
-        json(422, {
-          message: 'Unprocessable Entity',
-          code: 422,
-          errors: [{ errorCode: 'walletVerificationFailed', domain: 'processing' }],
-        }),
-    });
-    const outcome = await run();
-    expect(outcome.state).toBe(VERIFICATION_STATES.FAILED);
-    expect(outcome.result.code).toBe('walletVerificationFailed');
+it.each([undefined, 'private-value'])('validates usageType before native capture (%#)', async usageType => {
+  const { addWallet, initiateGooglePay, run } = setup({ usageType });
+  const outcome = await run();
+  expect(outcome).toMatchObject({
+    state: VERIFICATION_STATES.FAILED,
+    result: { code: 'INVALID_USAGE_TYPE' },
   });
+  expect(initiateGooglePay).not.toHaveBeenCalled();
+  expect(addWallet).not.toHaveBeenCalled();
+  expect(JSON.stringify(outcome)).not.toContain('private-value');
+});
 
-  it('returns to READY without a request when the shopper aborts the sheet', async () => {
-    const { calls, onVerifying, run } = setup({
-      respond: () => json(200, verified),
-      native: async () => {
-        throw { status: 'Aborted', error: 'User cancelled' };
-      },
-    });
-    const outcome = await run();
-    expect(outcome).toEqual({ state: VERIFICATION_STATES.READY });
-    expect(calls).toHaveLength(0);
-    expect(onVerifying).not.toHaveBeenCalled();
-  });
+it('does not start a wallet action for a closed session', async () => {
+  const { addWallet, initiateGooglePay, run } = setup({ isCurrent: () => false });
+  expect(await run()).toEqual({ state: VERIFICATION_STATES.READY });
+  expect(initiateGooglePay).not.toHaveBeenCalled();
+  expect(addWallet).not.toHaveBeenCalled();
+});
 
-  it.each([
-    ['native failure', async () => { throw { status: 'Failed', error: GOOGLE_PAY_TOKEN }; }, 'WALLET_CAPTURE_FAILED'],
-    ['missing token', async () => ({ status: 'Success' }), 'WALLET_TOKEN_MISSING'],
-  ])('fails safely on %s without calling the backend', async (_label, native, code) => {
-    const { calls, run } = setup({ respond: () => json(200, verified), native });
-    const outcome = await run();
-    expect(outcome.state).toBe(VERIFICATION_STATES.FAILED);
-    expect(outcome.result.code).toBe(code);
-    expect(calls).toHaveLength(0);
-    expect(JSON.stringify(outcome)).not.toContain('signedMessage');
-  });
+it('returns to READY without a request when the shopper aborts capture', async () => {
+  const { addWallet, initiateGooglePay, onVerifying, run } = setup();
+  initiateGooglePay.mockRejectedValue({ status: 'Aborted' });
+  expect(await run()).toEqual({ state: VERIFICATION_STATES.READY });
+  expect(addWallet).not.toHaveBeenCalled();
+  expect(onVerifying).not.toHaveBeenCalled();
+});
 
-  it('fails safely when the access token is unavailable', async () => {
-    const calls = [];
-    const client = createTokenizationClient({
-      baseUrl: 'https://tokenization.test',
-      getAccessToken: async () => {
-        throw new Error('merchant backend down');
-      },
-      transport: async (request) => {
-        calls.push(request);
-        return json(200, verified);
-      },
-    });
-    const outcome = await runGooglePayTokenization({
-      client,
-      outletRef: 'outlet-1',
-      order,
-      googlePayConfig,
-      initiateGooglePay: async () => ({ status: 'Success', token: GOOGLE_PAY_TOKEN }),
-    });
-    expect(outcome.state).toBe(VERIFICATION_STATES.FAILED);
-    expect(outcome.result.code).toBe('ACCESS_TOKEN_UNAVAILABLE');
-    expect(calls).toHaveLength(0);
-  });
+it('rejects a native response without encrypted payload before the adapter', async () => {
+  const { addWallet, initiateGooglePay, run } = setup();
+  initiateGooglePay.mockResolvedValue({});
+  expect(await run()).toMatchObject({ result: { code: 'WALLET_TOKEN_MISSING' } });
+  expect(addWallet).not.toHaveBeenCalled();
+});
 
-  it('does not log the wallet token or access token', async () => {
-    const spies = ['log', 'info', 'warn', 'error', 'debug'].map((level) =>
-      jest.spyOn(console, level).mockImplementation(() => {})
-    );
-    try {
-      const { run } = setup({ respond: () => json(200, verified) });
-      await run();
-      spies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
-    } finally {
-      spies.forEach((spy) => spy.mockRestore());
-    }
+it('rejects a malformed updated list without echoing adapter data', async () => {
+  const { addWallet, run } = setup();
+  addWallet.mockResolvedValue({ tokens: payload });
+  const outcome = await run();
+  expect(outcome).toMatchObject({ result: { code: 'MALFORMED_RESPONSE' } });
+  expect(JSON.stringify(outcome)).not.toContain('encrypted bytes');
+});
+
+it('does not echo an encrypted payload from native or client errors', async () => {
+  const { addWallet, initiateGooglePay, run } = setup();
+  initiateGooglePay.mockRejectedValueOnce({ status: 'Failed', error: payload });
+  const nativeError = await run();
+  expect(nativeError).toMatchObject({ result: { code: 'WALLET_CAPTURE_FAILED' } });
+  expect(addWallet).not.toHaveBeenCalled();
+  addWallet.mockRejectedValue(new Error(payload));
+  const clientError = await run();
+  expect(clientError).toMatchObject({ result: { code: 'ADD_WALLET_FAILED' } });
+  expect(JSON.stringify([nativeError, clientError])).not.toContain('encrypted bytes');
+});
+
+it('does not update the list if the session closes before Add Wallet returns', async () => {
+  let active = true;
+  const { addWallet, run } = setup({ isCurrent: () => active });
+  addWallet.mockImplementation(async () => {
+    active = false;
+    return tokenList;
   });
+  expect(await run()).toEqual({ state: VERIFICATION_STATES.READY });
 });

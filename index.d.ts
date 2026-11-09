@@ -143,7 +143,7 @@ export interface SavedCardResponse {
 /** Confirmed React Native consent metadata; IP/server time are backend-owned. */
 export interface TokenizationConsentData {
   status: 'COLLECTED' | 'NOT_COLLECTED';
-  merchantSelectedSkipConsent?: true;
+  skippedByMerchant?: true;
   clientTimestamp: string;
   tncUrl?: string;
   locale?: 'en' | 'fr' | 'ar';
@@ -156,22 +156,29 @@ export interface TokenizationConsentData {
   };
 }
 
+export const UsageType: Readonly<{ ONCE_OFF: 'ONCE_OFF'; PERMANENT: 'PERMANENT' }>;
+export type UsageType = (typeof UsageType)[keyof typeof UsageType];
+
+export interface TokenizationTokenList {
+  tokens: SavedCardResponse[];
+  page?: { number: number; size: number; totalElements: number; totalPages: number };
+  tncUrl?: string;
+}
+
 export interface TokenizationClient {
-  /** Draft contract, disabled unless enableDraftSessionSelection is explicitly true. */
-  selectSessionToken?(args: { outletRef: string; sessionRef: string; selectedToken: string }): Promise<{ status: 'SELECTED' }>;
-  /** List-all endpoint. skipConsent=true sends the current sandbox consent-off query. */
-  getSavedTokens(args: { outletRef: string; skipConsent?: boolean }): Promise<{
-    tokens: SavedCardResponse[];
-    page?: { number: number; size: number; totalElements: number; totalPages: number };
-    tncUrl?: string;
-  }>;
+  createSession(args: { outletRef: string; advisedTokens?: readonly string[] }): Promise<{ sessionRef: string }>;
+  getSession(args: { outletRef: string; sessionRef: string; skipConsent?: boolean }): Promise<TokenizationTokenList>;
+  selectToken(args: { outletRef: string; sessionRef: string; tokenRef: string }): Promise<{ status: 'SELECTED' }>;
+  /** Wallet capture requires explicit support. The built-in client is backend-pending. */
+  readonly supportsAddWallet?: boolean;
   addWallet(args: {
     outletRef: string;
+    sessionRef: string;
     walletType: 'APPLE_PAY' | 'GOOGLE_PAY';
     encryptedPayload: string;
-    /** The tokenization UI supplies the confirmed, allowlisted object. */
-    consentData?: TokenizationConsentData;
-  }): Promise<SavedCardResponse>;
+    usageType: UsageType;
+    consentData: TokenizationConsentData;
+  }): Promise<TokenizationTokenList>;
   authenticateThreeDS(args: {
     outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;
     threeDSCompInd: 'Y' | 'N' | 'U'; browserInfo: Record<string, unknown>;
@@ -185,14 +192,12 @@ export interface TokenizationClient {
 export function createTokenizationClient(options: {
   baseUrl: string;
   getAccessToken: () => Promise<string>;
-  /** Opt in to the preliminary PUT session selectedToken contract. Default false. */
-  enableDraftSessionSelection?: boolean;
   transport?: (request: {
     url: string; method: string; headers: Record<string, string>; body?: unknown;
     responseMode?: 'status-only';
   }) => Promise<{ status: number; text?: string }>;
   fetchImpl?: typeof fetch;
-}): TokenizationClient & Required<Pick<TokenizationClient, 'selectSessionToken'>>;
+}): TokenizationClient;
 
 export class TokenizationApiError extends Error {
   status: number;
@@ -224,15 +229,16 @@ export interface NgeniusTokenizationProps {
   skipConsent?: boolean;
   tokenizationClient?: TokenizationClient;
   outletRef?: string;
-  /** NI session reference for the draft selectedToken operation only. No create-session implementation. */
-  sessionRef?: string;
+  /** References advised once when the SDK creates the session. */
+  advisedTokens?: readonly string[];
+  /** Invoked for each Add action. A missing or invalid value blocks that action. */
+  getUsageType?: (action: { method: 'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY' }) => UsageType;
   modeConfig?: TokenizationModeConfig;
   applePayConfig?: ApplePayConfig;
   googlePayConfig?: GooglePayConfig;
-  onSuccess?: (result: TokenizationResult) => void;
   onError?: (result: TokenizationResult) => void;
   onCancel?: () => void;
-  /** Emitted after HTTP 200, success animation and local closing. No chosen token/card data is returned. */
+  /** Emitted after confirmed selection and local closing, with the session reference for merchant payment. */
   onSelectionComplete?: (result: TokenizationSelectionCompletion) => void;
 }
 
@@ -264,6 +270,7 @@ export interface TokenizationSelectionCompletion {
   flow: 'TOKENIZATION';
   status: 'SELECTED';
   canClose: true;
+  sessionRef: string;
 }
 
 /** Optional plain-text UI overrides. NI consent wording and wallet artwork are not overrideable. */

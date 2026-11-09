@@ -14,7 +14,7 @@ const createFetchTransport = (fetchImpl) => {
     const response = await fetchFn(url, init);
     return {
       status: response.status,
-      // Draft selection acknowledges HTTP status only; other operations need JSON.
+      // Selection acknowledges HTTP status only; other operations need JSON.
       text: responseMode === 'status-only' ? undefined : await response.text(),
     };
   };

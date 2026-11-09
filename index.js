@@ -15,6 +15,7 @@ const {
   createTokenizationClient,
 } = require('./src/tokenization/api/TokenizationClient');
 const { TokenizationApiError } = require('./src/tokenization/api/errors');
+const { UsageType } = require('./src/tokenization/usageType');
 
 const { NiSdk } = NativeModules;
 
@@ -122,4 +123,5 @@ export {
   NgeniusTokenization,
   createTokenizationClient,
   TokenizationApiError,
+  UsageType,
 };

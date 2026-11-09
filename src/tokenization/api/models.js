@@ -1,6 +1,6 @@
 const { supportedTermsUrl } = require('../termsUrl');
-const { serializeConsentData } = require('../consentData');
-const { REFERENCE_PATTERN } = require('./endpoints');
+const { REFERENCE_PATTERN, validReference } = require('./endpoints');
+const { TokenizationApiError } = require('./errors');
 
 const TOKEN_TYPES = ['CARD', 'WALLET'];
 const WALLET_TYPES = ['APPLE_PAY', 'GOOGLE_PAY'];
@@ -176,7 +176,7 @@ const parseSavedCardResponse = (
   return result;
 };
 
-// Pagination is response metadata only; the list endpoint defines no query contract.
+// Pagination is response metadata only.
 const parseSavedTokensResponse = value => {
   if (!value || typeof value !== 'object' || !Array.isArray(value.tokens)) {
     throw new Error('Saved tokens response is invalid');
@@ -205,22 +205,19 @@ const parseSavedTokensResponse = value => {
   return result;
 };
 
-// Wallet payloads are opaque; changing their encoding can invalidate them.
-const mapAddWalletRequest = input => {
-  if (!input || WALLET_TYPES.indexOf(input.walletType) === -1) {
-    throw new Error('walletType must be APPLE_PAY or GOOGLE_PAY');
+const parseCreateSessionResponse = value => {
+  if (!validReference(value?.sessionRef)) throw new Error('Session response requires a valid sessionRef');
+  return { sessionRef: value.sessionRef };
+};
+
+const mapCreateSessionRequest = (advisedTokens = []) => {
+  if (Array.isArray(advisedTokens)) {
+    const tokens = Array.from(advisedTokens);
+    if (tokens.every(validReference)) return { advisedTokens: tokens };
   }
-  if (!isNonEmptyString(input.encryptedPayload)) {
-    throw new Error('encryptedPayload is required');
-  }
-  const request = {
-    walletType: input.walletType,
-    encryptedPayload: input.encryptedPayload,
-  };
-  if (input.consentData !== undefined) {
-    request.consentData = serializeConsentData(input.consentData);
-  }
-  return request;
+  throw new TokenizationApiError({
+    status: 0, code: 'INVALID_ADVISED_TOKENS', message: 'advisedTokens must be an array of token references',
+  });
 };
 
 const BROWSER_INFO_FIELDS = [
@@ -270,7 +267,8 @@ module.exports = {
   TOKEN_STATUSES,
   parseSavedCardResponse,
   parseSavedTokensResponse,
-  mapAddWalletRequest,
+  mapCreateSessionRequest,
+  parseCreateSessionResponse,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 };

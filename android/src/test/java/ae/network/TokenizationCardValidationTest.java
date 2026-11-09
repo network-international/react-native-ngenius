@@ -18,10 +18,27 @@ public class TokenizationCardValidationTest {
         assertNull(TokenizationCardValidation.expiry("13/99"));
         assertNull(TokenizationCardValidation.expiry("01/20"));
     }
-    @Test public void refusesPlainHttpCredentialsRedirectTargetsAndOtherPaths() {
-        assertTrue(TokenizationCardValidation.validEndpoint("https://sandbox.test/api/outlets/outlet/cards"));
-        for (String invalid : new String[]{"http://sandbox.test/api/outlets/outlet/cards", "https://user:secret@sandbox.test/api/outlets/outlet/cards", "https://sandbox.test/api/outlets/outlet/cards?next=secret", "https://sandbox.test/api/outlets/outlet/wallets", "https://sandbox.test/api/outlets/outlet/cards#secret"}) {
-            assertFalse(TokenizationCardValidation.validEndpoint(invalid));
+    @Test public void acceptsOnlyTheSessionCardEndpointForTheGivenReference() {
+        String url = "https://sandbox.test/api/outlets/outlet/payment-tokenization-sessions/session-1/cards";
+        assertTrue(TokenizationCardValidation.validEndpoint(url, "session-1"));
+        assertTrue(TokenizationCardValidation.validEndpoint(url.replace("session-1", "session%3A1"), "session:1"));
+        assertFalse(TokenizationCardValidation.validEndpoint(url, "session-2"));
+        assertFalse(TokenizationCardValidation.validEndpoint(url, null));
+        for (String invalid : new String[]{
+            url.replace("https:", "http:"),
+            url.replace("https://", "https://user:secret@"),
+            url + "?next=secret",
+            url + "#secret",
+            url.replace("/cards", "/wallets"),
+            "https://sandbox.test/api/outlets/outlet/cards"
+        }) {
+            assertFalse(TokenizationCardValidation.validEndpoint(invalid, "session-1"));
         }
+    }
+    @Test public void acceptsOnlyTheSupportedUsageTypes() {
+        assertTrue(TokenizationCardValidation.validUsageType("ONCE_OFF"));
+        assertTrue(TokenizationCardValidation.validUsageType("PERMANENT"));
+        assertFalse(TokenizationCardValidation.validUsageType(null));
+        assertFalse(TokenizationCardValidation.validUsageType("UNKNOWN"));
     }
 }

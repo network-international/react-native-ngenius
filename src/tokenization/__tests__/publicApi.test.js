@@ -19,6 +19,7 @@ describe('public SDK exports', () => {
       'NgeniusTokenization',
       'SDK_VERSION',
       'TokenizationApiError',
+      'UsageType',
       'configureSDK',
       'createTokenizationClient',
       'executeThreeDSTwo',

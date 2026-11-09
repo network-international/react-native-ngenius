@@ -2,7 +2,7 @@ const { buildConsentData, serializeConsentData, mapConsentRequest } = require('.
 const { SDK_VERSION } = require('../../version');
 const { inputs, skipped, collected } = require('./fixtures/consent');
 it('implements Hossam’s exact NOT_COLLECTED contract', () => {
-  expect(skipped()).toEqual({ status: 'NOT_COLLECTED', merchantSelectedSkipConsent: true, clientTimestamp: '2026-10-26T06:15:30.000Z',
+  expect(skipped()).toEqual({ status: 'NOT_COLLECTED', skippedByMerchant: true, clientTimestamp: '2026-10-26T06:15:30.000Z',
     channel: 'REACT_NATIVE', sdk: { name: 'react-native-ngenius', version: SDK_VERSION },
     device: { platform: 'ANDROID', osVersion: '35', timezoneOffsetMinutes: -240, screenWidth: 412, screenHeight: 915 } });
 });

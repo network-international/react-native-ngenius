@@ -1,38 +1,34 @@
-const { TOKENIZATION_PATHS } = require('./endpoints');
+const { TOKENIZATION_PATHS, validReference } = require('./endpoints');
 const { TokenizationApiError, errorFromSessionSelectionResponse } = require('./errors');
 
-// UUID version/variant constraints are not defined by the preliminary contract.
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const createSessionTokenSelector = ({ enabled, request }) => async (args = {}) => {
-  if (enabled !== true) {
-    throw new TokenizationApiError({
-      status: 0,
-      code: 'SESSION_SELECTION_NOT_ENABLED',
-      message: 'The preliminary session selection API is not enabled',
-    });
-  }
-  const selectedToken = args && args.selectedToken;
-  if (typeof selectedToken !== 'string' || selectedToken.length !== 36 || !UUID_PATTERN.test(selectedToken)) {
-    throw new TokenizationApiError({
-      status: 0,
-      code: 'INVALID_SESSION_SELECTION',
-      message: 'selectedToken must be a UUID',
-    });
-  }
-  const path = TOKENIZATION_PATHS.selectSessionToken({
-    outletRef: args && args.outletRef,
-    sessionRef: args && args.sessionRef,
-  });
-  const response = await request({
-    method: 'PUT', path, body: { selectedToken }, responseMode: 'status-only',
-  });
-  // Only the supplied contract's exact 200 confirms persistence. The body is
-  // deliberately not parsed or forwarded, even when it contains token details.
-  if (!response || response.status !== 200) {
-    throw errorFromSessionSelectionResponse({ status: response && response.status });
-  }
-  return { status: 'SELECTED' };
+const createSessionTokenSelector = ({ request }) => {
+  const inFlight = new Set();
+  return async args => {
+    const { outletRef, sessionRef, tokenRef } = args || {};
+    if (!validReference(tokenRef)) {
+      throw new TokenizationApiError({
+        status: 0, code: 'INVALID_TOKEN_REF', message: 'tokenRef is required and must be valid',
+      });
+    }
+    const path = TOKENIZATION_PATHS.selectToken({ outletRef, sessionRef });
+    if (inFlight.has(path)) {
+      throw new TokenizationApiError({
+        status: 0, code: 'SESSION_SELECTION_IN_PROGRESS', message: 'Payment method selection is already in progress',
+      });
+    }
+    inFlight.add(path);
+    try {
+      const response = await request({
+        method: 'PUT', path, body: { tokenRef }, responseMode: 'status-only',
+      });
+      if (response?.status !== 200 && response?.status !== 204) {
+        throw errorFromSessionSelectionResponse({ status: response?.status });
+      }
+      return { status: 'SELECTED' };
+    } finally {
+      inFlight.delete(path);
+    }
+  };
 };
 
 module.exports = { createSessionTokenSelector };

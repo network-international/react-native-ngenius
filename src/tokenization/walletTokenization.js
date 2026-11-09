@@ -1,19 +1,19 @@
-const { mapConsentRequest } = require('./consentData');
-const { TokenizationApiError } = require('./api/errors');
 const {
-  VERIFICATION_STATES,
-  stateForSavedToken,
-} = require('./verificationStates');
-const {
-  savedTokenResult,
-  awaitingThreeDSResult,
-  apiErrorResult,
-} = require('./session');
+  isWalletTokenizationAvailable,
+  mapAddWalletRequest,
+  validateWalletContext,
+  walletBackendPendingError,
+} = require('./api/addWallet');
+const { parseSavedTokensResponse } = require('./api/models');
+const { VERIFICATION_STATES } = require('./verificationStates');
+const { apiErrorResult } = require('./session');
 
 const runWalletTokenization = async ({
-  method: METHOD = 'GOOGLE_PAY',
+  method = 'GOOGLE_PAY',
   client,
   outletRef,
+  sessionRef,
+  usageType,
   order,
   googlePayConfig,
   captureWallet,
@@ -22,79 +22,69 @@ const runWalletTokenization = async ({
   getConsentData,
   isCurrent = () => true,
 }) => {
-  if (!isCurrent()) return { state: VERIFICATION_STATES.READY };
+  const ready = { state: VERIFICATION_STATES.READY };
+  const fail = error => ({
+    state: VERIFICATION_STATES.FAILED,
+    result: apiErrorResult({ method, error }),
+  });
+  if (!isCurrent()) return ready;
+  try {
+    validateWalletContext({ outletRef, sessionRef, usageType });
+  } catch (error) {
+    return fail(error);
+  }
+  if (!isWalletTokenizationAvailable(client)) {
+    return fail(walletBackendPendingError());
+  }
+
   let encryptedPayload;
   try {
     const response = await captureWallet(order, googlePayConfig);
-    encryptedPayload = response && response.token;
+    encryptedPayload = response?.token;
   } catch (error) {
-    if (error && error.status === 'Aborted') {
-      return { state: VERIFICATION_STATES.READY };
-    }
-    return {
-      state: VERIFICATION_STATES.FAILED,
-      result: apiErrorResult({
-        method: METHOD,
-        error: {
-          code: 'WALLET_CAPTURE_FAILED',
-          message: 'Wallet capture did not complete',
-        },
-      }),
-    };
+    if (error?.status === 'Aborted' || !isCurrent()) return ready;
+    return fail({
+      code: 'WALLET_CAPTURE_FAILED',
+      message: 'Wallet capture did not complete',
+    });
   }
-  if (!isCurrent()) return { state: VERIFICATION_STATES.READY };
-  if (typeof encryptedPayload !== 'string' || encryptedPayload.length === 0) {
-    return {
-      state: VERIFICATION_STATES.FAILED,
-      result: apiErrorResult({
-        method: METHOD,
-        error: {
-          code: 'WALLET_TOKEN_MISSING',
-          message: 'Wallet did not return a payment token',
-        },
-      }),
-    };
+  if (!isCurrent()) return ready;
+  if (typeof encryptedPayload !== 'string' || !encryptedPayload.length) {
+    return fail({
+      code: 'WALLET_TOKEN_MISSING',
+      message: 'Wallet did not return a payment token',
+    });
   }
 
-  if (onVerifying) {
-    onVerifying();
-  }
-  let savedToken;
+  let updatedTokenList;
   try {
-    const tokenData = { outletRef, walletType: METHOD, encryptedPayload };
-    const resolvedConsent = getConsentData ? getConsentData() : consent;
-    const request = resolvedConsent
-      ? mapConsentRequest({ tokenData, consent: resolvedConsent })
-      : tokenData;
-    savedToken = await client.addWallet(request);
-  } catch (error) {
-    const safeError =
-      error instanceof TokenizationApiError
-        ? error
-        : { code: 'UNKNOWN_ERROR', message: 'Tokenization request failed' };
+    const request = mapAddWalletRequest({
+      walletType: method,
+      encryptedPayload,
+      usageType,
+      consentData: getConsentData ? getConsentData() : consent,
+    });
+    onVerifying?.();
+    updatedTokenList = await client.addWallet({ outletRef, sessionRef, ...request });
+  } catch {
+    if (!isCurrent()) return ready;
+    return fail({
+      code: 'ADD_WALLET_FAILED',
+      message: 'Wallet tokenization request failed',
+    });
+  }
+  if (!isCurrent()) return ready;
+  try {
     return {
-      state: VERIFICATION_STATES.FAILED,
-      result: apiErrorResult({ method: METHOD, error: safeError }),
+      state: VERIFICATION_STATES.SUCCESS,
+      updatedTokenList: parseSavedTokensResponse(updatedTokenList),
     };
+  } catch {
+    return fail({
+      code: 'MALFORMED_RESPONSE',
+      message: 'Wallet tokenization response is invalid',
+    });
   }
-
-  const state = stateForSavedToken(savedToken);
-  if (state === VERIFICATION_STATES.SUCCESS) {
-    return { state, result: savedTokenResult({ method: METHOD, savedToken }) };
-  }
-  if (state === VERIFICATION_STATES.AWAITING_3DS) {
-    return { state, result: awaitingThreeDSResult({ method: METHOD }) };
-  }
-  return {
-    state,
-    result: apiErrorResult({
-      method: METHOD,
-      error: {
-        code: 'walletVerificationFailed',
-        message: 'Wallet verification failed',
-      },
-    }),
-  };
 };
 
 const runGooglePayTokenization = ({ initiateGooglePay, ...args }) =>
