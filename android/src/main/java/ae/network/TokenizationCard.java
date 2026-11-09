@@ -29,17 +29,12 @@ import android.widget.TextView;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.WritableMap;
-import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -243,13 +238,8 @@ final class TokenizationCard {
                 try (java.io.OutputStream body = request.getOutputStream()) { body.write(payload); }
                 int status = request.getResponseCode();
                 if (status >= 200 && status < 300 && !finished) {
-                    try (InputStream input = request.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-                        byte[] buffer = new byte[4096]; int count;
-                        while ((count = input.read(buffer)) != -1) {
-                            if (output.size() + count > 65536) throw new java.io.IOException();
-                            output.write(buffer, 0, count);
-                        }
-                        safeResponse = safeResponse(new JSONObject(output.toString("UTF-8")));
+                    try (InputStream input = request.getInputStream()) {
+                        safeResponse = TokenizationCardResponse.read(input);
                     }
                 }
             } catch (Exception ignored) { /* Never forward a response body or exception containing card data. */ }
@@ -257,44 +247,6 @@ final class TokenizationCard {
             final Map<String, Object> response = safeResponse;
             main.post(() -> finish(response == null ? "Failed" : "Response", response));
         });
-    }
-    private static Map<String, Object> safeResponse(JSONObject source) throws Exception {
-        JSONArray tokens = source.getJSONArray("tokens");
-        List<Map<String, Object>> safeTokens = new ArrayList<>(tokens.length());
-        for (int i = 0; i < tokens.length(); i++) {
-            safeTokens.add(safeToken(tokens.getJSONObject(i)));
-        }
-        Map<String, Object> safe = new HashMap<>();
-        safe.put("tokens", safeTokens);
-        if (source.opt("tncUrl") instanceof String) safe.put("tncUrl", source.getString("tncUrl"));
-        JSONObject page = source.optJSONObject("page");
-        if (page != null) {
-            Map<String, Object> safePage = new HashMap<>();
-            for (String field : new String[]{"number", "size", "totalElements", "totalPages"}) {
-                if (page.opt(field) instanceof Number) safePage.put(field, page.get(field));
-            }
-            safe.put("page", safePage);
-        }
-        return safe;
-    }
-    private static Map<String, Object> safeToken(JSONObject source) throws Exception {
-        Map<String, Object> safe = new HashMap<>();
-        for (String field : new String[]{"tokenRef", "type", "status", "walletType"}) {
-            if (source.opt(field) instanceof String) safe.put(field, source.getString(field));
-        }
-        JSONObject details = source.optJSONObject("cardDetails");
-        if (details != null) {
-            Map<String, Object> masked = new HashMap<>();
-            if (details.opt("scheme") instanceof String) masked.put("scheme", details.getString("scheme"));
-            String last4 = details.optString("last4");
-            String expiry = details.optString("expiry");
-            if (details.opt("last4") instanceof String && last4.matches("[0-9]{4}")) masked.put("last4", last4);
-            if (details.opt("expiry") instanceof String && expiry.matches("[0-9]{4}-(0[1-9]|1[0-2])")) {
-                masked.put("expiry", expiry);
-            }
-            safe.put("cardDetails", masked);
-        }
-        return safe;
     }
     void cancel() { finish("Aborted", null); }
     void fail() { finish("Failed", null); }

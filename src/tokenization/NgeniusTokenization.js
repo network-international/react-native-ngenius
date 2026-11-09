@@ -41,6 +41,7 @@ const {
 
 // Card capture stays native so PAN/CVV never cross the React Native bridge.
 const FLOW = 'TOKENIZATION';
+const LOADING_TOKENS = { loading: true, tokens: [], failed: false };
 
 const NgeniusTokenization = ({
   visible = false,
@@ -71,11 +72,7 @@ const NgeniusTokenization = ({
   const tokenizationClientRef = useRef(tokenizationClient);
   tokenizationClientRef.current = tokenizationClient;
   const [tnc, setTnc] = useState({ loaded: false, url: undefined });
-  const [savedTokens, setSavedTokens] = useState({
-    loading: true,
-    tokens: [],
-    failed: false,
-  });
+  const [savedTokens, setSavedTokens] = useState(LOADING_TOKENS);
   const [tokenizationSessionRef, setTokenizationSessionRef] = useState(null);
   const backendSessionRef = useRef(null);
   const advisedTokensRef = useRef(advisedTokens);
@@ -225,30 +222,30 @@ const NgeniusTokenization = ({
     let cancelled = false;
     const isCurrent = () => !cancelled && sessionRef.current.isCurrent(generation);
     let journey = backendSessionRef.current;
-    if (journey?.generation !== generation) {
+    if (journey?.generation !== generation || journey.outletRef !== outletRef) {
       setTnc({ loaded: false, url: undefined });
-      const client = tokenizationClientRef.current;
-      if (!client || !outletRef) {
-        setSavedTokens({ loading: false, tokens: [], failed: true });
-        return undefined;
-      }
       const advised = advisedTokensRef.current;
       journey = {
-        client,
+        outletRef,
         generation,
         advisedTokens: Array.isArray(advised) ? Array.from(advised) : advised,
         listRevision: 0,
       };
       backendSessionRef.current = journey;
     }
-    setSavedTokens({ loading: true, tokens: [], failed: false });
-    const { client } = journey;
     if (!journey.creation) {
+      const client = tokenizationClientRef.current;
+      if (!client || !outletRef) {
+        setSavedTokens({ loading: false, tokens: [], failed: true });
+        return undefined;
+      }
+      // A failed Create leaves no session to bind. Retry can use a replacement client.
+      journey.client = client;
       journey.creation = Promise.resolve()
         .then(() => {
           if (!sessionRef.current.isCurrent(generation)) return undefined;
           return client.createSession({
-            outletRef,
+            outletRef: journey.outletRef,
             advisedTokens: journey.advisedTokens === undefined ? [] : journey.advisedTokens,
           });
         })
@@ -261,13 +258,15 @@ const NgeniusTokenization = ({
           throw error;
         });
     }
+    setSavedTokens(LOADING_TOKENS);
+    const { client, creation } = journey;
     const revision = journey.listRevision;
     const load = async () => {
       try {
-        const reference = await journey.creation;
+        const reference = await creation;
         if (!isCurrent()) return;
         setTokenizationSessionRef(reference);
-        const response = await client.getSession({ outletRef, sessionRef: reference, skipConsent });
+        const response = await client.getSession({ outletRef: journey.outletRef, sessionRef: reference, skipConsent });
         if (!isCurrent() || journey.listRevision !== revision) return;
         if (!Array.isArray(response?.tokens)) throw new Error('Session token list is unavailable');
         setTnc({ loaded: true, url: response.tncUrl });
@@ -406,30 +405,37 @@ const NgeniusTokenization = ({
 
   const renderedGeneration = sessionRef.current.generation();
   const sessionClient = backendSessionRef.current?.client;
+  const visibleTokens = previousOutletRef.current === outletRef ? savedTokens : LOADING_TOKENS;
   const selectionUiRef = useRef(null);
   selectionUiRef.current = {
-    savedTokens, selectedTokenRef, status, visible, selectionStatus,
+    savedTokens: visibleTokens, selectedTokenRef, status, visible, selectionStatus,
     tokenizationSessionRef, outletRef, skipConsent, termsUrl: consent?.url,
     language, methods, getUsageType,
   };
+  const isCurrentJourney = useCallback(() => {
+    const latest = selectionUiRef.current;
+    const journey = backendSessionRef.current;
+    return Boolean(tokenizationSessionRef) && latest.visible &&
+      latest.outletRef === outletRef && latest.tokenizationSessionRef === tokenizationSessionRef &&
+      journey?.outletRef === outletRef && journey?.generation === renderedGeneration &&
+      sessionRef.current.isCurrent(renderedGeneration);
+  }, [outletRef, renderedGeneration, tokenizationSessionRef]);
   const onSelectMethod = useCallback(
     async method => {
       const current = selectionUiRef.current;
       if (
-        !visible || !current.visible || current.savedTokens.loading || current.savedTokens.failed ||
-        !tokenizationSessionRef || current.getUsageType !== getUsageType ||
-        current.outletRef !== outletRef || current.tokenizationSessionRef !== tokenizationSessionRef ||
+        !isCurrentJourney() || current.savedTokens.loading || current.savedTokens.failed ||
+        current.getUsageType !== getUsageType ||
         current.skipConsent !== skipConsent || current.termsUrl !== consent?.url || current.language !== language ||
         !current.methods.includes(method) ||
         ![VERIFICATION_STATES.READY, VERIFICATION_STATES.FAILED].includes(current.status) ||
         !['idle', 'failed'].includes(current.selectionStatus) || selectionAttemptRef.current ||
-        !sessionRef.current.isCurrent(renderedGeneration) || sessionRef.current.isInFlight() ||
-        backendSessionRef.current?.client !== sessionClient
+        sessionRef.current.isInFlight() || backendSessionRef.current?.client !== sessionClient
       ) return;
       const generation = renderedGeneration;
-      const isCurrent = () => sessionRef.current.isCurrent(generation);
+      const isCurrent = isCurrentJourney;
       const rejectAction = error => {
-        if (!sessionRef.current.tryBeginNative()) return;
+        if (!isCurrent() || !sessionRef.current.tryBeginNative()) return;
         applyAddOutcome({
           state: VERIFICATION_STATES.FAILED,
           result: apiErrorResult({ method, error }),
@@ -437,11 +443,17 @@ const NgeniusTokenization = ({
       };
       let usageType;
       try {
-        usageType = validateUsageType(getUsageType?.({ method }));
+        const requestedUsage = getUsageType?.({ method });
+        if (requestedUsage != null && ['object', 'function'].includes(typeof requestedUsage)) {
+          // Keep the resolver synchronous, but consume an accidental Promise rejection.
+          Promise.resolve(requestedUsage).catch(() => {});
+        }
+        usageType = validateUsageType(requestedUsage);
       } catch {
         rejectAction(invalidUsageType());
         return;
       }
+      if (!isCurrent()) return;
       if (method !== 'CARD' && !isWalletTokenizationAvailable(sessionClient)) {
         rejectAction(walletBackendPendingError());
         return;
@@ -559,7 +571,7 @@ const NgeniusTokenization = ({
       }
     },
     [
-      visible,
+      isCurrentJourney,
       skipConsent,
       language,
       consent?.url,
@@ -578,12 +590,13 @@ const NgeniusTokenization = ({
     ],
   );
 
-  const canSelect = current =>
-    current.visible && !current.savedTokens.loading && !current.savedTokens.failed &&
+  const canInteract = current =>
+    current.visible && current.outletRef === outletRef && !current.savedTokens.loading &&
     !sessionRef.current.isInFlight() && sessionRef.current.isCurrent(renderedGeneration) &&
-    current.tokenizationSessionRef === tokenizationSessionRef && current.outletRef === outletRef &&
     ['idle', 'failed'].includes(current.selectionStatus) &&
     [VERIFICATION_STATES.READY, VERIFICATION_STATES.FAILED].includes(current.status);
+  const canSelect = current =>
+    isCurrentJourney() && canInteract(current) && !current.savedTokens.failed;
   const onSelectToken = tokenRef => {
     const current = selectionUiRef.current;
     if (!canSelect(current) || !savedPaymentMethodSelection(current.savedTokens.tokens, tokenRef)) return;
@@ -599,23 +612,18 @@ const NgeniusTokenization = ({
       !savedPaymentMethodSelection(current.savedTokens.tokens, tokenRef)
     ) return;
     const client = backendSessionRef.current?.client;
-    if (!tokenizationSessionRef || typeof client?.selectToken !== 'function') {
+    if (typeof client?.selectToken !== 'function') {
       setSelectionStatus('failed');
       setSelectionError(resolvedModeConfig.labels.selectionError || t(language, 'SELECTION_UNAVAILABLE'));
       return;
     }
     if (!sessionRef.current.tryBeginNative()) return;
-    const attempt = { id: ++selectionCounterRef.current, generation: renderedGeneration };
+    const attempt = { id: ++selectionCounterRef.current };
     selectionAttemptRef.current = attempt;
     selectionUiRef.current = { ...current, selectionStatus: 'submitting' };
     setSelectionStatus('submitting');
     setSelectionError(undefined);
-    const isCurrent = () => {
-      const latest = selectionUiRef.current;
-      return selectionAttemptRef.current === attempt &&
-        sessionRef.current.isCurrent(attempt.generation) && latest.visible &&
-        latest.tokenizationSessionRef === tokenizationSessionRef && latest.outletRef === outletRef;
-    };
+    const isCurrent = () => selectionAttemptRef.current === attempt && isCurrentJourney();
     try {
       const response = await client.selectToken({ outletRef, sessionRef: tokenizationSessionRef, tokenRef });
       if (!isCurrent()) return;
@@ -642,7 +650,7 @@ const NgeniusTokenization = ({
   };
   const retrySavedTokens = () => {
     const current = selectionUiRef.current;
-    if (!canSelect({ ...current, savedTokens: { ...current.savedTokens, failed: false } })) return;
+    if (previousOutletRef.current !== outletRef || !canInteract(current)) return;
     const loading = { ...current.savedTokens, loading: true, failed: false };
     selectionUiRef.current = { ...current, savedTokens: loading };
     setSavedTokens(loading);
@@ -665,14 +673,14 @@ const NgeniusTokenization = ({
         orderSummary={presentationOrder}
         consent={consent}
         consentAccepted={consentAccepted}
-        savedTokens={savedTokens}
+        savedTokens={visibleTokens}
         selectedTokenRef={selectedTokenRef}
         onSelectToken={onSelectToken}
         onConfirmSavedToken={confirmSavedToken}
         modeConfig={resolvedModeConfig}
         selectionStatus={selectionStatus}
         selectionError={selectionError}
-        importStatus={savedTokens.loading ? 'loading' : savedTokens.failed ? 'error' : savedTokens.tokens.length ? 'success' : 'empty'}
+        importStatus={visibleTokens.loading ? 'loading' : visibleTokens.failed ? 'error' : visibleTokens.tokens.length ? 'success' : 'empty'}
         onRetrySavedTokens={retrySavedTokens}
         methods={methods}
         status={status}

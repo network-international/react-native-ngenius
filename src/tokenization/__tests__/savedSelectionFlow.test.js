@@ -2,7 +2,17 @@ jest.mock('react-native', () => ({
   Modal: 'Modal', Platform: { OS: 'android', Version: 35 },
   Dimensions: { get: () => ({ width: 412, height: 915 }) },
 }));
-jest.mock('../ui/TokenizationScreen', () => 'TokenizationScreen');
+jest.mock('../ui/TokenizationScreen', () => {
+  const React = require('react');
+  return function MockTokenizationScreen(props) {
+    React.useLayoutEffect(() => {
+      const callback = mockScreenLayout;
+      mockScreenLayout = undefined;
+      callback?.(props);
+    });
+    return React.createElement('TokenizationScreen', props);
+  };
+});
 jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn() }));
 jest.mock('../../nativePayments', () => ({
   isApplePaySupported: jest.fn().mockResolvedValue(false),
@@ -34,7 +44,7 @@ const deferred = () => {
   return { resolve, reject, promise };
 };
 const flush = async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); };
-let tree, props;
+let tree, props, mockScreenLayout;
 const screen = () => tree.root.findByType('TokenizationScreen').props;
 const modal = () => tree.root.findByType('Modal').props;
 const defaultClient = () => ({
@@ -77,6 +87,7 @@ beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); startNativeCardTo
 afterEach(() => {
   if (tree) act(() => tree.unmount());
   tree = undefined;
+  mockScreenLayout = undefined;
   jest.clearAllTimers();
   jest.useRealTimers();
 });
@@ -329,6 +340,37 @@ it('rejects previous-launch row handlers after close/reopen and previous-session
   expect(props.tokenizationClient.selectToken).toHaveBeenCalledWith({ outletRef: 'outlet-2', sessionRef: 'session-2', tokenRef: card.tokenRef });
 });
 
+it.each(['Add Card', 'Select Token'])('blocks %s during the first render for a different outlet', async action => {
+  const firstClient = defaultClient();
+  const nextClient = defaultClient();
+  nextClient.getSession.mockResolvedValue({ tokens: [other] });
+  startNativeCardTokenization.mockReturnValue({ promise: new Promise(() => {}), cancel: jest.fn() });
+  await open({ tokenizationClient: firstClient });
+
+  const invoke = (screenProps, tokenRef) => action === 'Add Card'
+    ? screenProps.onSelectMethod('CARD')
+    : screenProps.onConfirmSavedToken(tokenRef);
+  // This models an event delivered after the new render, before effects reset the old journey.
+  const earlyAction = jest.fn(screenProps => { invoke(screenProps, card.tokenRef); });
+  mockScreenLayout = earlyAction;
+  await update({ outletRef: 'outlet-2', tokenizationClient: nextClient });
+  expect(earlyAction).toHaveBeenCalledTimes(1);
+  expect(startNativeCardTokenization).not.toHaveBeenCalled();
+  expect(firstClient.selectToken).not.toHaveBeenCalled();
+  expect(nextClient.selectToken).not.toHaveBeenCalled();
+
+  await act(async () => { await invoke(screen(), other.tokenRef); });
+  if (action === 'Add Card') {
+    expect(startNativeCardTokenization).toHaveBeenCalledWith(expect.objectContaining({
+      client: nextClient, outletRef: 'outlet-2', sessionRef: 'session-2',
+    }));
+  } else {
+    expect(nextClient.selectToken).toHaveBeenCalledWith({
+      outletRef: 'outlet-2', sessionRef: 'session-2', tokenRef: other.tokenRef,
+    });
+  }
+});
+
 const invalidate = async boundary => {
   if (boundary === 'unmount') { act(() => tree.unmount()); tree = undefined; }
   else await update(boundary === 'close' ? { visible: false } : { outletRef: 'outlet-2' });
@@ -427,18 +469,48 @@ it.each(['outlet', 'reopen'])('replaces the order snapshot and clears old add fe
   expect(nextOrder.amount).toEqual({ currencyCode: 'USD', value: 200 });
 });
 
-it('uses the advised tokens for creation only, and retries Get with the original session', async () => {
+it('retries failed Create using the replacement client for the same outlet', async () => {
+  const expired = defaultClient();
+  expired.createSession.mockRejectedValue(new Error('expired access token'));
+  const replacement = defaultClient();
+  await open({ tokenizationClient: expired, advisedTokens: [card.tokenRef] });
+  expect(screen().savedTokens.failed).toBe(true);
+  expect(expired.getSession).not.toHaveBeenCalled();
+
+  await update({ tokenizationClient: replacement });
+  await act(async () => { screen().onRetrySavedTokens(); await flush(); });
+  expect(expired.createSession).toHaveBeenCalledTimes(1);
+  expect(replacement.createSession).toHaveBeenCalledTimes(1);
+  expect(replacement.createSession).toHaveBeenCalledWith({ outletRef: 'outlet', advisedTokens: [card.tokenRef] });
+  expect(replacement.getSession).toHaveBeenCalledWith({ outletRef: 'outlet', sessionRef: 'session-1', skipConsent: true });
+  expect(screen().savedTokens).toMatchObject({ failed: false, tokens: [card, other] });
+});
+
+it('keeps the original session and client when retrying Get after successful Create', async () => {
   const client = defaultClient();
+  const replacement = defaultClient();
+  startNativeCardTokenization.mockReturnValue({
+    promise: Promise.resolve({ state: 'READY' }), cancel: jest.fn(),
+  });
   client.getSession.mockRejectedValueOnce(new Error('try again')).mockResolvedValue({ tokens: [other] });
   await open({ tokenizationClient: client, advisedTokens: [card.tokenRef, card.tokenRef] });
   expect(screen().savedTokens.failed).toBe(true);
   expect(client.createSession).toHaveBeenCalledWith({ outletRef: 'outlet', advisedTokens: [card.tokenRef, card.tokenRef] });
-  await update({ advisedTokens: [other.tokenRef] });
+  await update({ advisedTokens: [other.tokenRef], tokenizationClient: replacement });
   await act(async () => { screen().onRetrySavedTokens(); await flush(); });
   expect(client.createSession).toHaveBeenCalledTimes(1);
   expect(client.getSession).toHaveBeenCalledTimes(2);
   expect(client.getSession).toHaveBeenLastCalledWith({ outletRef: 'outlet', sessionRef: 'session-1', skipConsent: true });
   expect(screen().savedTokens.tokens).toEqual([other]);
+  await act(async () => { await screen().onSelectMethod('CARD'); });
+  expect(startNativeCardTokenization).toHaveBeenCalledWith(expect.objectContaining({
+    client, outletRef: 'outlet', sessionRef: 'session-1',
+  }));
+  await confirm(other.tokenRef);
+  expect(client.selectToken).toHaveBeenCalledWith({ outletRef: 'outlet', sessionRef: 'session-1', tokenRef: other.tokenRef });
+  expect(replacement.createSession).not.toHaveBeenCalled();
+  expect(replacement.getSession).not.toHaveBeenCalled();
+  expect(replacement.selectToken).not.toHaveBeenCalled();
 });
 
 it.each([undefined, () => 'PRIVATE_INVALID_VALUE', () => { throw new Error('PRIVATE_CALLBACK_ERROR'); }])
@@ -449,6 +521,22 @@ it.each([undefined, () => 'PRIVATE_INVALID_VALUE', () => { throw new Error('PRIV
     expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'INVALID_USAGE_TYPE' }));
     expect(JSON.stringify(props.onError.mock.calls)).not.toContain('PRIVATE');
   });
+
+it.each([
+  ['fulfilled', async () => UsageType.PERMANENT],
+  ['rejected', async () => { throw new Error('PRIVATE_ASYNC_CALLBACK_ERROR'); }],
+])('rejects a %s async usageType without invoking native code or leaking a rejection', async (_outcome, getUsageType) => {
+  await open({ getUsageType });
+  await act(async () => {
+    await screen().onSelectMethod('CARD');
+    // Let Node report any unhandled rejection while this test is still active.
+    await new Promise(resolve => jest.requireActual('timers').setImmediate(resolve));
+  });
+  expect(startNativeCardTokenization).not.toHaveBeenCalled();
+  expect(props.onError).toHaveBeenCalledTimes(1);
+  expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'INVALID_USAGE_TYPE' }));
+  expect(JSON.stringify(props.onError.mock.calls)).not.toContain('PRIVATE_ASYNC_CALLBACK_ERROR');
+});
 
 it('resolves usageType for each Add action and leaves a new card unselected', async () => {
   const client = defaultClient();

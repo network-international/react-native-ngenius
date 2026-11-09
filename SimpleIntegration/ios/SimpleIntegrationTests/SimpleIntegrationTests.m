@@ -21,6 +21,8 @@ static NSString *cardTestPath;
 static NSString *cardTestMethod;
 static NSInteger cardTestStatus;
 static NSInteger cardTestRequestCount;
+static NSUInteger cardTestTokenCount;
+static NSUInteger cardTestResponseBytes;
 @interface NativeCardStubProtocol : NSURLProtocol
 @end
 @implementation NativeCardStubProtocol
@@ -38,19 +40,36 @@ static NSInteger cardTestRequestCount;
         [stream close]; body = data;
     }
     cardTestBody = body ? [NSJSONSerialization JSONObjectWithData:body options:0 error:nil] : nil;
-    NSDictionary *response = cardTestStatus == 200 ? @{
-        @"tokens": @[
-            @{ @"tokenRef": @"fixture-card", @"type": @"CARD", @"status": @"VERIFIED",
-               @"cardDetails": @{ @"scheme": @"VISA", @"last4": @"1111", @"expiry": @"2099-12",
-                                  @"pan": cardTestBody[@"card"][@"pan"] ?: @"" } },
-            @{ @"tokenRef": @"fixture-wallet", @"type": @"WALLET", @"walletType": @"GOOGLE_PAY", @"status": @"AWAIT_3DS",
-               @"cvv": cardTestBody[@"card"][@"cvv"] ?: @"" }
-        ],
-        @"tncUrl": @"https://terms.test/terms",
-        @"page": @{ @"number": @0, @"size": @2, @"totalElements": @2, @"totalPages": @1, @"private": @"fixture" },
-        @"card": cardTestBody[@"card"] ?: @{}
-    } : @{ @"message": @"private fixture error", @"card": cardTestBody[@"card"] ?: @{} };
+    NSDictionary *response;
+    if (cardTestStatus == 200) {
+        NSMutableArray *tokens = [NSMutableArray arrayWithObject:@{
+            @"tokenRef": @"fixture-card", @"type": @"CARD", @"status": @"VERIFIED",
+            @"cardDetails": @{ @"scheme": @"VISA", @"last4": @"1111", @"expiry": @"2099-12",
+                               @"pan": cardTestBody[@"card"][@"pan"] ?: @"" }
+        }];
+        for (NSUInteger i = 2; i < cardTestTokenCount; i++) {
+            NSString *reference = [NSString stringWithFormat:@"00000000-0000-4000-8000-%012lu", (unsigned long)i];
+            [tokens addObject:@{
+                @"tokenRef": reference, @"type": @"CARD", @"status": @"VERIFIED",
+                @"cardDetails": @{ @"scheme": @"VISA", @"last4": @"1111", @"expiry": @"2099-12" }
+            }];
+        }
+        [tokens addObject:@{
+            @"tokenRef": @"fixture-wallet", @"type": @"WALLET", @"walletType": @"GOOGLE_PAY",
+            @"status": @"AWAIT_3DS", @"cvv": cardTestBody[@"card"][@"cvv"] ?: @""
+        }];
+        response = @{
+            @"tokens": tokens,
+            @"tncUrl": @"https://terms.test/terms",
+            @"page": @{ @"number": @0, @"size": @(tokens.count), @"totalElements": @(tokens.count),
+                        @"totalPages": @1, @"private": @"fixture" },
+            @"card": cardTestBody[@"card"] ?: @{}
+        };
+    } else {
+        response = @{ @"message": @"private fixture error", @"card": cardTestBody[@"card"] ?: @{} };
+    }
     NSData *data = [NSJSONSerialization dataWithJSONObject:response options:0 error:nil];
+    cardTestResponseBytes = data.length;
     NSHTTPURLResponse *http = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:cardTestStatus HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
     [self.client URLProtocol:self didReceiveResponse:http cacheStoragePolicy:NSURLCacheStorageNotAllowed];
     [self.client URLProtocol:self didLoadData:data]; [self.client URLProtocolDidFinishLoading:self];
@@ -115,9 +134,10 @@ static NSInteger cardTestRequestCount;
 }
 
 
-- (void)runNativeCardWithStatus:(NSInteger)status cancel:(BOOL)cancel usageType:(NSString *)usageType {
+- (void)runNativeCardWithStatus:(NSInteger)status cancel:(BOOL)cancel usageType:(NSString *)usageType tokenCount:(NSUInteger)tokenCount {
     cardTestBody = nil; cardTestStatus = status; cardTestRequestCount = 0;
     cardTestPath = nil; cardTestMethod = nil;
+    cardTestTokenCount = tokenCount; cardTestResponseBytes = 0;
     BOOL validUsageType = [usageType isEqualToString:@"ONCE_OFF"] || [usageType isEqualToString:@"PERMANENT"];
     XCTestExpectation *done = [self expectationWithDescription:@"Native Card result"];
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -158,11 +178,12 @@ static NSInteger cardTestRequestCount;
                 if (status == 200) {
                     XCTAssertTrue([result isEqualToString:@"Response"]);
                     NSArray<NSDictionary *> *tokens = response[@"tokens"];
-                    XCTAssertEqual(tokens.count, 2);
+                    XCTAssertEqual(tokens.count, tokenCount);
+                    if (tokenCount > 2) XCTAssertGreaterThan(cardTestResponseBytes, 64 * 1024);
                     XCTAssertEqualObjects(tokens.firstObject[@"status"], @"VERIFIED");
                     XCTAssertEqualObjects(tokens.lastObject[@"status"], @"AWAIT_3DS");
                     XCTAssertEqualObjects(response[@"tncUrl"], @"https://terms.test/terms");
-                    XCTAssertEqualObjects(response[@"page"][@"totalElements"], @2);
+                    XCTAssertEqualObjects(response[@"page"][@"totalElements"], @(tokenCount));
                     XCTAssertNil(response[@"page"][@"private"]);
                     XCTAssertNil(response[@"card"]);
                     XCTAssertNil(tokens.firstObject[@"cardDetails"][@"pan"]);
@@ -199,11 +220,15 @@ static NSInteger cardTestRequestCount;
     [self waitForExpectations:@[done] timeout:20];
     XCTAssertEqual(cardTestRequestCount, !cancel && validUsageType ? 1 : 0);
 }
-- (void)testNativeCardVerifiedRequestAndSafeBridgeResponse { [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT"]; }
-- (void)testNativeCardErrorDoesNotExposeResponseBody { [self runNativeCardWithStatus:401 cancel:NO usageType:@"ONCE_OFF"]; }
-- (void)testNativeCardCancelClearsFieldsWithoutSubmitting { [self runNativeCardWithStatus:200 cancel:YES usageType:@"PERMANENT"]; }
-- (void)testNativeCardRejectsMissingUsageType { [self runNativeCardWithStatus:200 cancel:NO usageType:nil]; }
-- (void)testNativeCardRejectsInvalidUsageType { [self runNativeCardWithStatus:200 cancel:NO usageType:@"INVALID"]; }
+- (void)testNativeCardVerifiedRequestAndSafeBridgeResponse { [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT" tokenCount:2]; }
+- (void)testNativeCardErrorDoesNotExposeResponseBody { [self runNativeCardWithStatus:401 cancel:NO usageType:@"ONCE_OFF" tokenCount:2]; }
+- (void)testNativeCardCancelClearsFieldsWithoutSubmitting { [self runNativeCardWithStatus:200 cancel:YES usageType:@"PERMANENT" tokenCount:2]; }
+- (void)testNativeCardRejectsMissingUsageType { [self runNativeCardWithStatus:200 cancel:NO usageType:nil tokenCount:2]; }
+- (void)testNativeCardRejectsInvalidUsageType { [self runNativeCardWithStatus:200 cancel:NO usageType:@"INVALID" tokenCount:2]; }
+
+- (void)testNativeCardAcceptsAnUpdatedListBeyondTheOldSingleTokenLimit {
+    [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT" tokenCount:460];
+}
 
 - (void)runNativeCardBackWithRtl:(BOOL)rtl {
     cardTestBody = nil; cardTestStatus = 200; cardTestRequestCount = 0;

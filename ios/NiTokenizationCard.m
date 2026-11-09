@@ -203,7 +203,7 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
     self.task = [self.session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSDictionary *safe = nil;
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
-        if (!error && status >= 200 && status < 300 && data.length > 0 && data.length <= 65536) {
+        if (!error && status >= 200 && status < 300 && data.length > 0) {
             id body = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
             if ([body isKindOfClass:NSDictionary.class]) safe = [self safeResponse:body];
         }
