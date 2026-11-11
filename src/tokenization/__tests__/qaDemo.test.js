@@ -27,8 +27,9 @@ it('opens preview without a credential exchange or network and supports all demo
 it('keeps the runtime token out of props/storage and clears its provider on close', async () => {
   act(() => { tree = renderer.create(React.createElement(QA)); });
   expect(tree.root.findByProps({ testID: 'qa-access-token' }).props.secureTextEntry).toBe(true);
+  expect(tree.root.findByProps({ testID: 'qa-session-ref' }).props.secureTextEntry).toBe(true);
   const input = id => tree.root.findByProps({ testID: id }).props;
-  act(() => input('qa-access-token').onChangeText('fixture-short-lived'));
+  act(() => input('qa-access-token').onChangeText('Bearer fixture-short-lived'));
   act(() => input('qa-session-ref').onChangeText('invalid reference'));
   act(() => { input('qa-open-tokenization').onPress(); });
   expect(Alert.alert).toHaveBeenCalledWith('Invalid session reference', expect.any(String));
@@ -49,30 +50,16 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   await expect(provider()).rejects.toThrow('short-lived');
 });
 
-it('creates one real sandbox session from the QA screen before handing the reference to SDK', async () => {
-  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({
-    ok: true, json: async () => ({ sessionRef: 'sandbox-session-fixture' }),
-  });
+it('requires a gateway-created session reference and makes no request when it is missing', () => {
+  const fetch = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Unexpected network request'));
   try {
     act(() => { tree = renderer.create(React.createElement(QA)); });
     const input = id => tree.root.findByProps({ testID: id }).props;
-    act(() => input('qa-access-token').onChangeText('Bearer fixture-short-lived'));
-    await act(async () => {
-      const open = input('qa-open-tokenization').onPress;
-      await Promise.all([open(), open()]);
-    });
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch).toHaveBeenCalledWith(
-      'https://paypage-sandbox.platform.network.ae/api/outlets/a6b162e9-7a75-403c-b238-6303b2df455c/payment-tokenization-sessions',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Access-Token': 'fixture-short-lived', 'Content-Type': 'application/json' },
-        body: '{"advisedTokens":[]}',
-      }),
-    );
-    const screen = tree.root.findByType('NgeniusTokenization');
-    expect(screen.props.sessionRef).toBe('sandbox-session-fixture');
-    expect(input('qa-access-token').value).toBe('');
+    act(() => input('qa-access-token').onChangeText('fixture-short-lived'));
+    act(() => { input('qa-open-tokenization').onPress(); });
+    expect(Alert.alert).toHaveBeenCalledWith('Session reference required', expect.any(String));
+    expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(0);
+    expect(fetch).not.toHaveBeenCalled();
   } finally {
     fetch.mockRestore();
   }
