@@ -6,13 +6,14 @@ const { validReference } = require('./api/endpoints');
 const { validateUsageType } = require('./usageType');
 const { VERIFICATION_STATES } = require('./verificationStates');
 const { apiErrorResult } = require('./session');
+const { httpStatusOf } = require('./paymentOutcome');
 let counter = 0;
-const failure = (code, message = 'Card could not be saved') => ({
+const failure = (code, message = 'Card could not be saved', httpStatus) => ({
   state: VERIFICATION_STATES.FAILED,
-  result: apiErrorResult({
-    method: 'CARD',
-    error: { code, message },
-  }),
+  result: {
+    ...apiErrorResult({ method: 'CARD', error: { code, message } }),
+    ...(httpStatus ? { httpStatus } : {}),
+  },
 });
 
 export const startNativeCardTokenization = ({
@@ -30,6 +31,7 @@ export const startNativeCardTokenization = ({
   const requestId = `card-${Date.now()}-${++counter}`;
   let terminal = false;
   let submitting = false;
+  let preparationFailure;
   let settle;
   let subscription;
   const promise = new Promise(resolve => {
@@ -89,12 +91,14 @@ export const startNativeCardTokenization = ({
           return;
         }
         try {
+          // The ready event is emitted by the validated native Pay tap. Capture
+          // its consent before awaiting an asynchronous access-token provider.
+          const consentData = serializeConsentData(getConsentData());
           const { url, accessToken } = await context.prepareRequest({ outletRef, sessionRef });
           if (terminal || !isCurrent()) {
             cancel();
             return;
           }
-          const consentData = serializeConsentData(getConsentData());
           onVerifying?.();
           native.submitTokenizationCard(requestId, {
             url,
@@ -103,11 +107,18 @@ export const startNativeCardTokenization = ({
             usageType,
             consentData,
           });
-        } catch {
+        } catch (error) {
+          if (terminal || !isCurrent()) {
+            cancel();
+            return;
+          }
+          if (error?.code === 'ACCESS_TOKEN_UNAVAILABLE') {
+            preparationFailure = failure('ACCESS_TOKEN_UNAVAILABLE', 'Access token is not available');
+          }
           try {
             native.failTokenizationCard(requestId);
           } catch {
-            finish(failure('NATIVE_CARD_UNAVAILABLE'));
+            finish(preparationFailure || failure('NATIVE_CARD_UNAVAILABLE'));
           }
         }
       },
@@ -121,7 +132,8 @@ export const startNativeCardTokenization = ({
           return;
         }
         if (status !== 'Response') {
-          finish(failure('NATIVE_CARD_REQUEST_FAILED'));
+          const code = response?.code === 'NETWORK_ERROR' ? 'NETWORK_ERROR' : 'NATIVE_CARD_REQUEST_FAILED';
+          finish(preparationFailure || failure(code, undefined, httpStatusOf(response)));
           return;
         }
         try {

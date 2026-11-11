@@ -4,6 +4,12 @@ import SavedTokensSkeleton from './SavedTokensSkeleton';
 import SchemeIcon from './SchemeIcon';
 const { t } = require('../strings');
 
+const formatExpiry = value => {
+  if (typeof value !== 'string') return '';
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+  return match ? `${match[2]}/${match[1].slice(2)}` : '';
+};
+
 export default function SavedTokens({ value, language, styles, onRetry, selectedTokenRef, onSelectToken, disabled = false, title, hideTitle = false }) {
   if (!value) return null;
   if (value.loading) return <SavedTokensSkeleton styles={styles} label={t(language, 'SAVED_TOKENS_LOADING')} />;
@@ -14,7 +20,7 @@ export default function SavedTokens({ value, language, styles, onRetry, selected
       <Text style={styles.retryLabel}>{t(language, 'SAVED_TOKENS_RETRY')}</Text>
     </Pressable>
   );
-  const tokens = Array.isArray(value.tokens) ? value.tokens : [];
+  const tokens = Array.isArray(value.tokens) ? value.tokens.filter(token => token && token.status !== 'FAILED') : [];
   if (!tokens.length) return null;
   const sectionTitle = title || t(language, 'SAVED_TOKENS');
   return (
@@ -32,7 +38,7 @@ export default function SavedTokens({ value, language, styles, onRetry, selected
           const walletName = token.walletType === 'APPLE_PAY' ? t(language, 'APPLE_PAY') :
             token.walletType === 'GOOGLE_PAY' ? 'Google Pay' : '';
           const badge = [t(language, wallet ? 'WALLET' : 'CARD'), wallet ? walletName : ''].filter(Boolean).join(' / ');
-          const expiry = card?.expiry ? `${t(language, 'EXPIRES')} ${card.expiry.slice(5, 7).padStart(2, '0')}/${card.expiry.slice(2, 4)}` : '';
+          const expiry = formatExpiry(card?.expiry);
           const statusLabel = available ? '' : t(language, token.status === 'AWAIT_3DS' ? 'SAVED_TOKEN_PENDING' : 'SAVED_TOKEN_UNAVAILABLE');
           const detail = [expiry, statusLabel].filter(Boolean).join(', ');
           return (
@@ -46,14 +52,13 @@ export default function SavedTokens({ value, language, styles, onRetry, selected
               </View>
               <View style={styles.savedDetails}>
                 <Text style={styles.savedTitle}>{title}</Text>
-                {expiry ? <Text testID="saved-token-expiry" style={styles.savedDescription}>{expiry}</Text> : null}
-                {statusLabel ? <Text style={styles.savedDescription}>{statusLabel}</Text> : null}
                 <View style={styles.savedBadges}>
+                  {expiry ? <Text testID="saved-token-expiry" style={[styles.savedDescription, styles.expiryDate]}>{expiry}</Text> : null}
                   <Text style={styles.methodTypeBadge}>{badge}</Text>
                   {available ? <View testID="saved-token-verified" style={styles.verifiedBadge}
                     accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                     <Text style={styles.verifiedLabel}>✓ {t(language, 'SAVED_TOKEN_VERIFIED')}</Text>
-                  </View> : null}
+                  </View> : <Text style={styles.savedDescription}>{statusLabel}</Text>}
                 </View>
               </View>
               <View style={[styles.radio, selected && styles.radioSelected]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">

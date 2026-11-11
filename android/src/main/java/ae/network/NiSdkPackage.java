@@ -16,6 +16,6 @@ public class NiSdkPackage implements ReactPackage {
 
     @Override
     public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
-        return Arrays.<ViewManager>asList(new NIWalletButtonManager());
+        return Arrays.<ViewManager>asList(new NIWalletButtonManager(), new NITokenizationBackdropBlurManager());
     }
 }

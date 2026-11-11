@@ -48,19 +48,22 @@ const tokenizationClient = createTokenizationClient({
 <NgeniusTokenization
   visible={showTokenization}
   order={order}
-  paymentMethods={['CARD']}
+  paymentMethods={['CARD', 'CONTINUE_SHOPPING']}
+  branding={merchantBranding}
   tokenizationClient={tokenizationClient}
   outletRef={outletRef}
   sessionRef={sessionRef}
-  onSelectionComplete={({ sessionRef }) => handleSelectedSession(sessionRef)}
-  onError={handleError}
-  onCancel={() => setShowTokenization(false)}
+  onResult={result => {
+    if (result.statusCode === 200 && result.sessionID) handleSelectedSession(result.sessionID);
+    else if (result.statusCode === 499) setShowTokenization(false);
+    else handleTokenizationIssue(result);
+  }}
 />
 ```
 
 `order` supplies display and currency context. Native Card tokenization does not require a payment
-order. Pass an explicit `paymentMethods` list. `branding` accepts PayPage branding fields. Custom
-fonts must be registered by the host app.
+order. Use `paymentMethods` to enable the supported methods. Add `CONTINUE_SHOPPING` to show
+the optional return action. `branding` accepts PayPage branding fields. Register custom fonts in the host app.
 
 The merchant backend creates the tokenization session with any returning shopper token references
 in `advisedTokens` and passes the returned `sessionRef` to the app. Open the chooser with that
@@ -71,44 +74,31 @@ Omit `modeConfig.tokenType` to use `PERMANENT`. For a one-time token, pass
 `modeConfig={{ tokenType: 'ONCE_OFF' }}`. The SDK sends this value as `usageType` on Add Card
 or Add Wallet and rejects an invalid explicit value with `INVALID_USAGE_TYPE`.
 
-With `skipConsent={false}` (default), each actionable Add Card or Wallet click accepts the displayed
-terms for that attempt and records a fresh `COLLECTED` timestamp. Opening legal links, expanding
-Saving terms, selecting an existing method and cancelling do not accept consent. `skipConsent={true}`
-sends `?consentOff=true` on Get Session, hides the notice and sends `NOT_COLLECTED` with
-`skippedByMerchant: true` on Add. Missing or invalid terms URLs leave the notice text visible
-without a link. The accessible Saving terms control shows NI recurring-storage wording.
+With `skipConsent={false}` (default), the native Card form displays Terms and Conditions below
+**Pay** and records acceptance after valid input. Wallet actions display terms below the wallet
+buttons and record acceptance on the wallet tap. `skipConsent={true}` sends `?consentOff=true`
+on Get Session and `NOT_COLLECTED` with `skippedByMerchant: true` on Add. A valid terms URL
+makes the terms label a link.
 
-The chooser hides the saved-method section for an empty list. It selects the first usable method
-on entry and preserves a still-valid shopper choice after Add Card or native Card Back. A blue radio
-shows that local choice. The independent green Verified badge reflects the returned token status;
-it does not establish merchant-origin import, validation for the current session or payment success.
-Card and wallet rows both lead with the masked funding card, followed by expiry on its own
-`Expires MM/YY` line. A separate `Card` or `Wallet / Apple Pay` / `Wallet / Google Pay` tag
-identifies the source. Month values are zero-padded. The compact chooser uses a white panel,
-green shield and NI footer; loading feedback disappears when the list has loaded.
-
-Optional `modeConfig` customizes non-legal labels with localized NI defaults:
+The default **Select payment method** chooser opens as a bottom sheet. Tap outside or swipe down
+to dismiss it. In fullscreen, use **Cancel**. Saved methods show masked funding details and
+`MM/YY` when supplied. Failed methods are hidden. **Pay by card** opens the native Card form.
 
 ```jsx
 modeConfig={{
-  returnButtonName: 'BACK',
-  returnButtonStyle: 'button', // text | link | button
-  showSecurityNote: true,
-  orderSummaryInitiallyExpanded: false,
-  privacyPolicyUrl: 'https://merchant.example/privacy',
+  presentation: 'bottomSheet', // or 'fullscreen'
+  backdropBlur: true, // use blur where supported, dim the backdrop otherwise
+  sectionOrder: ['tokens', 'wallets', 'card'],
+  showSecurityNote: true, // opt in to the card security note
+  returnButtonName: 'Continue shopping', // with CONTINUE_SHOPPING in paymentMethods
+  returnButtonStyle: 'button',
   labels: {
-    pageTitle: 'Complete your booking',
-    pageSubtitle: 'Choose your preferred way to pay',
-    usePaymentMethod: 'Continue',
+    pageTitle: 'Select payment method',
+    payByCard: 'Pay by card',
+    pay: 'Pay',
   },
 }}
 ```
-
-See [the UI refinement notes](docs/tokenization-ui-refinement.md) for supported labels. NI consent
-wording and official wallet artwork are not configurable through these labels. The subtitle is
-omitted unless supplied. Privacy Policy is linked only for a valid HTTP(S) URL. The security note
-defaults to “Card details are sent securely to Network International.”; set `showSecurityNote: false`
-to hide it. This copy does not claim application-level end-to-end encryption.
 
 ### Optional order details
 
@@ -147,14 +137,23 @@ no summary appears. `orderDetails` replaces the legacy `order` display context r
 fields; omitting it retains the legacy fallback. Language resolves from supported `language`, then
 `orderDetails.language`, then `order.language`, then English (EN/FR/AR, including region tags).
 
-### Complete token selection
+### Confirm a method and hand off to the merchant
 
-The shopper confirms a method using the chooser's primary action. The SDK sends
+The shopper selects an existing token and taps **Pay**, or completes the native Card form and taps
+**Pay** there. For a new method, the SDK verifies that the Add response identifies one new eligible
+token by comparing the complete before and after lists. It submits
 `PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-token`
-with `{ tokenRef }` and waits for success before closing and calling `onSelectionComplete` with
-`sessionRef`. The merchant uses that reference to start payment on its backend via
-`POST /transactions/outlets/{outletRef}/payment/pts-session/{sessionRef}` with a Merchant Service
-Account credential. That payment step is outside the React Native tokenization SDK.
+with `{ tokenRef }` and waits for acknowledgement. A successful Card Pay closes the SDK directly.
+If verification or selection fails, the chooser shows the error and remains available when the
+session can still be used. The merchant backend uses the confirmed session reference to start payment.
+
+`onResult` receives `{ statusCode, message, sessionID? }`. `sessionID` is the merchant session reference
+and is omitted if the session could not be initialized. `200` means token selection is confirmed.
+`499` means the shopper or host dismissed the SDK, with a message identifying how it closed.
+`401` means authentication failed during initialization and `402` means authentication expired
+after opening. Other failure codes report the failed operation. Recoverable errors are emitted
+while the SDK is still open and can be followed by a successful result or dismissal. Start payment
+only on `200`. Use either `onResult` or the existing `onSelectionComplete` for the payment handoff.
 
 ## Supported methods
 

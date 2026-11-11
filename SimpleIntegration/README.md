@@ -34,6 +34,12 @@ Do not embed API keys, Access-Tokens or wallet payloads in source, documentation
 Public environment settings belong in the ignored local configuration, using `config.example.js`
 as the template. Offline UI preview uses fixtures and does not prove backend E2E.
 
+In **Tokenization sandbox QA**, enable **Offline UI preview** and select a scenario. Tap
+**Merchant branding** to switch between the Harbour Travel and Citrus Market palettes. The controls
+also let you try the bottom sheet and fullscreen presentations, optional backdrop blur, card-first
+ordering, and the optional Continue Shopping and card security text. The preview shows the SDK
+status and message returned to the merchant after the chooser closes.
+
 ## Project Structure
 
 ```

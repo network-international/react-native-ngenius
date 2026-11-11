@@ -53,52 +53,39 @@ const MethodList = ({
   styles,
   labels,
   payWithLabel,
-  dividerLabel,
-  cardSectionLabel,
   disabled,
   onSelect,
   securityLabel,
   buttonIconColor,
+  section,
+  walletNotice,
 }) => {
   const wallets = WALLET_METHODS.filter((method) => methods.includes(method));
   const showCard = methods.includes('CARD');
-  const showDivider = wallets.length > 0 && showCard;
-
-  return (
-    <View style={styles.methods} testID="tokenization-method-list">
-      {wallets.length > 0 ? (
-        <View style={styles.walletStack} testID="tokenization-wallet-section">
-          {wallets.map((method) => (
-            <WalletRow
-              key={method}
-              method={method}
-              styles={styles}
-              payWith={payWithLabel}
-              label={labels[method]}
-              disabled={disabled}
-              onSelect={onSelect}
-            />
+  if (section === 'wallets' && wallets.length) {
+    return (
+      <View testID="tokenization-wallet-section">
+        <View style={styles.walletStack}>
+          {wallets.map((method, index) => (
+            <View key={method} testID="tokenization-wallet-cell"
+              style={[styles.walletCell, index < wallets.length - 1 && styles.walletCellGap]}>
+              <WalletRow method={method} styles={styles} payWith={payWithLabel} label={labels[method]}
+                disabled={disabled} onSelect={onSelect} />
+            </View>
           ))}
         </View>
-      ) : null}
-      {showDivider ? (
-        <View style={styles.dividerRow} testID="tokenization-methods-divider">
-          <View style={styles.dividerLine} /><Text style={styles.divider}>{dividerLabel}</Text><View style={styles.dividerLine} />
-        </View>
-      ) : null}
-      {showCard ? (
-        <View testID="tokenization-card-section">
-          {securityLabel ? <View testID="tokenization-security-note" style={styles.securityNote}>
-            <Text style={styles.securityNoteLabel}>• {securityLabel}</Text>
-          </View> : null}
-          {cardSectionLabel ? <Text style={styles.sectionTitle} testID="tokenization-title">
-            {cardSectionLabel}
-          </Text> : null}
-          <CardRow styles={styles} label={labels.CARD} disabled={disabled} onSelect={onSelect} iconColor={buttonIconColor} />
-        </View>
-      ) : null}
+        {walletNotice}
+      </View>
+    );
+  }
+  return section === 'card' && showCard ? (
+    <View testID="tokenization-card-section">
+      <CardRow styles={styles} label={labels.CARD} disabled={disabled} onSelect={onSelect} iconColor={buttonIconColor} />
+      {securityLabel ? <View testID="tokenization-security-note" style={styles.securityNote}>
+        <Text style={styles.securityNoteLabel}>{securityLabel}</Text>
+      </View> : null}
     </View>
-  );
+  ) : null;
 };
 
 export default MethodList;

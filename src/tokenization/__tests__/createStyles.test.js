@@ -41,6 +41,6 @@ describe('createTokenizationStyles', () => {
     const theme = resolveTokenizationTheme({ buttonColour: '#000000' }, { language: 'en' });
     const styles = createTokenizationStyles(theme);
     expect(styles.methodButton.height).toBe(48);
-    expect(styles.methodButton.borderRadius).toBe(11);
+    expect(styles.methodButton.borderRadius).toBe(24);
   });
 });

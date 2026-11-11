@@ -55,6 +55,7 @@ const resolveTokenizationTheme = (branding, options = {}) => {
   const textPrimary =
     normalizeColour(source.paymentFontColour) || DESIGN_TOKENS.colors.textPrimary;
   const headingColor = normalizeColour(source.mainHeadingColour) || textPrimary;
+  const brandAccent = normalizeColour(source.primaryColor) || normalizeColour(source.buttonColour);
 
   return {
     branding: {
@@ -65,6 +66,8 @@ const resolveTokenizationTheme = (branding, options = {}) => {
       consentColor: normalizeColour(source.paymentFontColour) || DESIGN_TOKENS.colors.textSecondary,
       linkColor: normalizeColour(source.paymentFontColour) || DESIGN_TOKENS.colors.terms,
       headingColor,
+      focusColor: brandAccent || DESIGN_TOKENS.colors.focus,
+      selectionBackground: brandAccent ? `${brandAccent}12` : DESIGN_TOKENS.colors.selectedBackground,
       pageBackground:
         normalizeColour(source.pageBackgroundColour) || DESIGN_TOKENS.colors.pageBackground,
       surfaceBackground:

@@ -2,7 +2,10 @@ package ae.network;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
@@ -10,10 +13,17 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.method.LinkMovementMethod;
 import android.text.method.PasswordTransformationMethod;
+import android.text.style.ClickableSpan;
 import android.view.View;
 import android.view.Gravity;
 import android.view.Window;
@@ -30,11 +40,13 @@ import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.WritableMap;
 import org.json.JSONObject;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,7 +101,7 @@ final class TokenizationCard {
         int navigationSize = Math.round(48 * density);
         header.addView(back, new LinearLayout.LayoutParams(navigationSize, navigationSize));
         TextView title = new TextView(activity);
-        title.setText(labels.optString("title", "Add Card"));
+        title.setText(labels.optString("title", "Pay by card"));
         title.setTextSize(20);
         title.setTextColor(color(colors, "payPageTitleColor", textColor));
         if (android.os.Build.VERSION.SDK_INT >= 28) title.setAccessibilityHeading(true);
@@ -100,10 +112,16 @@ final class TokenizationCard {
         cvv = field(activity, form, labels.optString("cvv", "Security code"), true, true, textColor);
         name = field(activity, form, labels.optString("name", "Cardholder name"), false, false, textColor);
         error = new TextView(activity); error.setTextColor(Color.RED); form.addView(error);
-        submit = new Button(activity); submit.setText(labels.optString("submit", "Add Card"));
+        submit = new Button(activity); submit.setText(labels.optString("submit", "Pay"));
+        submit.setAllCaps(false);
         submit.setTextColor(color(colors, "payButtonTitleColor", Color.BLACK));
-        submit.setBackgroundColor(color(colors, "payButtonBackgroundColor", 0xffffdc84));
+        GradientDrawable buttonShape = new GradientDrawable();
+        buttonShape.setColor(color(colors, "payButtonBackgroundColor", 0xffffdc84));
+        buttonShape.setCornerRadius(25 * density);
+        submit.setBackground(new RippleDrawable(ColorStateList.valueOf(0x20000000), buttonShape, null));
+        submit.setMinHeight(Math.round(50 * density));
         form.addView(submit);
+        addConsentNotice(activity, form, config.optJSONObject("consent"), textColor, density);
         processing = new LinearLayout(activity);
         processing.setOrientation(LinearLayout.HORIZONTAL);
         processing.setGravity(Gravity.CENTER_VERTICAL);
@@ -115,7 +133,7 @@ final class TokenizationCard {
         int spinnerSize = Math.round(24 * density);
         processing.addView(spinner, new LinearLayout.LayoutParams(spinnerSize, spinnerSize));
         TextView processingLabel = new TextView(activity);
-        processingLabel.setText(labels.optString("processing", "Saving payment method…"));
+        processingLabel.setText(labels.optString("processing", "Verifying payment method…"));
         processingLabel.setTextColor(textColor);
         processingLabel.setTag("tokenization-card-processing-label");
         processingLabel.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -156,6 +174,40 @@ final class TokenizationCard {
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             dialog.getWindow().setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
         }
+    }
+    private static void addConsentNotice(Activity activity, LinearLayout form, JSONObject consent, int color, float density) {
+        if (consent == null) return;
+        String text = consent.optString("text");
+        if (text.isEmpty()) return;
+        TextView notice = new TextView(activity);
+        notice.setTextColor(color);
+        notice.setTag("tokenization-card-consent");
+        notice.setPadding(0, Math.round(8 * density), 0, Math.round(4 * density));
+
+        String urlText = consent.optString("url");
+        Uri url = Uri.parse(urlText);
+        String linkLabel = consent.optString("linkLabel");
+        int linkStart = linkLabel.isEmpty() ? -1 : text.indexOf(linkLabel);
+        boolean validUrl = ("https".equalsIgnoreCase(url.getScheme()) || "http".equalsIgnoreCase(url.getScheme())) &&
+            url.getHost() != null && !url.getHost().isEmpty() && url.getUserInfo() == null &&
+            urlText.indexOf('\\') < 0 && !urlText.matches("(?s).*\\s.*");
+        if (linkStart >= 0 && validUrl) {
+            SpannableString content = new SpannableString(text);
+            content.setSpan(new ClickableSpan() {
+                @Override public void onClick(View view) {
+                    try {
+                        activity.startActivity(new Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE));
+                    } catch (ActivityNotFoundException | SecurityException ignored) {
+                        // A device can lack a browser or the host can restrict external links.
+                    }
+                }
+            }, linkStart, linkStart + linkLabel.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            notice.setText(content);
+            notice.setMovementMethod(LinkMovementMethod.getInstance());
+        } else {
+            notice.setText(text);
+        }
+        form.addView(notice, new LinearLayout.LayoutParams(-1, -2));
     }
     private static EditText field(Activity activity, LinearLayout form, String label, boolean numeric, boolean secret, int color) {
         TextView title = new TextView(activity); title.setText(label); title.setTextColor(color); form.addView(title);
@@ -226,6 +278,8 @@ final class TokenizationCard {
         card = null; pan.setText(""); cvv.setText(""); expiry.setText(""); name.setText("");
         worker.execute(() -> {
             Map<String, Object> safeResponse = null;
+            int httpStatus = 0;
+            boolean networkError = false;
             try {
                 if (finished) return;
                 HttpURLConnection request = (HttpURLConnection) new URL(endpoint).openConnection(); connection = request;
@@ -236,16 +290,20 @@ final class TokenizationCard {
                 request.setRequestProperty("Access-Token", accessToken); request.setRequestProperty("Cookie", "");
                 request.setFixedLengthStreamingMode(payload.length);
                 try (java.io.OutputStream body = request.getOutputStream()) { body.write(payload); }
-                int status = request.getResponseCode();
-                if (status >= 200 && status < 300 && !finished) {
+                httpStatus = request.getResponseCode();
+                if (httpStatus >= 200 && httpStatus < 300 && !finished) {
                     try (InputStream input = request.getInputStream()) {
                         safeResponse = TokenizationCardResponse.read(input);
                     }
                 }
-            } catch (Exception ignored) { /* Never forward a response body or exception containing card data. */ }
+            } catch (IOException ignored) { networkError = httpStatus == 0; }
+            catch (RuntimeException ignored) { /* Keep malformed response contents out of the bridge. */ }
             finally { Arrays.fill(payload, (byte) 0); if (connection != null) { connection.disconnect(); connection = null; } }
             final Map<String, Object> response = safeResponse;
-            main.post(() -> finish(response == null ? "Failed" : "Response", response));
+            final Map<String, Object> failure = httpStatus >= 400 && httpStatus <= 599
+                ? Collections.singletonMap("httpStatus", httpStatus)
+                : networkError ? Collections.singletonMap("code", "NETWORK_ERROR") : null;
+            main.post(() -> finish(response == null ? "Failed" : "Response", response != null ? response : failure));
         });
     }
     void cancel() { finish("Aborted", null); }

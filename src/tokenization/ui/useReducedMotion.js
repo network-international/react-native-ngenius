@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
-export default function useReducedMotion() {
-  const [reduced, setReduced] = useState(true);
+export default function useReducedMotion(initialPreference = true) {
+  const [reduced, setReduced] = useState(initialPreference);
   useEffect(() => {
     let active = true;
     let preferenceChanged = false;

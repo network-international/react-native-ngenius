@@ -110,6 +110,24 @@ it('rejects the old single-token response without returning its contents', async
   expect(JSON.stringify(outcome)).not.toContain(verifiedCard.tokenRef);
 });
 
+it('reports the HTTP status for an expired session without forwarding other native fields', async () => {
+  const attempt = create();
+  await ready(id);
+  result('Failed', { httpStatus: 401, error: 'sensitive native error body' });
+  const outcome = await attempt.promise;
+  expect(outcome).toMatchObject({ state: 'FAILED', result: { httpStatus: 401 } });
+  expect(JSON.stringify(outcome)).not.toContain('sensitive native error body');
+});
+
+it('retains a valid masked card when the native response has no expiry', async () => {
+  const attempt = create();
+  await ready(id);
+  result('Response', { tokens: [{ ...verifiedCard, cardDetails: { scheme: 'VISA', last4: '1111' } }] });
+  expect(await attempt.promise).toMatchObject({ state: 'SUCCESS', updatedTokenList: {
+    tokens: [{ tokenRef: 'card-ref', cardDetails: { scheme: 'VISA', last4: '1111' } }],
+  } });
+});
+
 it('cancels a closed session without fetching credentials or submitting', async () => {
   let current = true; const attempt = create({ isCurrent: () => current }); current = false;
   await ready(id); await attempt.promise;
@@ -120,8 +138,12 @@ it('cancels a closed session without fetching credentials or submitting', async 
 it('ignores a duplicate ready callback while the provider is pending', async () => {
   let resolve; const provider = new Promise(r => { resolve = r; });
   const client = createTokenizationClient({ baseUrl: 'https://sandbox.test', getAccessToken: () => provider });
-  const attempt = startNativeCardTokenization({ client, ...action, getConsentData: skipped });
-  const first = ready(id); const duplicate = ready(id); resolve('fixture'); await first; await duplicate;
+  const getConsentData = jest.fn(skipped);
+  const attempt = startNativeCardTokenization({ client, ...action, getConsentData });
+  const first = ready(id); const duplicate = ready(id);
+  expect(getConsentData).toHaveBeenCalledTimes(1);
+  expect(native.submitTokenizationCard).not.toHaveBeenCalled();
+  resolve('fixture'); await first; await duplicate;
   expect(native.submitTokenizationCard).toHaveBeenCalledTimes(1); attempt.cancel(); await attempt.promise;
 });
 it('keeps provider failures out of native requests and user-visible error payloads', async () => {
@@ -129,6 +151,7 @@ it('keeps provider failures out of native requests and user-visible error payloa
   const attempt = startNativeCardTokenization({ client, ...action, getConsentData: skipped });
   await ready(id); const outcome = await attempt.promise;
   expect(native.submitTokenizationCard).not.toHaveBeenCalled();
+  expect(outcome.result.code).toBe('ACCESS_TOKEN_UNAVAILABLE');
   expect(JSON.stringify(outcome)).not.toContain('private-credential');
 });
 

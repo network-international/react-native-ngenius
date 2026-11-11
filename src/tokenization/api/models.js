@@ -31,14 +31,16 @@ const parseCardDetails = value => {
   if (typeof value.last4 !== 'string' || !LAST4_PATTERN.test(value.last4)) {
     throw new Error('SavedCardResponse.cardDetails.last4 is invalid');
   }
-  if (typeof value.expiry !== 'string' || !EXPIRY_PATTERN.test(value.expiry)) {
-    throw new Error('SavedCardResponse.cardDetails.expiry is invalid');
-  }
   const details = {
     scheme: value.scheme,
     last4: value.last4,
-    expiry: value.expiry,
   };
+  if (value.expiry != null && value.expiry !== '') {
+    if (typeof value.expiry !== 'string' || !EXPIRY_PATTERN.test(value.expiry)) {
+      throw new Error('SavedCardResponse.cardDetails.expiry is invalid');
+    }
+    details.expiry = value.expiry;
+  }
   const cardholderName = optionalString(
     value.cardholderName,
     'SavedCardResponse.cardDetails.cardholderName',

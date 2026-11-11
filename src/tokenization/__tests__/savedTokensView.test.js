@@ -30,12 +30,15 @@ const renderScreen = async extra => {
 beforeEach(() => { AccessibilityInfo.isReduceMotionEnabled.mockResolvedValue(true); });
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = undefined; Platform.OS = 'ios'; jest.clearAllMocks(); });
 
-it('omits the saved-method section after a successful empty response and keeps Add Card available', async () => {
+it('opens the method chooser for an empty list and keeps Pay by card available', async () => {
   await renderScreen();
   expect(byId('saved-tokens')).toHaveLength(0);
   expect(JSON.stringify(tree.toJSON())).not.toContain('No saved payment');
-  expect(byId('tokenization-page-title')[0].props.children).toBe('Add payment method');
+  expect(byId('tokenization-page-title')[0].props.children).toBe('Select payment method');
   expect(byId('tokenization-method-CARD')[0].props.disabled).toBe(false);
+  expect(byId('tokenization-method-CARD')[0].props.accessibilityLabel).toBe('Pay by card');
+  expect(byId('tokenization-cancel')).toHaveLength(0);
+  expect(byId('tokenization-continue-shopping')).toHaveLength(0);
 });
 
 it('selects verified tokens by reference without conflating matching last4 or displaying references', () => {
@@ -44,16 +47,17 @@ it('selects verified tokens by reference without conflating matching last4 or di
   const rows = byId('saved-token');
   expect(rows.map(row => row.props.accessibilityState)).toEqual([
     { checked: false, disabled: false }, { checked: true, disabled: false },
-    { checked: false, disabled: true }, { checked: false, disabled: true },
+    { checked: false, disabled: true },
   ]);
   act(() => rows[0].props.onPress());
   expect(onSelectToken).toHaveBeenLastCalledWith(verified.tokenRef);
-  act(() => { rows[2].props.onPress(); rows[3].props.onPress(); });
+  act(() => { rows[2].props.onPress(); });
   expect(onSelectToken).toHaveBeenCalledTimes(1);
   rows.forEach(row => expect(row.props.accessibilityRole).toBe('radio'));
   const visible = JSON.stringify(tree.toJSON());
   expect(visible).toContain('1234');
-  expect(visible).toContain('Expires 12/30');
+  expect(visible).toContain('12/30');
+  expect(visible).not.toContain('Expires');
   expect(visible).not.toContain('private-card');
   expect(byId('saved-token-selected-dot')).toHaveLength(1);
   expect(byId('saved-token-verified')).toHaveLength(2);
@@ -69,11 +73,11 @@ it('keeps verification badges independent from local choice and session confirma
     selectedTokenRef: verified.tokenRef, onSelectToken: jest.fn() };
   act(() => { tree = renderer.create(React.createElement(SavedTokens, props)); });
   const verificationLabels = () => byId('saved-token').map(row => row.props.accessibilityLabel.includes('Verified'));
-  expect(verificationLabels()).toEqual([true, true, false, false]);
-  expect(byId('saved-token').map(row => row.props.accessibilityState.checked)).toEqual([true, false, false, false]);
+  expect(verificationLabels()).toEqual([true, true, false]);
+  expect(byId('saved-token').map(row => row.props.accessibilityState.checked)).toEqual([true, false, false]);
   act(() => tree.update(React.createElement(SavedTokens, { ...props, selectedTokenRef: another.tokenRef })));
-  expect(verificationLabels()).toEqual([true, true, false, false]);
-  expect(byId('saved-token').map(row => row.props.accessibilityState.checked)).toEqual([false, true, false, false]);
+  expect(verificationLabels()).toEqual([true, true, false]);
+  expect(byId('saved-token').map(row => row.props.accessibilityState.checked)).toEqual([false, true, false]);
   expect(byId('saved-token-selected-check')).toHaveLength(0);
   expect(byId('selection-status-confirmed')).toHaveLength(0);
 });
@@ -84,14 +88,22 @@ it('distinguishes a saved wallet prominently and renders the funding scheme as n
   const rows = byId('saved-token');
   expect(rows[0].props.accessibilityLabel).toContain('Card');
   expect(rows[1].props.accessibilityLabel).toContain('MASTERCARD •••• 4444, Wallet / Apple Pay');
-  expect(rows[1].props.accessibilityLabel).toContain('Expires 07/31');
+  expect(rows[1].props.accessibilityLabel).toContain('07/31');
   expect(byId('saved-token-funding')).toHaveLength(0);
   expect(tree.root.findAll(node => node.type === 'Text' && node.props.children === 'MASTERCARD •••• 4444')).toHaveLength(1);
-  expect(byId('saved-token-expiry').map(node => node.props.children)).toEqual(['Expires 12/30', 'Expires 07/31']);
+  expect(byId('saved-token-expiry').map(node => node.props.children)).toEqual(['12/30', '07/31']);
   expect(byId('scheme-icon-visa')).toHaveLength(1);
   expect(byId('scheme-icon-mastercard')).toHaveLength(1);
   expect(tree.root.findAllByType('Path').length).toBeGreaterThan(1);
   expect(byId('selection-status-confirmed')).toHaveLength(0);
+});
+
+it('keeps a card selectable with missing expiry and omits failed rows', async () => {
+  const withoutExpiry = { ...verified, cardDetails: { scheme: 'VISA', last4: '5678' } };
+  await renderScreen({ savedTokens: { tokens: [withoutExpiry, failed] }, onSelectToken: jest.fn() });
+  expect(byId('saved-token-expiry')).toHaveLength(0);
+  expect(byId('saved-token')).toHaveLength(1);
+  expect(byId('saved-token')[0].props.accessibilityState.disabled).toBe(false);
 });
 
 it('provides optional selection confirmation and keeps save-new consent separate', async () => {
@@ -115,7 +127,7 @@ it('provides optional selection confirmation and keeps save-new consent separate
 
 it('keeps submit progress, confirmed selection, and recoverable errors distinct', async () => {
   const props = await renderScreen({ savedTokens: { tokens: [verified] }, onSelectToken: jest.fn(), selectedTokenRef: verified.tokenRef,
-    onConfirmSavedToken: jest.fn(), selectionStatus: 'submitting' });
+    onConfirmSavedToken: jest.fn(), selectionStatus: 'submitting', modeConfig: { presentation: 'fullscreen' } });
   expect(byId('selection-submitting-spinner')).toHaveLength(1);
   expect(byId('saved-token')).toHaveLength(0);
   expect(byId('tokenization-cancel')[0].props.disabled).toBe(true);
@@ -157,15 +169,15 @@ it('cleans up the selection confirmation animation on close', async () => {
 });
 
 it.each(['button', 'link', 'text'])('shows an explicit configurable return control with a sufficient hit area as %s', async returnButtonStyle => {
-  const props = await renderScreen({ modeConfig: { returnButtonName: 'Return to merchant', returnButtonStyle, labels: { pageTitle: 'Choose a method', addCard: 'Save a new card' } } });
-  const control = byId('tokenization-cancel')[0];
+  const props = await renderScreen({ showContinueShopping: true, modeConfig: { returnButtonName: 'Return to merchant', returnButtonStyle, labels: { pageTitle: 'Choose a method', payByCard: 'Pay with a new card' } } });
+  const control = byId('tokenization-continue-shopping')[0];
   expect(control.props.accessibilityLabel).toBe('Return to merchant');
   expect(control.props.accessibilityRole).toBe(returnButtonStyle === 'link' ? 'link' : 'button');
   expect(control.props.style[0].minHeight).toBeGreaterThanOrEqual(44);
   expect(byId('tokenization-page-title')[0].props.children).toBe('Choose a method');
-  expect(byId('tokenization-method-CARD')[0].props.accessibilityLabel).toBe('Save a new card');
+  expect(byId('tokenization-method-CARD')[0].props.accessibilityLabel).toBe('Pay with a new card');
   act(() => control.props.onPress());
-  expect(props.onCancel).toHaveBeenCalledTimes(1);
+  expect(props.onCancel).toHaveBeenCalledWith('continueShopping');
 });
 
 it.each(['success', 'empty'])('omits redundant list %s feedback', async importStatus => {
@@ -191,7 +203,8 @@ it('announces loading and hides actionable methods until the list resolves', asy
 
 it('allows list retry and hides saved rows while native verification is busy', async () => {
   const onRetrySavedTokens = jest.fn();
-  const props = await renderScreen({ savedTokens: { failed: true, tokens: [] }, onRetrySavedTokens });
+  const props = await renderScreen({ savedTokens: { failed: true, tokens: [] }, onRetrySavedTokens,
+    modeConfig: { presentation: 'fullscreen' } });
   act(() => byId('saved-tokens-retry')[0].props.onPress());
   expect(onRetrySavedTokens).toHaveBeenCalledTimes(1);
   act(() => tree.update(React.createElement(TokenizationScreen, { ...props, status: 'VERIFYING', savedTokens: { tokens: [verified] } })));
@@ -201,6 +214,19 @@ it('allows list retry and hides saved rows while native verification is busy', a
   expect(byId('tokenization-cancel')[0].props.accessibilityState.disabled).toBe(true);
   act(() => byId('tokenization-cancel')[0].props.onPress());
   expect(props.onCancel).not.toHaveBeenCalled();
+});
+
+it('keeps cancellation available after terminal failure and disables payment actions', async () => {
+  const props = await renderScreen({ actionsDisabled: true, errorMessage: 'Your payment session has expired.',
+    modeConfig: { presentation: 'fullscreen', returnButtonName: 'Return to merchant' } });
+  expect(byId('tokenization-method-CARD')[0].props.disabled).toBe(true);
+  expect(byId('tokenization-inline-error')[0].props.accessibilityRole).toBe('alert');
+  expect(byId('tokenization-continue-shopping')).toHaveLength(0);
+  const cancel = byId('tokenization-cancel')[0];
+  expect(cancel.props.disabled).toBe(false);
+  expect(cancel.props.accessibilityLabel).toBe('Cancel');
+  act(() => cancel.props.onPress());
+  expect(props.onCancel).toHaveBeenCalledWith('cancel');
 });
 
 it.each([['ios', 'APPLE_PAY'], ['android', 'GOOGLE_PAY']])(
@@ -217,15 +243,16 @@ it.each([['ios', 'APPLE_PAY'], ['android', 'GOOGLE_PAY']])(
   }
 );
 
-it.each(['en', 'fr', 'ar'])('keeps terms independent and navigation localized in %s', async language => {
-  const props = await renderScreen({ language, consent: { url: 'https://merchant.test/terms' } });
+it.each(['en', 'fr', 'ar'])('keeps wallet terms independent and navigation localized in %s', async language => {
+  const props = await renderScreen({ language, methods: ['APPLE_PAY'], showContinueShopping: true,
+    consent: { url: 'https://merchant.test/terms' } });
   const link = tree.root.findAll(node => node.type === 'Text' && node.props.accessibilityRole === 'link')[0];
   await act(async () => { await link.props.onPress(); await flush(); });
   expect(Linking.openURL).toHaveBeenCalledWith('https://merchant.test/terms');
   expect(props.onSelectMethod).not.toHaveBeenCalled();
   expect(byId('tokenization-consent-checkbox')).toHaveLength(0);
-  expect(byId('tokenization-cancel')[0].props.accessibilityLabel).toBe(require('../strings').t(language, 'CONTINUE_SHOPPING'));
-  act(() => byId('tokenization-cancel')[0].props.onPress());
+  expect(byId('tokenization-continue-shopping')[0].props.accessibilityLabel).toBe(require('../strings').t(language, 'CONTINUE_SHOPPING'));
+  act(() => byId('tokenization-continue-shopping')[0].props.onPress());
   expect(props.onCancel).toHaveBeenCalledTimes(1);
 });
 
@@ -246,13 +273,29 @@ it('keeps skip-consent free of the notice and allows hiding the factual security
   expect(byId('tokenization-security-shield')).toHaveLength(1);
 });
 
-it('shows original recurring terms only on expansion and omits unsafe policy links', async () => {
-  await renderScreen({ consent: { key: 'SUBSCRIPTION_TERMS_AND_CONDITIONS', url: 'https://merchant.test/terms' },
+it('omits Saving terms and unsafe policy links from the wallet notice', async () => {
+  await renderScreen({ methods: ['APPLE_PAY'], consent: { key: 'SUBSCRIPTION_TERMS_AND_CONDITIONS', url: 'https://merchant.test/terms' },
     modeConfig: { privacyPolicyUrl: 'javascript:alert(1)' } });
+  expect(byId('tokenization-consent')).toHaveLength(1);
   expect(JSON.stringify(tree.toJSON())).not.toContain('charged the specified amount');
-  act(() => byId('tokenization-storage-terms-toggle')[0].props.onPress());
-  expect(JSON.stringify(tree.toJSON())).toContain('charged the specified amount');
+  expect(byId('tokenization-storage-terms-toggle')).toHaveLength(0);
   expect(JSON.stringify(tree.toJSON())).not.toContain('javascript:');
+});
+
+it('shows terms only for wallet Pay and makes the card security note optional', async () => {
+  await renderScreen({ consent: { url: 'https://merchant.test/terms' }, modeConfig: { showSecurityNote: true } });
+  expect(byId('tokenization-security-note')).toHaveLength(1);
+  expect(byId('tokenization-consent')).toHaveLength(0);
+});
+
+it('orders configured payment sections and separates them with or', async () => {
+  await renderScreen({ methods: ['CARD', 'APPLE_PAY'], savedTokens: { tokens: [verified] },
+    modeConfig: { sectionOrder: ['card', 'tokens', 'wallets'] } });
+  const order = ['tokenization-card-section', 'saved-tokens', 'tokenization-wallet-section'];
+  const rendered = tree.root.findAll(node => node.type === 'View' && order.includes(node.props.testID));
+  expect(rendered.map(node => node.props.testID)).toEqual(order);
+  expect(byId('tokenization-methods-divider')).toHaveLength(2);
+  expect(byId('tokenization-methods-divider').map(node => node.findByType('Text').props.children)).toEqual(['or', 'or']);
 });
 
 it('uses static loading placeholders when reduced motion is enabled', async () => {

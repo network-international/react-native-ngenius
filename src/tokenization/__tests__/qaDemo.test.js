@@ -8,7 +8,7 @@ const renderer = require('react-test-renderer');
 const { act } = renderer;
 const { Alert } = require('react-native');
 const sdk = require('@network-international/react-native-ngenius');
-const QA = require('../../../SimpleIntegration/src/tokenization-qa').default;
+const { default: QA, previewTransport } = require('../../../SimpleIntegration/src/tokenization-qa');
 let tree;
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = null; jest.clearAllMocks(); });
 it('opens preview without a credential exchange or network and supports all demo languages', () => {
@@ -58,6 +58,39 @@ it('drives the offline session preview and closes after confirmed selection', as
   const list = await transport({ method: 'GET' });
   expect(JSON.parse(list.text).tokens[0]).toMatchObject({ tokenRef: 'preview-card', status: 'VERIFIED' });
   await expect(transport({ method: 'PUT' })).resolves.toEqual({ status: 204 });
-  act(() => screen.props.onSelectionComplete({ sessionRef: 'preview-session' }));
+  act(() => screen.props.onResult({ statusCode: 200, message: 'Payment method selected.', sessionID: 'preview-session' }));
   expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(0);
+});
+
+it('sets presentation, branding and optional checkout return in the preview', () => {
+  act(() => { tree = renderer.create(React.createElement(QA)); });
+  const byId = testID => tree.root.findByProps({ testID }).props;
+  const toggle = accessibilityLabel => tree.root.findByProps({ accessibilityLabel }).props.onValueChange;
+  act(() => {
+    byId('qa-preview').onValueChange(true);
+    byId('qa-merchant-theme').onPress();
+    toggle('Fullscreen')(true);
+    toggle('Blur backdrop')(true);
+    toggle('Pay by card first')(true);
+    toggle('Continue Shopping')(true);
+  });
+  act(() => byId('qa-open-tokenization').onPress());
+  const screen = tree.root.findByType('NgeniusTokenization');
+  expect(screen.props.branding).toMatchObject({ buttonColour: '#9C402A' });
+  expect(screen.props.paymentMethods).toEqual(['CARD', 'CONTINUE_SHOPPING']);
+  expect(screen.props.modeConfig).toMatchObject({
+    presentation: 'fullscreen', backdropBlur: true, sectionOrder: ['card', 'tokens', 'wallets'],
+  });
+  act(() => screen.props.onResult({ statusCode: 402, message: 'Payment session expired.' }));
+  expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(1);
+});
+
+it('uses distinct fixtures for invalid initialization, expiry during selection, and a new shopper', async () => {
+  const get = { method: 'GET' };
+  const put = { method: 'PUT' };
+  await expect(previewTransport('unauthorized')(get)).resolves.toEqual({ status: 401 });
+  await expect(previewTransport('notFound')(get)).resolves.toEqual({ status: 404 });
+  await expect(previewTransport('expired')(get)).resolves.toMatchObject({ status: 200 });
+  await expect(previewTransport('expired')(put)).resolves.toEqual({ status: 401 });
+  expect(JSON.parse((await previewTransport('new')(get)).text).tokens).toEqual([]);
 });

@@ -1,6 +1,7 @@
 #import "NiTokenizationCard.h"
+#import <SafariServices/SafariServices.h>
 
-@interface NiTokenizationCard () <NSURLSessionTaskDelegate>
+@interface NiTokenizationCard () <NSURLSessionTaskDelegate, UITextViewDelegate>
 @property (nonatomic, copy) NSString *requestId;
 @property (nonatomic, copy) void (^ready)(NSString *);
 @property (nonatomic, copy) void (^result)(NSString *, NSDictionary *);
@@ -45,6 +46,51 @@ static UIColor *NICardColor(id value, UIColor *fallback) {
     if (![[NSScanner scannerWithString:[value substringFromIndex:1]] scanHexInt:&rgb]) return fallback;
     return [UIColor colorWithRed:((rgb >> 16) & 255) / 255.0 green:((rgb >> 8) & 255) / 255.0 blue:(rgb & 255) / 255.0 alpha:1];
 }
+static NSURL *NICardTermsURL(id value) {
+    if (![value isKindOfClass:NSString.class] || [value rangeOfString:@"\\"].location != NSNotFound ||
+        [value rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location != NSNotFound) return nil;
+    NSURLComponents *parts = [NSURLComponents componentsWithString:value];
+    NSString *scheme = parts.scheme.lowercaseString;
+    return ([scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"]) &&
+        parts.host.length > 0 && !parts.user && !parts.password ? parts.URL : nil;
+}
+- (void)addConsentToStack:(UIStackView *)stack {
+    NSDictionary *consent = self.config[@"consent"];
+    if (![consent isKindOfClass:NSDictionary.class]) return;
+    NSString *text = consent[@"text"];
+    if (![text isKindOfClass:NSString.class] || text.length == 0) return;
+
+    NSMutableAttributedString *content = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
+        NSFontAttributeName: [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote],
+        NSForegroundColorAttributeName: NICardColor(self.config[@"colors"][@"payPageLabelColor"], UIColor.secondaryLabelColor)
+    }];
+    NSURL *url = NICardTermsURL(consent[@"url"]);
+    NSString *linkLabel = consent[@"linkLabel"];
+    if (url && [linkLabel isKindOfClass:NSString.class] && linkLabel.length > 0) {
+        NSRange range = [text rangeOfString:linkLabel];
+        if (range.location != NSNotFound) [content addAttribute:NSLinkAttributeName value:url range:range];
+    }
+    UITextView *notice = [UITextView new];
+    notice.delegate = self;
+    notice.editable = NO;
+    notice.scrollEnabled = NO;
+    notice.backgroundColor = UIColor.clearColor;
+    notice.textContainerInset = UIEdgeInsetsMake(0, 0, 4, 0);
+    notice.textContainer.lineFragmentPadding = 0;
+    notice.linkTextAttributes = @{ NSForegroundColorAttributeName: UIColor.linkColor, NSUnderlineStyleAttributeName: @(NSUnderlineStyleSingle) };
+    notice.adjustsFontForContentSizeCategory = YES;
+    notice.accessibilityIdentifier = @"tokenization-card-consent";
+    notice.attributedText = content;
+    [stack addArrangedSubview:notice];
+}
+- (BOOL)textView:(UITextView *)textView shouldInteractWithURL:(NSURL *)URL inRange:(NSRange)range interaction:(UITextItemInteraction)interaction {
+    NSURL *safeURL = NICardTermsURL(URL.absoluteString);
+    if (safeURL && interaction == UITextItemInteractionInvokeDefaultAction && !self.finished && !self.navigation.presentedViewController) {
+        SFSafariViewController *browser = [[SFSafariViewController alloc] initWithURL:safeURL];
+        [self.navigation presentViewController:browser animated:YES completion:nil];
+    }
+    return NO;
+}
 - (UITextField *)field:(NSString *)label secret:(BOOL)secret numeric:(BOOL)numeric stack:(UIStackView *)stack {
     UILabel *title = [UILabel new]; title.text = label;
     title.textColor = NICardColor(self.config[@"colors"][@"payPageLabelColor"], UIColor.labelColor);
@@ -66,7 +112,7 @@ static UIColor *NICardColor(id value, UIColor *fallback) {
     if (!parent || !parent.view.window || parent.presentedViewController || self.requestId.length == 0) { [self fail]; return; }
     NSDictionary *labels = self.config[@"labels"] ?: @{};
     UIViewController *controller = [UIViewController new];
-    controller.title = labels[@"title"] ?: @"Add Card";
+    controller.title = labels[@"title"] ?: @"Pay by card";
     controller.view.backgroundColor = NICardColor(self.config[@"colors"][@"payPageBackgroundColor"], UIColor.systemBackgroundColor);
     controller.view.semanticContentAttribute = [self.config[@"rtl"] boolValue] ? UISemanticContentAttributeForceRightToLeft : UISemanticContentAttributeForceLeftToRight;
     UIScrollView *scroll = [UIScrollView new]; scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -93,18 +139,20 @@ static UIColor *NICardColor(id value, UIColor *fallback) {
     self.error = [UILabel new]; self.error.numberOfLines = 0; self.error.textColor = UIColor.systemRedColor;
     [stack addArrangedSubview:self.error];
     self.submitButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.submitButton setTitle:labels[@"submit"] ?: @"Add Card" forState:UIControlStateNormal];
+    [self.submitButton setTitle:labels[@"submit"] ?: @"Pay" forState:UIControlStateNormal];
     self.submitButton.backgroundColor = NICardColor(self.config[@"colors"][@"payButtonBackgroundColor"], UIColor.systemYellowColor);
     [self.submitButton setTitleColor:NICardColor(self.config[@"colors"][@"payButtonTitleColor"], UIColor.blackColor) forState:UIControlStateNormal];
+    self.submitButton.layer.cornerRadius = 25;
     [self.submitButton.heightAnchor constraintEqualToConstant:50].active = YES;
     [self.submitButton addTarget:self action:@selector(prepare) forControlEvents:UIControlEventTouchUpInside];
     [stack addArrangedSubview:self.submitButton];
+    [self addConsentToStack:stack];
     self.activityIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.activityIndicator.color = NICardColor(self.config[@"colors"][@"payPageLabelColor"], UIColor.labelColor);
     self.activityIndicator.hidesWhenStopped = YES;
     self.activityIndicator.accessibilityIdentifier = @"tokenization-card-spinner";
     self.processingLabel = [UILabel new];
-    self.processingLabel.text = labels[@"processing"] ?: @"Saving payment method…";
+    self.processingLabel.text = labels[@"processing"] ?: @"Verifying payment method…";
     self.processingLabel.textColor = self.activityIndicator.color;
     self.processingLabel.numberOfLines = 0;
     self.processingLabel.accessibilityIdentifier = @"tokenization-card-processing-label";
@@ -207,7 +255,10 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
             id body = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
             if ([body isKindOfClass:NSDictionary.class]) safe = [self safeResponse:body];
         }
-        dispatch_async(dispatch_get_main_queue(), ^{ [self finish:safe ? @"Response" : @"Failed" response:safe]; });
+        NSDictionary *failure = nil;
+        if (status >= 400 && status <= 599) failure = @{ @"httpStatus": @(status) };
+        else if (error && status == 0) failure = @{ @"code": @"NETWORK_ERROR" };
+        dispatch_async(dispatch_get_main_queue(), ^{ [self finish:safe ? @"Response" : @"Failed" response:safe ?: failure]; });
     }];
     [self.task resume];
 }
@@ -258,7 +309,7 @@ static BOOL NICardMatch(NSString *value, NSString *pattern) {
     [self.activityIndicator stopAnimating]; self.processingView.hidden = YES;
     [self.task cancel]; self.task = nil; [self.session invalidateAndCancel]; self.session = nil;
     void (^callback)(NSString *, NSDictionary *) = self.result; self.result = nil;
-    if (self.navigation.presentingViewController) [self.navigation dismissViewControllerAnimated:YES completion:^{ if (callback) callback(status, response ?: @{}); }];
+    if (self.navigation.presentingViewController) [self.navigation.presentingViewController dismissViewControllerAnimated:YES completion:^{ if (callback) callback(status, response ?: @{}); }];
     else if (callback) callback(status, response ?: @{});
 }
 @end

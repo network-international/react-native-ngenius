@@ -188,7 +188,10 @@ static NSUInteger cardTestResponseBytes;
                     XCTAssertNil(response[@"card"]);
                     XCTAssertNil(tokens.firstObject[@"cardDetails"][@"pan"]);
                     XCTAssertNil(tokens.lastObject[@"cvv"]);
-                } else { XCTAssertTrue([result isEqualToString:@"Failed"]); XCTAssertTrue(response.count == 0); }
+                } else {
+                    XCTAssertEqualObjects(result, @"Failed");
+                    XCTAssertEqualObjects(response, (@{ @"httpStatus": @(status) }));
+                }
             }
             XCTAssertTrue([[(UITextField *)[card valueForKey:@"pan"] text] length] == 0);
             XCTAssertTrue([[(UITextField *)[card valueForKey:@"cvv"] text] length] == 0);

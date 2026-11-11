@@ -132,7 +132,7 @@ export interface SavedCardResponse {
   cardDetails: {
     scheme: string;
     last4: string;
-    expiry: string;
+    expiry?: string;
     cardholderName?: string;
   } | null;
   orderReference?: string;
@@ -221,10 +221,11 @@ export interface NgeniusTokenizationProps {
   order?: NGeniusOrder;
   /** Optional display/currency context. Takes precedence over order without merging fields. */
   orderDetails?: TokenizationOrderDetails;
-  paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY'>;
+  /** Include CONTINUE_SHOPPING to display the optional return action. */
+  paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY' | 'CONTINUE_SHOPPING'>;
   branding?: Record<string, unknown>;
   language?: string;
-  /** Default false: Add Card/Wallet clicks accept the displayed terms for that attempt. */
+  /** Default false: native Card Pay or a wallet Pay action accepts the terms for that attempt. */
   skipConsent?: boolean;
   tokenizationClient?: TokenizationClient;
   outletRef?: string;
@@ -235,8 +236,17 @@ export interface NgeniusTokenizationProps {
   googlePayConfig?: GooglePayConfig;
   onError?: (result: TokenizationResult) => void;
   onCancel?: () => void;
+  /** Merchant outcome. Recoverable errors are reported while the SDK remains open. */
+  onResult?: (result: TokenizationPaymentResult) => void;
   /** Emitted after confirmed selection and local closing, with the session reference for merchant payment. */
   onSelectionComplete?: (result: TokenizationSelectionCompletion) => void;
+}
+
+export interface TokenizationPaymentResult {
+  statusCode: number;
+  message: string;
+  /** Available after Get Session succeeds. A 200 also requires confirmed token selection. */
+  sessionID?: string;
 }
 
 /** Values are minor units (for example AED "3910" displays as AED 39.10). */
@@ -274,15 +284,23 @@ export interface TokenizationSelectionCompletion {
 export interface TokenizationModeConfig {
   /** Sent as usageType on Add Card or Add Wallet. Defaults to PERMANENT when omitted. */
   tokenType?: UsageType;
+  /** Defaults to bottomSheet. */
+  presentation?: 'bottomSheet' | 'fullscreen';
+  /** Blur the merchant app behind the bottom sheet when supported by the device. */
+  backdropBlur?: boolean;
+  /** Defaults to tokens, wallets, card. Omitted groups follow the supplied groups in default order. */
+  sectionOrder?: ReadonlyArray<'tokens' | 'wallets' | 'card'>;
+  /** Applies when paymentMethods includes CONTINUE_SHOPPING. */
   returnButtonName?: string;
   returnButtonStyle?: 'text' | 'link' | 'button';
+  /** Defaults false. Displays the optional card security note. */
   showSecurityNote?: boolean;
   /** Defaults false. A new order summary initially appears collapsed. */
   orderSummaryInitiallyExpanded?: boolean;
   /** Omitted when absent/invalid. No placeholder policy link is generated. */
   privacyPolicyUrl?: string;
   labels?: Partial<Record<
-    'pageTitle' | 'pageSubtitle' | 'savedMethodsTitle' | 'addMethodTitle' | 'addCard' |
+    'pageTitle' | 'pageSubtitle' | 'savedMethodsTitle' | 'payByCard' | 'pay' | 'addCard' |
     'addAnotherCard' | 'usePaymentMethod' | 'selectionPending' |
     'selectionSuccessTitle' | 'selectionSuccessMessage' | 'selectionError' |
     'orderSummary' | 'orderItems' | 'orderAmount' | 'orderShipping' | 'orderTax' | 'orderTotal', string>>;

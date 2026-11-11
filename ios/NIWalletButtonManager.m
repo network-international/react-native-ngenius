@@ -16,7 +16,7 @@
   self = [super initWithPaymentButtonType:PKPaymentButtonTypePlain
                       paymentButtonStyle:PKPaymentButtonStyleBlack];
   if (self) {
-    self.cornerRadius = 8;
+    self.cornerRadius = 24;
     self.accessibilityLabel = @"Apple Pay";
     [self addTarget:self action:@selector(handlePress:) forControlEvents:UIControlEventTouchUpInside];
     self.disabled = YES;

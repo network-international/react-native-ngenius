@@ -258,6 +258,17 @@ describe('TokenizationClient', () => {
       expect(tokens[1].cardDetails).toBeNull();
     });
 
+    it.each([null, undefined, ''])('keeps a verified token when expiry is %p', async expiry => {
+      const client = createClient({ respond: () => jsonResponse(200, {
+        tokens: [{ ...verifiedCard, cardDetails: { ...verifiedCard.cardDetails, expiry } }],
+      }) });
+      const { tokens } = await client.getSession({ sessionRef: SESSION, outletRef: OUTLET });
+      expect(tokens[0]).toMatchObject({ status: 'VERIFIED', cardDetails: {
+        scheme: verifiedCard.cardDetails.scheme, last4: verifiedCard.cardDetails.last4,
+      } });
+      expect(tokens[0].cardDetails).not.toHaveProperty('expiry');
+    });
+
     it('requires an outlet before sending a request', async () => {
       const client = createClient({ respond: () => jsonResponse(200, { tokens: [] }) });
       await expect(client.getSession({ sessionRef: SESSION, outletRef: '' })).rejects.toThrow('outletRef');

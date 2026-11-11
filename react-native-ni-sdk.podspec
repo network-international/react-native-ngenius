@@ -16,6 +16,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/network-international/react-native-ngenius.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,c,m,swift}"
+  s.frameworks    = "SafariServices"
   s.requires_arc = true
   s.swift_version = "5.0"
   s.pod_target_xcconfig = {

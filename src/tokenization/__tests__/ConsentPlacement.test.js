@@ -3,6 +3,7 @@ jest.mock('react-native', () => ({
   Dimensions: { get: () => ({ width: 412, height: 915 }) },
 }));
 jest.mock('../ui/TokenizationScreen', () => 'TokenizationScreen');
+jest.mock('../ui/TokenizationPresentation', () => ({ children }) => children);
 jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn() }));
 jest.mock('../nativeCards', () => ({ startNativeCardTokenization: jest.fn() }));
 jest.mock('../../nativePayments', () => ({
@@ -37,7 +38,6 @@ let tree, props;
 const screen = () => tree.root.findByType('TokenizationScreen').props;
 const modal = () => tree.root.findByType('Modal').props;
 const session = () => createTokenizationSession.mock.results[createTokenizationSession.mock.results.length - 1].value;
-const acceptedCalls = () => session().setAccepted.mock.calls.filter(call => call[0] === true);
 const defaultClient = () => ({
   createSession: jest.fn(),
   getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/terms' }),
@@ -89,33 +89,27 @@ it.each([undefined, false, true])('loads consent context without collecting acce
     outletRef: 'outlet', sessionRef: 'session-1', skipConsent: skipConsent === true,
   });
   expect(screen().consent).toEqual(skipConsent === true ? null : { key: undefined, url: 'https://backend.example/terms', diagnostic: undefined });
-  expect(screen().consentAccepted).toBe(false);
   expect(screen().onConsentChange).toBeUndefined();
   expect(session().acceptanceTimestamp()).toBeUndefined();
-  expect(acceptedCalls()).toHaveLength(0);
 });
 
-it('collects Card consent synchronously on the click, before React can commit acceptance state', async () => {
-  let clickConsent;
-  startNativeCardTokenization.mockImplementation(args => {
-    clickConsent = args.getConsentData();
-    return { promise: new Promise(() => {}), cancel: jest.fn() };
-  });
+it('prepares Card consent only when the valid native Pay action requests it', async () => {
   await open({ language: 'fr' });
-  expect(screen().consentAccepted).toBe(false);
   jest.setSystemTime(new Date('2026-11-06T08:01:02.003Z'));
   const click = screen().onSelectMethod;
   await act(async () => { click('CARD'); click('CARD'); await flush(); });
   expect(startNativeCardTokenization).toHaveBeenCalledTimes(1);
-  expect(acceptedCalls()).toHaveLength(1);
+  const cardPay = startNativeCardTokenization.mock.calls[0][0];
+  expect(cardPay.presentation.consent.url).toBe('https://backend.example/terms');
+  jest.setSystemTime(new Date('2026-11-06T08:02:30.003Z'));
+  const clickConsent = cardPay.getConsentData();
   expect(clickConsent).toMatchObject({
-    status: 'COLLECTED', clientTimestamp: '2026-11-06T08:01:02.003Z',
+    status: 'COLLECTED', clientTimestamp: '2026-11-06T08:02:30.003Z',
     tncUrl: 'https://backend.example/terms', locale: 'fr', channel: 'REACT_NATIVE',
     sdk: { name: 'react-native-ngenius', version: require('../../version').SDK_VERSION },
     device: { platform: 'ANDROID', osVersion: '35', screenWidth: 412, screenHeight: 915 },
   });
   expect(clickConsent).not.toHaveProperty('skippedByMerchant');
-  expect(screen().consentAccepted).toBe(true);
 });
 
 it.each([
@@ -130,8 +124,6 @@ it.each([
   jest.setSystemTime(new Date('2026-11-06T08:02:00.000Z'));
   const click = screen().onSelectMethod;
   await act(async () => { click(method); click(method); await flush(); });
-  expect(acceptedCalls()).toHaveLength(1);
-  expect(session().acceptanceTimestamp()).toBe('2026-11-06T08:02:00.000Z');
   if (Platform.OS === 'ios') {
     expect(fn).not.toHaveBeenCalled();
     await dismissRnModal();
@@ -147,11 +139,12 @@ it.each([
     consentData: expect.objectContaining({ status: 'COLLECTED', clientTimestamp: '2026-11-06T08:02:00.000Z' }),
   });
   expect(screen().savedTokens.tokens).toEqual([wallet(method)]);
-  expect(screen().tokenSaved).toBe(true);
   expect(screen().selectedTokenRef).toBeNull();
   expect(props.tokenizationClient.createSession).not.toHaveBeenCalled();
   expect(props.tokenizationClient.getSession).toHaveBeenCalledTimes(1);
-  expect(props.tokenizationClient.selectToken).not.toHaveBeenCalled();
+  expect(props.tokenizationClient.selectToken).toHaveBeenCalledWith({
+    outletRef: 'outlet', sessionRef: 'session-1', tokenRef: 'new-wallet-token',
+  });
   expect(native.initiateCardPayment).not.toHaveBeenCalled();
   expect(native.initiateApplePay).not.toHaveBeenCalled();
 });
@@ -163,7 +156,6 @@ it.each(['APPLE_PAY', 'GOOGLE_PAY'])('reports %s as backend-pending before recor
   expect(screen().methods).toContain(method);
   await select(method);
   expect(modal().visible).toBe(true);
-  expect(acceptedCalls()).toHaveLength(0);
   expect(captureApplePayToken).not.toHaveBeenCalled();
   expect(native.initiateGooglePay).not.toHaveBeenCalled();
   expect(tokenizationClient.addWallet).not.toHaveBeenCalled();
@@ -177,9 +169,7 @@ it('keeps skipConsent NOT_COLLECTED with a request-time timestamp and no terms/l
   native.initiateGooglePay.mockReturnValueOnce(capture.promise);
   await open({ skipConsent: true, language: 'ar' });
   await select('GOOGLE_PAY');
-  expect(acceptedCalls()).toHaveLength(0);
   expect(session().acceptanceTimestamp()).toBeUndefined();
-  expect(screen().consentAccepted).toBe(false);
   jest.setSystemTime(new Date('2026-11-06T08:07:00.000Z'));
   await act(async () => { capture.resolve({ token: 'opaque-wallet' }); await flush(); });
   const data = props.tokenizationClient.addWallet.mock.calls[0][0].consentData;
@@ -194,7 +184,6 @@ it.each([undefined, 'javascript:alert(1)'])('preserves the existing optional-URL
     getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl }),
   } });
   expect(screen().consent.url).toBeNull();
-  expect(acceptedCalls()).toHaveLength(0);
   await select('GOOGLE_PAY');
   expect(props.tokenizationClient.addWallet).toHaveBeenCalledTimes(1);
   const data = props.tokenizationClient.addWallet.mock.calls[0][0].consentData;
@@ -207,11 +196,8 @@ it('does not collect from list refresh, saved-row selection or confirming an exi
   props.tokenizationClient.getSession.mockResolvedValue({ tokens: [card], tncUrl: 'https://backend.example/terms' });
   await act(async () => { screen().onRetrySavedTokens(); await flush(); });
   act(() => screen().onSelectToken(card.tokenRef));
-  expect(screen().consentAccepted).toBe(false);
-  expect(acceptedCalls()).toHaveLength(0);
   await act(async () => { screen().onConfirmSavedToken(card.tokenRef); await flush(); });
   expect(props.tokenizationClient.selectToken).toHaveBeenCalledTimes(1);
-  expect(acceptedCalls()).toHaveLength(0);
   expect(startNativeCardTokenization).not.toHaveBeenCalled();
 });
 
@@ -222,16 +208,13 @@ it('ignores loading, unavailable method and prior-launch click handlers without 
     getSession: jest.fn().mockReturnValueOnce(first.promise).mockResolvedValue({ tokens: [] }),
   } });
   await select('CARD');
-  expect(acceptedCalls()).toHaveLength(0);
   await act(async () => { first.resolve({ tokens: [], tncUrl: 'https://backend.example/terms' }); await flush(); });
   await select('APPLE_PAY'); // Unsupported on the current Android platform.
   await select('UNKNOWN');
-  expect(acceptedCalls()).toHaveLength(0);
   const previousClick = screen().onSelectMethod;
   await update({ visible: false });
   await update({ visible: true });
   await act(async () => { previousClick('CARD'); await flush(); });
-  expect(acceptedCalls()).toHaveLength(0);
   expect(startNativeCardTokenization).not.toHaveBeenCalled();
 });
 
@@ -240,14 +223,11 @@ it('rejects stale consent-mode and terms-context handlers before recording accep
   const skippedClick = screen().onSelectMethod;
   await update({ skipConsent: false });
   await act(async () => { skippedClick('CARD'); await flush(); });
-  expect(acceptedCalls()).toHaveLength(0);
   const oldTermsClick = screen().onSelectMethod;
   props.tokenizationClient.getSession.mockResolvedValue({ tokens: [], tncUrl: 'https://new.example/terms' });
   await act(async () => { screen().onRetrySavedTokens(); await flush(); });
   await act(async () => { oldTermsClick('CARD'); await flush(); });
-  expect(acceptedCalls()).toHaveLength(0);
   await select('CARD');
-  expect(acceptedCalls()).toHaveLength(1);
   expect(startNativeCardTokenization.mock.calls[0][0].getConsentData().tncUrl).toBe('https://new.example/terms');
 });
 
@@ -258,23 +238,19 @@ it.each(['Aborted', 'Failed'])('records a fresh click timestamp after a wallet %
   expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
   if (status === 'Aborted') {
     expect(session().acceptanceTimestamp()).toBeUndefined();
-    expect(screen().consentAccepted).toBe(false);
   }
   jest.setSystemTime(new Date('2026-11-06T08:11:12.013Z'));
   await select('GOOGLE_PAY');
-  expect(acceptedCalls()).toHaveLength(2);
   expect(props.tokenizationClient.addWallet.mock.calls[0][0].consentData.clientTimestamp).toBe('2026-11-06T08:11:12.013Z');
 });
 
-it('clears Card acceptance on Back and captures a new timestamp on the next Card click', async () => {
+it('uses the new native Pay time after returning from Card Back', async () => {
   const back = deferred();
   startNativeCardTokenization.mockReturnValueOnce({ promise: back.promise, cancel: jest.fn() });
   await open();
   await select('CARD');
-  expect(acceptedCalls()).toHaveLength(1);
   await act(async () => { back.resolve({ state: 'READY' }); await flush(); });
   expect(session().acceptanceTimestamp()).toBeUndefined();
-  expect(screen().consentAccepted).toBe(false);
   jest.setSystemTime(new Date('2026-11-06T08:12:00.000Z'));
   await select('CARD');
   expect(startNativeCardTokenization.mock.calls[1][0].getConsentData().clientTimestamp).toBe('2026-11-06T08:12:00.000Z');
@@ -294,7 +270,6 @@ it.each(['close', 'outlet', 'session', 'unmount'])('invalidates acceptance and o
   expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
   expect(props.onSuccess).not.toHaveBeenCalled();
   expect(props.onError).not.toHaveBeenCalled();
-  if (tree) expect(screen().consentAccepted).toBe(false);
 });
 
 it('does not collect on cancel and rejects a cancelled-session click', async () => {
@@ -303,7 +278,6 @@ it('does not collect on cancel and rejects a cancelled-session click', async () 
   act(() => screen().onCancel());
   await act(async () => { oldClick('CARD'); await flush(); });
   expect(props.onCancel).toHaveBeenCalledTimes(1);
-  expect(acceptedCalls()).toHaveLength(0);
   expect(session().acceptanceTimestamp()).toBeUndefined();
 });
 
@@ -382,7 +356,6 @@ it.each(['invalid', [], 42])('does not use a hidden legacy wallet order when exp
   await select('GOOGLE_PAY');
   expect(native.initiateGooglePay).not.toHaveBeenCalled();
   expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
-  expect(acceptedCalls()).toHaveLength(0);
   expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({ error: 'Order not found' }));
 });
 

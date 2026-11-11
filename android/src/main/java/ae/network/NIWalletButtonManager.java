@@ -69,7 +69,7 @@ public class NIWalletButtonManager extends SimpleViewManager<NIWalletButtonManag
         WalletButtonView(ThemedReactContext context) {
             super(context);
             payButton = new PayButton(context);
-            int radius = Math.round(8 * getResources().getDisplayMetrics().density);
+            int radius = Math.round(24 * getResources().getDisplayMetrics().density);
             payButton.initialize(ButtonOptions.newBuilder()
                     .setButtonTheme(ButtonConstants.ButtonTheme.DARK)
                     .setButtonType(ButtonConstants.ButtonType.PLAIN)

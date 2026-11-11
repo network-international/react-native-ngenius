@@ -1,6 +1,6 @@
 # Tokenization UI refinement, 6 November 2026
 
-Status: frontend POC changes for NINGG-34386, PR #75. Use the current PR SHA and matching build context for review. No backend implementation, payment orchestration or release version change. Offline previews and simulated selected-token responses are demo/mock evidence.
+Historical reference for the 6 November POC. See the [current SDK integration](../README.md#confirm-a-method-and-hand-off-to-the-merchant) for the checkout behavior and merchant result. No backend implementation, payment orchestration or release version change. Offline previews and simulated selected-token responses are demo/mock evidence.
 
 ## Shopper experience
 

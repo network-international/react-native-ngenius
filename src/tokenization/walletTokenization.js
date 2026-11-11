@@ -7,6 +7,7 @@ const {
 const { parseSavedTokensResponse } = require('./api/models');
 const { VERIFICATION_STATES } = require('./verificationStates');
 const { apiErrorResult } = require('./session');
+const { httpStatusOf } = require('./paymentOutcome');
 
 const runWalletTokenization = async ({
   method = 'GOOGLE_PAY',
@@ -23,10 +24,16 @@ const runWalletTokenization = async ({
   isCurrent = () => true,
 }) => {
   const ready = { state: VERIFICATION_STATES.READY };
-  const fail = error => ({
-    state: VERIFICATION_STATES.FAILED,
-    result: apiErrorResult({ method, error }),
-  });
+  const fail = error => {
+    const httpStatus = httpStatusOf(error);
+    return {
+      state: VERIFICATION_STATES.FAILED,
+      result: {
+        ...apiErrorResult({ method, error }),
+        ...(httpStatus ? { httpStatus } : {}),
+      },
+    };
+  };
   if (!isCurrent()) return ready;
   try {
     validateWalletContext({ outletRef, sessionRef, usageType });
@@ -66,11 +73,13 @@ const runWalletTokenization = async ({
     });
     onVerifying?.();
     updatedTokenList = await client.addWallet({ outletRef, sessionRef, ...request });
-  } catch {
+  } catch (error) {
     if (!isCurrent()) return ready;
+    const knownCode = ['ACCESS_TOKEN_UNAVAILABLE', 'NETWORK_ERROR'].includes(error?.code) ? error.code : undefined;
     return fail({
-      code: 'ADD_WALLET_FAILED',
+      code: knownCode || 'ADD_WALLET_FAILED',
       message: 'Wallet tokenization request failed',
+      httpStatus: httpStatusOf(error),
     });
   }
   if (!isCurrent()) return ready;

@@ -183,6 +183,14 @@ it('does not echo an encrypted payload from native or client errors', async () =
   expect(JSON.stringify([nativeError, clientError])).not.toContain('encrypted bytes');
 });
 
+it('preserves an adapter authentication status without exposing its error body', async () => {
+  const { addWallet, run } = setup();
+  addWallet.mockRejectedValue({ status: 401, message: payload });
+  const outcome = await run();
+  expect(outcome).toMatchObject({ state: VERIFICATION_STATES.FAILED, result: { httpStatus: 401 } });
+  expect(JSON.stringify(outcome)).not.toContain('encrypted bytes');
+});
+
 it('does not update the list if the session closes before Add Wallet returns', async () => {
   let active = true;
   const { addWallet, run } = setup({ isCurrent: () => active });
