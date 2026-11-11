@@ -1,6 +1,5 @@
 const { supportedTermsUrl } = require('../termsUrl');
-const { REFERENCE_PATTERN, validReference } = require('./endpoints');
-const { TokenizationApiError } = require('./errors');
+const { REFERENCE_PATTERN } = require('./endpoints');
 
 const TOKEN_TYPES = ['CARD', 'WALLET'];
 const WALLET_TYPES = ['APPLE_PAY', 'GOOGLE_PAY'];
@@ -205,21 +204,6 @@ const parseSavedTokensResponse = value => {
   return result;
 };
 
-const parseCreateSessionResponse = value => {
-  if (!validReference(value?.sessionRef)) throw new Error('Session response requires a valid sessionRef');
-  return { sessionRef: value.sessionRef };
-};
-
-const mapCreateSessionRequest = (advisedTokens = []) => {
-  if (Array.isArray(advisedTokens)) {
-    const tokens = Array.from(advisedTokens);
-    if (tokens.every(validReference)) return { advisedTokens: tokens };
-  }
-  throw new TokenizationApiError({
-    status: 0, code: 'INVALID_ADVISED_TOKENS', message: 'advisedTokens must be an array of token references',
-  });
-};
-
 const BROWSER_INFO_FIELDS = [
   'browserAcceptHeader',
   'browserJavaEnabled',
@@ -267,8 +251,6 @@ module.exports = {
   TOKEN_STATUSES,
   parseSavedCardResponse,
   parseSavedTokensResponse,
-  mapCreateSessionRequest,
-  parseCreateSessionResponse,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 };

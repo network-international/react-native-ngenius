@@ -29,7 +29,7 @@ See **[QUICK_START.md](./QUICK_START.md)** for:
 ## Test configuration
 
 For **Tokenization sandbox QA**, follow [FOR_TESTERS.md](FOR_TESTERS.md). Supply a fresh
-short-lived Access-Token through the runtime password input and approved secure flow.
+short-lived Access-Token and a merchant-created `sessionRef` through the runtime inputs. Obtain the token through the approved secure flow.
 Do not embed API keys, Access-Tokens or wallet payloads in source, documentation or screenshots.
 Public environment settings belong in the ignored local configuration, using `config.example.js`
 as the template. Offline UI preview uses fixtures and does not prove backend E2E.

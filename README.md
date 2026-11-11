@@ -38,7 +38,6 @@ to 15.0 or later.
 import {
   createTokenizationClient,
   NgeniusTokenization,
-  UsageType,
 } from '@network-international/react-native-ngenius';
 
 const tokenizationClient = createTokenizationClient({
@@ -52,11 +51,7 @@ const tokenizationClient = createTokenizationClient({
   paymentMethods={['CARD']}
   tokenizationClient={tokenizationClient}
   outletRef={outletRef}
-  advisedTokens={returningShopperTokenRefs}
-  getUsageType={() => UsageType.PERMANENT}
-  branding={branding}
-  language="en"
-  skipConsent={true}
+  sessionRef={sessionRef}
   onSelectionComplete={({ sessionRef }) => handleSelectedSession(sessionRef)}
   onError={handleError}
   onCancel={() => setShowTokenization(false)}
@@ -67,12 +62,14 @@ const tokenizationClient = createTokenizationClient({
 order. Pass an explicit `paymentMethods` list. `branding` accepts PayPage branding fields. Custom
 fonts must be registered by the host app.
 
-Opening the chooser creates a session with the supplied `advisedTokens` (empty by default), then
-loads the token list and `tncUrl` with Get Session. The chooser uses the returned list for the
-rest of the journey. Add Card updates the list directly from its response and reuses `sessionRef`.
-Each Add Card or Add Wallet action calls `getUsageType` with its `method`. Return
-`UsageType.ONCE_OFF` or `UsageType.PERMANENT`. The SDK blocks missing or invalid values with
-`INVALID_USAGE_TYPE` before sending a request. Usage type applies to the individual Add action.
+The merchant backend creates the tokenization session with any returning shopper token references
+in `advisedTokens` and passes the returned `sessionRef` to the app. Open the chooser with that
+reference. The SDK starts with Get Session to load the saved methods and `tncUrl`. Add and Select
+reuse the same reference, and Add updates the list directly from its response.
+
+Omit `modeConfig.tokenType` to use `PERMANENT`. For a one-time token, pass
+`modeConfig={{ tokenType: 'ONCE_OFF' }}`. The SDK sends this value as `usageType` on Add Card
+or Add Wallet and rejects an invalid explicit value with `INVALID_USAGE_TYPE`.
 
 With `skipConsent={false}` (default), each actionable Add Card or Wallet click accepts the displayed
 terms for that attempt and records a fresh `COLLECTED` timestamp. Opening legal links, expanding
@@ -164,7 +161,7 @@ Account credential. That payment step is outside the React Native tokenization S
 - Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
 - Helpers: `isSamsungPaySupported(serviceId)`, `isApplePaySupported()`, `isGooglePaySupported(googlePayConfig)`, `configureSDK(config)`, `executeThreeDSTwo(paymentResponse)`.
 - Tokenization UI: `CARD`, `APPLE_PAY` (iOS), `GOOGLE_PAY` (Android).
-- Tokenization client: `createSession`, `getSession`, `selectToken`, and the backend-pending `addWallet` contract. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
+- Tokenization client: `getSession`, `selectToken`, and the backend-pending `addWallet` contract. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
 
 ## Authentication
 

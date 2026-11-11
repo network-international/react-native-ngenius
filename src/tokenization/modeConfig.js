@@ -1,3 +1,4 @@
+const { UsageType } = require('./usageType');
 const { t } = require('./strings');
 const { supportedTermsUrl } = require('./termsUrl');
 
@@ -20,6 +21,7 @@ const resolveModeConfig = (value, language = 'en') => {
     if (label) labels[key] = label;
   });
   return {
+    tokenType: source.tokenType === undefined ? UsageType.PERMANENT : source.tokenType,
     returnButtonName: plainLabel(source.returnButtonName) || t(language, 'CONTINUE_SHOPPING'),
     returnButtonStyle: ['text', 'link', 'button'].includes(source.returnButtonStyle) ? source.returnButtonStyle : 'button',
     showSecurityNote: source.showSecurityNote !== false,

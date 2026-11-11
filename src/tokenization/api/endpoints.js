@@ -46,7 +46,6 @@ const sessionPath = ({ outletRef, sessionRef }) => {
 };
 
 const TOKENIZATION_PATHS = {
-  createSession: sessionCollectionPath,
   getSession: sessionPath,
   // PAN/CVV stay native; this path is used only to prepare a native request.
   addCard: args => `${sessionPath(args)}/cards`,

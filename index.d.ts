@@ -166,7 +166,6 @@ export interface TokenizationTokenList {
 }
 
 export interface TokenizationClient {
-  createSession(args: { outletRef: string; advisedTokens?: readonly string[] }): Promise<{ sessionRef: string }>;
   getSession(args: { outletRef: string; sessionRef: string; skipConsent?: boolean }): Promise<TokenizationTokenList>;
   selectToken(args: { outletRef: string; sessionRef: string; tokenRef: string }): Promise<{ status: 'SELECTED' }>;
   /** Wallet capture requires explicit support. The built-in client is backend-pending. */
@@ -229,10 +228,8 @@ export interface NgeniusTokenizationProps {
   skipConsent?: boolean;
   tokenizationClient?: TokenizationClient;
   outletRef?: string;
-  /** References advised once when the SDK creates the session. */
-  advisedTokens?: readonly string[];
-  /** Invoked for each Add action. A missing or invalid value blocks that action. */
-  getUsageType?: (action: { method: 'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY' }) => UsageType;
+  /** Session reference obtained by the merchant backend before opening the SDK. */
+  sessionRef: string;
   modeConfig?: TokenizationModeConfig;
   applePayConfig?: ApplePayConfig;
   googlePayConfig?: GooglePayConfig;
@@ -273,8 +270,10 @@ export interface TokenizationSelectionCompletion {
   sessionRef: string;
 }
 
-/** Optional plain-text UI overrides. NI consent wording and wallet artwork are not overrideable. */
+/** Token usage and optional plain-text UI overrides. */
 export interface TokenizationModeConfig {
+  /** Sent as usageType on Add Card or Add Wallet. Defaults to PERMANENT when omitted. */
+  tokenType?: UsageType;
   returnButtonName?: string;
   returnButtonStyle?: 'text' | 'link' | 'button';
   showSecurityNote?: boolean;

@@ -55,7 +55,7 @@ Other supported labels: savedMethodsTitle, addMethodTitle, selectionPending, sel
 
 ## Session selection
 
-The chooser creates a session when opened and records the shopper's confirmed choice within that session. After successful selection and the confirmation animation, it closes and passes `sessionRef` to `onSelectionComplete`. See the [current tokenization contract](tokenization-contract.md).
+The chooser starts with Get Session using the merchant-provided `sessionRef` and records the shopper's confirmed choice within that session. After successful selection and the confirmation animation, it closes and passes `sessionRef` to `onSelectionComplete`. See the [current tokenization contract](tokenization-contract.md).
 
 ## Review evidence
 

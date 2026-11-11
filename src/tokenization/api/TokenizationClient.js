@@ -10,8 +10,6 @@ const { TOKENIZATION_PATHS, resolveTokenizationUrl } = require('./endpoints');
 const {
   parseSavedCardResponse,
   parseSavedTokensResponse,
-  mapCreateSessionRequest,
-  parseCreateSessionResponse,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 } = require('./models');
@@ -116,14 +114,6 @@ const createTokenizationClient = options => {
     parseSavedCardResponse(body, { requireContinuation: true });
 
   const client = {
-    createSession: async args =>
-      request({
-        method: 'POST',
-        path: TOKENIZATION_PATHS.createSession({ outletRef: args?.outletRef }),
-        body: mapCreateSessionRequest(args?.advisedTokens),
-        parse: parseCreateSessionResponse,
-        sanitizeError: true,
-      }),
     getSession: async args =>
       request({
         method: 'GET',

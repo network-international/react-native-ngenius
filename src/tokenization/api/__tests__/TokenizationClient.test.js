@@ -120,7 +120,6 @@ describe('TokenizationClient', () => {
       expect(Object.keys(client).sort()).toEqual([
         'addWallet',
         'authenticateThreeDS',
-        'createSession',
         'getSession',
         'selectToken',
         'submitThreeDSChallengeResponse',
@@ -189,40 +188,6 @@ describe('TokenizationClient', () => {
       expect(error.status).toBe(401);
       expect(error.code).toBe('UNAUTHORIZED');
       expect(JSON.stringify(error)).not.toContain(ACCESS_TOKEN);
-    });
-  });
-
-  describe('createSession', () => {
-    it('sends only the advised token references in order, including duplicates', async () => {
-      const client = createClient({ respond: () => jsonResponse(201, { sessionRef: SESSION, other: 'ignored' }) });
-      const advisedTokens = ['tok_1', 'tok_2', 'tok_1'];
-      await expect(client.createSession({
-        outletRef: OUTLET, advisedTokens, usageType: 'PERMANENT', skipConsent: true,
-      })).resolves.toEqual({ sessionRef: SESSION });
-      expect(calls[0]).toMatchObject({
-        method: 'POST',
-        url: `${BASE_URL}/api/outlets/${OUTLET}/payment-tokenization-sessions`,
-        body: { advisedTokens },
-      });
-      expect(calls[0].body).toEqual({ advisedTokens });
-    });
-
-    it.each([undefined, []])('sends an empty list when there are no advised tokens (%p)', async advisedTokens => {
-      const client = createClient({ respond: () => jsonResponse(200, { sessionRef: SESSION }) });
-      await client.createSession({ outletRef: OUTLET, advisedTokens });
-      expect(calls[0].body).toEqual({ advisedTokens: [] });
-    });
-
-    it.each([null, 'tok_1', {}, ['tok_1', null], [''], new Array(1)])('rejects malformed advised tokens (%p)', async advisedTokens => {
-      const client = createClient({ respond: () => jsonResponse(201, { sessionRef: SESSION }) });
-      await expect(client.createSession({ outletRef: OUTLET, advisedTokens }))
-        .rejects.toMatchObject({ code: 'INVALID_ADVISED_TOKENS' });
-      expect(calls).toHaveLength(0);
-    });
-
-    it.each([undefined, '', 42, '../session'])('requires a valid sessionRef from Create (%p)', async sessionRef => {
-      const client = createClient({ respond: () => jsonResponse(201, { sessionRef }) });
-      await expect(client.createSession({ outletRef: OUTLET })).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
     });
   });
 

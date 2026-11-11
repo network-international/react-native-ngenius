@@ -9,12 +9,17 @@ import {
 } from 'react-native';
 import {
   NgeniusTokenization,
-  UsageType,
   createTokenizationClient,
 } from '@network-international/react-native-ngenius';
 
 const OUTLET_REF = 'a6b162e9-7a75-403c-b238-6303b2df455c';
 const BASE_URL = 'https://paypage-sandbox.platform.network.ae';
+const PREVIEW_SESSION_REF = 'preview-session';
+const CREDENTIAL_INPUT_STYLE = {
+  borderWidth: 1,
+  padding: 10,
+  marginVertical: 8,
+};
 const BRANDING = {
   buttonColour: '#002E5D',
   mainHeadingColour: '#002E5D',
@@ -32,6 +37,8 @@ const ORDER = {
 
 export default function TokenizationQA() {
   const [draft, setDraft] = useState('');
+  const [sessionDraft, setSessionDraft] = useState('');
+  const [sessionRef, setSessionRef] = useState('');
   const token = useRef('');
   const tokenSetAt = useRef(0);
   const [visible, setVisible] = useState(false);
@@ -45,6 +52,8 @@ export default function TokenizationQA() {
     token.current = '';
     tokenSetAt.current = 0;
     setDraft('');
+    setSessionDraft('');
+    setSessionRef('');
   };
   useEffect(() => {
     return () => {
@@ -71,14 +80,11 @@ export default function TokenizationQA() {
         baseUrl: BASE_URL,
         getAccessToken: async () => 'offline-preview-only',
         transport: async ({ method }) => {
-          if (method === 'POST') {
-            return {
-              status: 201,
-              text: JSON.stringify({ sessionRef: 'preview-session' }),
-            };
-          }
           if (method === 'PUT') {
             return { status: 204 };
+          }
+          if (method !== 'GET') {
+            throw new Error('Unsupported preview operation');
           }
           return {
             status: 200,
@@ -122,9 +128,18 @@ export default function TokenizationQA() {
       );
       return;
     }
-    token.current = draft.trim();
+    if (!preview && !sessionDraft.trim()) {
+      Alert.alert(
+        'Session reference required',
+        'Paste the sessionRef from your merchant backend.',
+      );
+      return;
+    }
+    token.current = preview ? '' : draft.trim();
     tokenSetAt.current = Date.now();
     setDraft('');
+    setSessionDraft('');
+    setSessionRef(preview ? PREVIEW_SESSION_REF : sessionDraft.trim());
     setConfig(parsed);
     setVisible(true);
   };
@@ -132,8 +147,9 @@ export default function TokenizationQA() {
     <View style={{ width: '90%', padding: 16 }}>
       <Text style={{ fontSize: 22 }}>Tokenization sandbox QA</Text>
       <Text>
-        Sandbox uses skipConsent=true. Access-Token stays in memory and clears
-        on close. Fresh token required for each session. No API key.
+        Live QA requires a merchant-created session reference and a fresh
+        TOKENIZATION_SDK Access-Token. Both stay in memory and clear on close.
+        Sandbox uses skipConsent=true.
       </Text>
       <TextInput
         testID="qa-access-token"
@@ -146,7 +162,20 @@ export default function TokenizationQA() {
         placeholder="Paste short-lived Access-Token"
         value={draft}
         onChangeText={setDraft}
-        style={{ borderWidth: 1, padding: 10, marginVertical: 8 }}
+        style={CREDENTIAL_INPUT_STYLE}
+      />
+      <TextInput
+        testID="qa-session-ref"
+        accessibilityLabel="Merchant session reference"
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        textContentType="none"
+        autoComplete="off"
+        placeholder="Paste merchant session reference"
+        value={sessionDraft}
+        onChangeText={setSessionDraft}
+        style={CREDENTIAL_INPUT_STYLE}
       />
       <TextInput
         testID="qa-wallet-config"
@@ -211,7 +240,7 @@ export default function TokenizationQA() {
           branding={merchantTheme ? BRANDING : undefined}
           googlePayConfig={config.googlePay}
           applePayConfig={config.applePay}
-          getUsageType={() => UsageType.PERMANENT}
+          sessionRef={sessionRef}
           onSelectionComplete={() => {
             setVisible(false);
             clear();
