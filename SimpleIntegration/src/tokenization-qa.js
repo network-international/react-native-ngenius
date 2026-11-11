@@ -14,6 +14,7 @@ import {
   createTokenizationClient,
 } from '@network-international/react-native-ngenius';
 const { registerCardContext } = require('../../src/tokenization/cardContext');
+const { validReference } = require('../../src/tokenization/api/endpoints');
 
 const OUTLET_REF = 'a6b162e9-7a75-403c-b238-6303b2df455c';
 const BASE_URL = 'https://paypage-sandbox.platform.network.ae';
@@ -107,6 +108,29 @@ const ORDER = {
   },
 };
 
+// Test harness only. Merchant production apps create the session on their backend.
+const createSandboxSession = async accessToken => {
+  const response = await fetch(
+    `${BASE_URL}/api/outlets/${OUTLET_REF}/payment-tokenization-sessions`,
+    {
+      method: 'POST',
+      headers: {
+        'Access-Token': accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ advisedTokens: [] }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Sandbox returned HTTP ${response.status}.`);
+  }
+  const { sessionRef } = await response.json();
+  if (!validReference(sessionRef)) {
+    throw new Error('Sandbox returned an invalid session reference.');
+  }
+  return sessionRef;
+};
+
 export const previewTransport =
   scenario =>
   async ({ method }) => {
@@ -188,6 +212,8 @@ export default function TokenizationQA() {
   const [sessionRef, setSessionRef] = useState('');
   const token = useRef('');
   const tokenSetAt = useRef(0);
+  const openingRef = useRef(false);
+  const [opening, setOpening] = useState(false);
   const [visible, setVisible] = useState(false);
   const [language, setLanguage] = useState('en');
   const [merchantTheme, setMerchantTheme] = useState(0);
@@ -215,6 +241,7 @@ export default function TokenizationQA() {
   useEffect(() => {
     return () => {
       token.current = '';
+      openingRef.current = false;
     };
   }, []);
   useEffect(() => {
@@ -250,7 +277,10 @@ export default function TokenizationQA() {
       }),
     });
   }, [scenario.id]);
-  const open = () => {
+  const open = async () => {
+    if (openingRef.current) {
+      return;
+    }
     let parsed;
     try {
       parsed = !preview && walletConfig.trim() ? JSON.parse(walletConfig) : {};
@@ -264,25 +294,56 @@ export default function TokenizationQA() {
       );
       return;
     }
-    if (!preview && !draft.trim()) {
+    const accessToken = draft
+      .trim()
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+    if (!preview && !accessToken) {
       Alert.alert(
         'Access-Token required',
         'Paste a fresh TOKENIZATION_SDK Access-Token.',
       );
       return;
     }
-    if (!preview && !sessionDraft.trim()) {
+    const startedAt = Date.now();
+    let reference = preview ? PREVIEW_SESSION_REF : sessionDraft.trim();
+    if (!preview && !reference) {
+      openingRef.current = true;
+      setOpening(true);
+      try {
+        reference = await createSandboxSession(accessToken);
+        if (!openingRef.current) {
+          return;
+        }
+      } catch (error) {
+        if (openingRef.current) {
+          const detail =
+            /^Sandbox returned (HTTP \d{3}|an invalid session reference)\.$/.test(
+              error?.message,
+            )
+              ? error.message
+              : 'Check the sandbox connection and try again.';
+          Alert.alert('Could not create a sandbox session', detail);
+        }
+        return;
+      } finally {
+        if (openingRef.current) {
+          openingRef.current = false;
+          setOpening(false);
+        }
+      }
+    } else if (!validReference(reference)) {
       Alert.alert(
-        'Session reference required',
-        'Paste the sessionRef from your merchant backend.',
+        'Invalid session reference',
+        'Enter the sessionRef from your merchant backend.',
       );
       return;
     }
-    token.current = preview ? '' : draft.trim();
-    tokenSetAt.current = Date.now();
+    token.current = preview ? '' : accessToken;
+    tokenSetAt.current = startedAt;
     setDraft('');
     setSessionDraft('');
-    setSessionRef(preview ? PREVIEW_SESSION_REF : sessionDraft.trim());
+    setSessionRef(reference);
     setConfig(parsed);
     setResult(null);
     setVisible(true);
@@ -295,9 +356,9 @@ export default function TokenizationQA() {
     <View style={QA_STYLES.panel}>
       <Text style={QA_STYLES.title}>Tokenization sandbox QA</Text>
       <Text>
-        Live QA requires a merchant-created session reference and a fresh
-        TOKENIZATION_SDK Access-Token. Both stay in memory and clear on close.
-        Sandbox uses skipConsent=true.
+        Live QA requires a fresh TOKENIZATION_SDK Access-Token. Enter a merchant
+        session reference or leave it blank to create an empty test session.
+        Sandbox Card QA uses ONCE_OFF and skipConsent=true.
       </Text>
       <TextInput
         testID="qa-access-token"
@@ -320,7 +381,7 @@ export default function TokenizationQA() {
         autoCorrect={false}
         textContentType="none"
         autoComplete="off"
-        placeholder="Paste merchant session reference"
+        placeholder="Optional merchant session reference"
         value={sessionDraft}
         onChangeText={setSessionDraft}
         style={CREDENTIAL_INPUT_STYLE}
@@ -340,6 +401,7 @@ export default function TokenizationQA() {
         testID="qa-preview"
         accessibilityLabel="UI preview"
         value={preview}
+        disabled={opening}
         onValueChange={setPreview}
       />
       {preview ? (
@@ -412,9 +474,14 @@ export default function TokenizationQA() {
         testID="qa-open-tokenization"
         accessibilityRole="button"
         onPress={open}
+        disabled={opening}
         style={QA_STYLES.button}>
         <Text style={QA_STYLES.buttonText}>
-          Open {preview ? 'UI preview' : 'sandbox tokenization'}
+          {opening
+            ? 'Creating sandbox session…'
+            : preview
+            ? 'Open UI preview'
+            : 'Open sandbox tokenization'}
         </Text>
       </TouchableOpacity>
       {result ? (
@@ -439,6 +506,7 @@ export default function TokenizationQA() {
           language={language}
           branding={brand.branding}
           modeConfig={{
+            tokenType: preview ? undefined : 'ONCE_OFF',
             presentation: fullscreen ? 'fullscreen' : 'bottomSheet',
             backdropBlur,
             sectionOrder: cardFirst ? ['card', 'tokens', 'wallets'] : undefined,

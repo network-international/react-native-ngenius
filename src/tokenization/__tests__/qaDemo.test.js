@@ -15,7 +15,7 @@ it('opens preview without a credential exchange or network and supports all demo
   act(() => { tree = renderer.create(React.createElement(QA)); });
   act(() => tree.root.findByProps({ testID: 'qa-preview' }).props.onValueChange(true));
   for (const language of ['en', 'fr', 'ar']) {
-    act(() => tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress());
+    act(() => { tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress(); });
     const screen = tree.root.findByType('NgeniusTokenization');
     expect(screen.props.language).toBe(language);
     expect(screen.props.sessionRef).toBe('preview-session');
@@ -29,16 +29,18 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   expect(tree.root.findByProps({ testID: 'qa-access-token' }).props.secureTextEntry).toBe(true);
   const input = id => tree.root.findByProps({ testID: id }).props;
   act(() => input('qa-access-token').onChangeText('fixture-short-lived'));
-  act(() => input('qa-open-tokenization').onPress());
-  expect(Alert.alert).toHaveBeenCalledWith('Session reference required', expect.any(String));
+  act(() => input('qa-session-ref').onChangeText('invalid reference'));
+  act(() => { input('qa-open-tokenization').onPress(); });
+  expect(Alert.alert).toHaveBeenCalledWith('Invalid session reference', expect.any(String));
   expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(0);
   act(() => input('qa-session-ref').onChangeText(' merchant-session '));
-  act(() => tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress());
+  act(() => { tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress(); });
   const provider = sdk.createTokenizationClient.mock.calls[0][0].getAccessToken;
   await expect(provider()).resolves.toBe('fixture-short-lived');
   const screen = tree.root.findByType('NgeniusTokenization');
   expect(screen.props.skipConsent).toBe(true);
   expect(screen.props.sessionRef).toBe('merchant-session');
+  expect(screen.props.modeConfig.tokenType).toBe('ONCE_OFF');
   expect(input('qa-session-ref').value).toBe('');
   expect(screen.props.outletRef).toBe('a6b162e9-7a75-403c-b238-6303b2df455c');
   expect(JSON.stringify(screen.props)).not.toContain('fixture-short-lived');
@@ -47,10 +49,39 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   await expect(provider()).rejects.toThrow('short-lived');
 });
 
+it('creates one real sandbox session from the QA screen before handing the reference to SDK', async () => {
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({
+    ok: true, json: async () => ({ sessionRef: 'sandbox-session-fixture' }),
+  });
+  try {
+    act(() => { tree = renderer.create(React.createElement(QA)); });
+    const input = id => tree.root.findByProps({ testID: id }).props;
+    act(() => input('qa-access-token').onChangeText('Bearer fixture-short-lived'));
+    await act(async () => {
+      const open = input('qa-open-tokenization').onPress;
+      await Promise.all([open(), open()]);
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://paypage-sandbox.platform.network.ae/api/outlets/a6b162e9-7a75-403c-b238-6303b2df455c/payment-tokenization-sessions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Access-Token': 'fixture-short-lived', 'Content-Type': 'application/json' },
+        body: '{"advisedTokens":[]}',
+      }),
+    );
+    const screen = tree.root.findByType('NgeniusTokenization');
+    expect(screen.props.sessionRef).toBe('sandbox-session-fixture');
+    expect(input('qa-access-token').value).toBe('');
+  } finally {
+    fetch.mockRestore();
+  }
+});
+
 it('drives the offline session preview and closes after confirmed selection', async () => {
   act(() => { tree = renderer.create(React.createElement(QA)); });
   act(() => tree.root.findByProps({ testID: 'qa-preview' }).props.onValueChange(true));
-  act(() => tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress());
+  act(() => { tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress(); });
   const screen = tree.root.findByType('NgeniusTokenization');
   expect(screen.props.sessionRef).toBe('preview-session');
   const { transport } = sdk.createTokenizationClient.mock.calls[1][0];
@@ -74,7 +105,7 @@ it('sets presentation, branding and optional checkout return in the preview', ()
     toggle('Pay by card first')(true);
     toggle('Continue Shopping')(true);
   });
-  act(() => byId('qa-open-tokenization').onPress());
+  act(() => { byId('qa-open-tokenization').onPress(); });
   const screen = tree.root.findByType('NgeniusTokenization');
   expect(screen.props.branding).toMatchObject({ buttonColour: '#9C402A' });
   expect(screen.props.paymentMethods).toEqual(['CARD', 'CONTINUE_SHOPPING']);
