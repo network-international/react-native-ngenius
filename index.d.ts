@@ -122,3 +122,170 @@ export function configureSDK(config: SDKConfig): void;
  * payment made from your backend). Resolves on `"Success"`.
  */
 export function executeThreeDSTwo(paymentResponse: Record<string, unknown>): Promise<PaymentSuccess>;
+
+/** Safe response fields; PAN/CVV never enter JavaScript. */
+export interface SavedCardResponse {
+  tokenRef: string;
+  type: 'CARD' | 'WALLET';
+  walletType: 'APPLE_PAY' | 'GOOGLE_PAY' | null;
+  status: 'VERIFIED' | 'AWAIT_3DS' | 'FAILED';
+  cardDetails: {
+    scheme: string;
+    last4: string;
+    expiry: string;
+    cardholderName?: string;
+  } | null;
+  orderReference?: string;
+  paymentReference?: string;
+  threeDS2?: Record<string, unknown>;
+}
+
+/** Confirmed React Native consent metadata; IP/server time are backend-owned. */
+export interface TokenizationConsentData {
+  status: 'COLLECTED' | 'NOT_COLLECTED';
+  skippedByMerchant?: true;
+  clientTimestamp: string;
+  tncUrl?: string;
+  locale?: 'en' | 'fr' | 'ar';
+  channel: 'REACT_NATIVE';
+  sdk: { name: 'react-native-ngenius'; version: string };
+  device: {
+    platform: 'IOS' | 'ANDROID'; osVersion: string; timezoneOffsetMinutes: number;
+    /** React Native logical screen units. */
+    screenWidth?: number; screenHeight?: number;
+  };
+}
+
+export const UsageType: Readonly<{ ONCE_OFF: 'ONCE_OFF'; PERMANENT: 'PERMANENT' }>;
+export type UsageType = (typeof UsageType)[keyof typeof UsageType];
+
+export interface TokenizationTokenList {
+  tokens: SavedCardResponse[];
+  page?: { number: number; size: number; totalElements: number; totalPages: number };
+  tncUrl?: string;
+}
+
+export interface TokenizationClient {
+  getSession(args: { outletRef: string; sessionRef: string; skipConsent?: boolean }): Promise<TokenizationTokenList>;
+  selectToken(args: { outletRef: string; sessionRef: string; tokenRef: string }): Promise<{ status: 'SELECTED' }>;
+  /** Wallet capture requires explicit support. The built-in client is backend-pending. */
+  readonly supportsAddWallet?: boolean;
+  addWallet(args: {
+    outletRef: string;
+    sessionRef: string;
+    walletType: 'APPLE_PAY' | 'GOOGLE_PAY';
+    encryptedPayload: string;
+    usageType: UsageType;
+    consentData: TokenizationConsentData;
+  }): Promise<TokenizationTokenList>;
+  authenticateThreeDS(args: {
+    outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;
+    threeDSCompInd: 'Y' | 'N' | 'U'; browserInfo: Record<string, unknown>;
+  }): Promise<SavedCardResponse>;
+  submitThreeDSChallengeResponse(args: {
+    outletRef: string; tokenRef: string; orderReference: string; paymentReference: string;
+    base64EncodedCRes: string;
+  }): Promise<SavedCardResponse>;
+}
+
+export function createTokenizationClient(options: {
+  baseUrl: string;
+  getAccessToken: () => Promise<string>;
+  transport?: (request: {
+    url: string; method: string; headers: Record<string, string>; body?: unknown;
+    responseMode?: 'status-only';
+  }) => Promise<{ status: number; text?: string }>;
+  fetchImpl?: typeof fetch;
+}): TokenizationClient;
+
+export class TokenizationApiError extends Error {
+  status: number;
+  code: string;
+  errors: Array<Record<string, string>>;
+  constructor(options: { status: number; code: string; message: string; errors?: Array<Record<string, string>> });
+}
+
+export interface TokenizationResult {
+  flow: 'TOKENIZATION';
+  method?: 'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY';
+  status: string;
+  niTokenCreated: boolean;
+  savedToken: SavedCardResponse | null;
+  capture: 'NATIVE_CAPTURE_DEMO' | 'REAL_TOKENIZATION_API';
+  code?: string;
+  error?: string;
+}
+
+export interface NgeniusTokenizationProps {
+  visible?: boolean;
+  order?: NGeniusOrder;
+  /** Optional display/currency context. Takes precedence over order without merging fields. */
+  orderDetails?: TokenizationOrderDetails;
+  paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY'>;
+  branding?: Record<string, unknown>;
+  language?: string;
+  /** Default false: Add Card/Wallet clicks accept the displayed terms for that attempt. */
+  skipConsent?: boolean;
+  tokenizationClient?: TokenizationClient;
+  outletRef?: string;
+  /** Session reference obtained by the merchant backend before opening the SDK. */
+  sessionRef: string;
+  modeConfig?: TokenizationModeConfig;
+  applePayConfig?: ApplePayConfig;
+  googlePayConfig?: GooglePayConfig;
+  onError?: (result: TokenizationResult) => void;
+  onCancel?: () => void;
+  /** Emitted after confirmed selection and local closing, with the session reference for merchant payment. */
+  onSelectionComplete?: (result: TokenizationSelectionCompletion) => void;
+}
+
+/** Values are minor units (for example AED "3910" displays as AED 39.10). */
+export interface TokenizationMoney {
+  currencyCode?: string;
+  value?: number | string;
+  formattedValue?: string;
+}
+
+export interface TokenizationOrderDetails {
+  amount?: TokenizationMoney;
+  language?: string;
+  orderSummary?: {
+    items?: Array<{
+      description?: string;
+      totalPrice?: TokenizationMoney;
+      quantity?: number | string;
+      category?: string;
+    }>;
+    shipping?: TokenizationMoney;
+    tax?: TokenizationMoney;
+    total?: TokenizationMoney;
+  };
+  [key: string]: unknown;
+}
+
+export interface TokenizationSelectionCompletion {
+  flow: 'TOKENIZATION';
+  status: 'SELECTED';
+  canClose: true;
+  sessionRef: string;
+}
+
+/** Token usage and optional plain-text UI overrides. */
+export interface TokenizationModeConfig {
+  /** Sent as usageType on Add Card or Add Wallet. Defaults to PERMANENT when omitted. */
+  tokenType?: UsageType;
+  returnButtonName?: string;
+  returnButtonStyle?: 'text' | 'link' | 'button';
+  showSecurityNote?: boolean;
+  /** Defaults false. A new order summary initially appears collapsed. */
+  orderSummaryInitiallyExpanded?: boolean;
+  /** Omitted when absent/invalid. No placeholder policy link is generated. */
+  privacyPolicyUrl?: string;
+  labels?: Partial<Record<
+    'pageTitle' | 'pageSubtitle' | 'savedMethodsTitle' | 'addMethodTitle' | 'addCard' |
+    'addAnotherCard' | 'usePaymentMethod' | 'selectionPending' |
+    'selectionSuccessTitle' | 'selectionSuccessMessage' | 'selectionError' |
+    'orderSummary' | 'orderItems' | 'orderAmount' | 'orderShipping' | 'orderTax' | 'orderTotal', string>>;
+}
+
+export const NgeniusTokenization: import('react').ComponentType<NgeniusTokenizationProps>;

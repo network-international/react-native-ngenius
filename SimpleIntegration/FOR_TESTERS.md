@@ -1,249 +1,31 @@
-# Quick Testing Guide - For QA Team
+# React Native Tokenization POC - QA Testing Guide
 
-## Prerequisites
+Record the build SHA and artifact name. This guide covers SDK 3.2.9 for NINGG-34386 (PR #75).
 
-**Before running the script, make sure you have:**
+Record the environment and backend deployment when testing Add Card and selected-token persistence.
 
-1. **Node.js and npm** (or yarn)
-   - Check if installed: `node --version` and `npm --version`
-   - If not installed:
-     - **macOS:** `brew install node`
-     - **Or download:** https://nodejs.org/ (LTS version recommended)
-     - **Or use nvm:** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`
-   - After installing, restart your terminal
+Current UI source uses a compact hosted-preview-style panel, green shield, NI footer and optional title/subtitle. Card and wallet rows lead with the masked funding number, with `Expires MM/YY` on its own line and a separate Card/Wallet source tag. The first usable method is selected by default; the blue radio is separate from green backend-reported Verified status. NI PayPage SVG artwork, native Card Back, animated loading/retry and the configurable return control remain. Use a build matching the current PR SHA; earlier screenshots/builds may show the retired checkbox UI. Offline screenshots and simulated selection responses are demo/mock evidence.
 
-2. **Java Development Kit (JDK)**
-   - React Native 0.70.x requires Java 17
-   - Check your Java version: `java -version`
-   - If you have Java 17 or newer, you're good to go
-   - The script will use your system's default Java
-   - If you get Java version errors, see troubleshooting section below
+1. Android: install the SHA-named APK with `adb install -r <apk>`, then open SimpleIntegration. It includes the JS bundle; Metro is not needed.
+2. iOS Simulator: extract the SHA-named ZIP, run `xcrun simctl install booted <app>`, then `xcrun simctl launch booted org.reactjs.native.example.SimpleIntegration`. This app cannot be installed on a physical iPhone. A device build requires existing signing; no Team/profile/certificates were changed.
+3. For live QA, create a session from the merchant backend for the sandbox outlet used by the demo and obtain a fresh short-lived TOKENIZATION_SDK Access-Token through the approved secure flow. Paste both `sessionRef` and the token into **Tokenization sandbox QA**, then tap **Open sandbox tokenization**. The demo keeps them in memory and clears them on close. The provider rejects the token after five minutes.
+4. Sandbox host: `https://paypage-sandbox.platform.network.ae`. Live QA always uses **skipConsent=true** and outlet `a6b162e9-7a75-403c-b238-6303b2df455c`. Opening loads saved methods for the supplied session with `GET /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}?consentOff=true`. An empty list with no `tncUrl` is valid. Expect the consent notice to be hidden. Use Retry for load errors. If the credential expired, reopen with a fresh authorized token and a valid session reference.
+5. For UI checks without credentials, enable **UI preview (no network)**. Check the default and merchant themes, EN/FR/AR, Arabic RTL, both skip-consent modes and close/reopen. The preview fixture omits the terms URL. Check legal-link navigation in an environment that provides a terms URL. Preview uses offline fixtures.
 
-3. **Android Studio** with Android SDK
-   - Download: https://developer.android.com/studio
-   - Make sure Android SDK is installed
+**Card.** Add Card opens the native form on both platforms. Check invalid or expired fields and Back, then use approved sandbox test data and a fresh Access-Token. Keep PAN and CVV inside the native form. A successful Add Card updates saved methods directly from its response. It reuses the current session and performs no extra Get Session. Check that the prior usable choice is preserved and that the newly added method is not selected automatically. Preview supports opening and cancelling the native form without HTTP.
 
-4. **Android Emulator** created in Android Studio
-   - Open Android Studio → Tools → Device Manager
-   - Create a new virtual device (recommended: Pixel 5, API 35)
+**Token type.** The demo uses the default `PERMANENT`. Automated tests cover `modeConfig.tokenType: 'ONCE_OFF'`, the default and rejection of invalid explicit values before an Add request. Get Session carries no usage type.
 
----
+**Selection.** Confirm a saved method with the primary action and check that rapid taps submit only once. Selection must succeed before the chooser closes and returns the session reference. The merchant backend uses that reference for payment with a Merchant Service Account credential. This guide covers the SDK journey through selection.
 
-## TL;DR - One Command Launch
+**Wallets.** The Add Wallet backend endpoint is pending. The built-in client reports `ADD_WALLET_BACKEND_PENDING`. Live wallet E2E requires the deployed endpoint, a physical Android device or iPhone, approved UAT configuration, and Apple Pay merchant entitlements and signing where applicable.
 
-### Android (Google Pay Integration)
-```bash
-cd SimpleIntegration
-./start-android.sh
-```
+**Consent.** In preview with `skipConsent=false`, an actionable Add click records a fresh `COLLECTED` acceptance timestamp. Selecting a saved method, cancelling, opening legal links and toggling Saving terms leave consent unchanged. Missing or invalid T&C URLs leave plain text. The Privacy Policy link requires a valid configured HTTP(S) URL. With `skipConsent=true` the notice is hidden and Add uses `NOT_COLLECTED` with `skippedByMerchant: true`.
 
-That's it! The script handles everything automatically.
+Optional order display: check absent details (no invented amount/summary), amount only, partial supplied items/fees and a complete summary. It starts collapsed; modeConfig.orderSummaryInitiallyExpanded=true opens it initially. Header total must prefer supplied orderSummary.total, then amount. Money value uses nonnegative integer minor units and accepts digit strings; check AED '3910' as 39.10, a currency with different precision, and invalid/incomplete money omitted. No quantity multiplication, total calculation, guessed currency or FX should occur. Explicit orderDetails must not merge missing fields from legacy order. Check language fallback: supported language prop, orderDetails.language, legacy order.language, then English; region tags resolve to EN/FR/AR.
 
-**Note:** The script will automatically check if npm/yarn is installed and show an error message with installation instructions if not found.
+Configuration: verify modeConfig.labels.pageTitle/pageSubtitle, return-button variants and localized default labels. Privacy Policy is absent without a valid URL. The default security note reads “Card details are sent securely to Network International.” and modeConfig.showSecurityNote=false hides it. The shield/NI footer and Verified badge do not indicate payment completion. Existing PAYMENT exports and native Card entry are unchanged by this chooser update.
 
----
+Defects must include build SHA, device/model, OS, language, theme, steps and expected/actual behavior. Never include PAN, CVV, API key, Access-Token or wallet payload in screenshots, logs or tickets.
 
-## What to Expect
-
-1. **Script starts** (takes 2-3 minutes total)
-2. **Emulator launches** (if not running)
-3. **Metro bundler starts** (development server)
-4. **App builds and installs**
-5. **App opens automatically**
-
----
-
-## Test Scenarios
-
-### Basic Functionality
-1. App launches without crashes
-2. Payment form is visible
-3. Can enter card details
-
-### Google Pay Integration (Primary Test)
-1. Google Pay button appears
-2. Can initiate Google Pay flow
-3. Payment processes successfully
-
-### Card Payment
-1. Can enter card number
-2. Validation works
-3. Payment submission works
-
----
-
-## Pre-configured Test Data
-
-The app is already configured with valid test credentials:
-- **API Key:** Already set
-- **Outlet ID:** Already set
-- **Environment:** TEST
-
-You don't need to configure anything.
-
----
-
-## Capturing Test Evidence
-
-### Screenshots
-
-**Android:**
-```bash
-adb exec-out screencap -p > screenshot.png
-```
-
-### Screen Recording
-
-**Android:**
-```bash
-adb shell screenrecord /sdcard/test-video.mp4
-# Press Ctrl+C when done
-adb pull /sdcard/test-video.mp4
-```
-
----
-
-## Common Issues & Quick Fixes
-
-### "Node.js is not installed"
-**This means Node.js is not installed on your system.**
-
-**Solution:**
-1. **Install Node.js:**
-   - **macOS:** `brew install node`
-   - **Or download:** https://nodejs.org/ (LTS version recommended)
-   - **Or use nvm:** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`
-2. **Restart your terminal** (important!)
-3. **Verify installation:** 
-   ```bash
-   node --version
-   npm --version
-   ```
-4. **Run the script again:** `./start-android.sh`
-
-### "npm or yarn is not installed"
-**This means Node.js is installed, but package manager is missing (unusual).**
-
-**Solution:**
-1. **Reinstall Node.js** (npm comes with Node.js):
-   - **macOS:** `brew install node`
-   - **Or download:** https://nodejs.org/
-2. **Restart your terminal**
-3. **Verify:** `npm --version`
-4. **Run the script again:** `./start-android.sh`
-
-### "Java home supplied is invalid" or "Gradle can not use Java X"
-**This means the Java path in gradle.properties is incorrect or Java version is incompatible.**
-
-**Solution:**
-1. **Check your Java version:**
-   ```bash
-   java -version
-   ```
-2. **React Native 0.70.x requires Java 17**
-3. **If you have Java 17 or newer:**
-   - The `gradle.properties` file is already configured to use system default Java
-   - If you still see errors, make sure `org.gradle.java.home` is commented out in `SimpleIntegration/android/gradle.properties`
-4. **If you need to install Java 17:**
-   - **macOS:** `brew install openjdk@17`
-   - **Or download:** https://adoptium.net/temurin/releases/?version=17
-   - **Set JAVA_HOME:**
-     ```bash
-     export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-     ```
-   - **Add to your `~/.zshrc` or `~/.bash_profile`** to make it permanent
-   - **Restart terminal** and run script again
-
-### "react-native: command not found"
-**This means dependencies are not installed.**
-
-**Solution:**
-```bash
-cd SimpleIntegration
-npm install
-```
-
-Then run the script again:
-```bash
-./start-android.sh
-```
-
-**Note:** The script now automatically checks and installs dependencies, but if you see this error, run `npm install` manually first.
-
-### "Script permission denied"
-```bash
-chmod +x start-android.sh
-```
-
-### "Metro bundler not starting"
-```bash
-killall node
-lsof -ti:8081 | xargs kill -9
-```
-
-### "Emulator not found"
-Create emulator in Android Studio (Tools → Device Manager)
-
-### Red error screen in app
-Press `R` twice on keyboard
-
-### "Build failed"
-```bash
-# Clean and reinstall
-rm -rf node_modules
-npm install
-```
-
----
-
-## Expected Test Results
-
-### Success Criteria
-- App launches without errors
-- Google Pay button is visible
-- Can interact with payment form
-- No crashes during normal use
-- Metro bundler shows "Ready"
-
-### Test Report Template
-
-```
-Test Date: _______
-Platform: Android
-Device/Emulator: _______
-
-Launch Time: _____ seconds
-Crashes: [ ] Yes [ ] No
-Google Pay Visible: [ ] Yes [ ] No
-Payment Form Works: [ ] Yes [ ] No
-
-Notes:
-_______________________________
-```
-
----
-
-## Emergency Contacts
-
-If scripts don't work after trying quick fixes:
-1. Check full documentation: `QUICK_START.md`
-2. Verify prerequisites (Node.js, Android Studio)
-3. Check logs: `/tmp/metro-android.log`
-
----
-
-## Video Tutorial (Recommended Workflow)
-
-1. **Start recording** before running script
-2. **Run script:** `./start-android.sh`
-3. **Show app launch**
-4. **Demonstrate Google Pay** button
-5. **Test payment form**
-6. **Stop recording**
-7. **Save video** as test evidence
-
----
-
-**Estimated Testing Time:** 15-20 minutes  
-**Total Setup Time:** 3-5 minutes  
-**Last Updated:** January 2026
+Developer build: copy `src/config.example.js` to ignored `src/config.js` (public defaults, credentials blank), install the demo dependencies and run `pod install` from `ios`. The legacy Android demo requires JDK 17 and a modern D8 compiler: set `NI_QA_D8_JAR` to an installed Android Build Tools `lib/d8.jar`, then run `./gradlew -Pandroid.aapt2FromMavenOverride=<installed-build-tools>/aapt2 :app:assembleRelease`. No compiler binary is committed.
