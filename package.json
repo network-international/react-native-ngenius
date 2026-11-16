@@ -12,6 +12,12 @@
     "android/README.md",
     "index.js",
     "index.d.ts",
+    "tabby.js",
+    "tabby-core.js",
+    "tabby.d.ts",
+    "assets/tabby.png",
+    "assets/tabby@2x.png",
+    "assets/tabby@3x.png",
     "ios",
     "react-native-ni-sdk.podspec"
   ],
@@ -48,10 +54,16 @@
   "readmeFilename": "README.md",
   "peerDependencies": {
     "react": ">=16.8.1",
-    "react-native": ">=0.60.0-rc.0 <1.0.x"
+    "react-native": ">=0.60.0-rc.0 <1.0.x",
+    "react-native-webview": ">=11.0.0"
   },
   "devDependencies": {
     "react": "^16.9.0",
     "react-native": "^0.61.5"
+  },
+  "peerDependenciesMeta": {
+    "react-native-webview": {
+      "optional": true
+    }
   }
 }

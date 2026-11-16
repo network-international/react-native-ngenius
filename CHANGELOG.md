@@ -2,6 +2,17 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Tabby (buy now, pay later)**: `TabbyButton` from `@network-international/react-native-ngenius/tabby`.
+  A "Pay with Tabby" button that takes the same `order` as `initiateCardPayment`, opens Tabby's
+  checkout in a WebView and reports `{ status }` (`Success`, `PostAuthReview`, `Failed`,
+  `Aborted`, `Unavailable`). Shown only when the order offers Tabby. Follows the native SDKs'
+  flow: start the checkout, intercept Tabby's return, accept, then read the result off the order.
+  Needs `react-native-webview` (optional peer dependency, only for apps that import Tabby).
+  No native code changes.
+
 ## [3.2.6] - 2026-10-13
 
 ### Fixed

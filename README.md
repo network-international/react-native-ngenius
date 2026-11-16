@@ -76,6 +76,35 @@ const makeGooglePayPayment = async () => {
 };
 ```
 
+## Tabby (buy now, pay later)
+
+A ready-made "Pay with Tabby" button. It needs `react-native-webview` in your app:
+
+```bash
+npm i react-native-webview
+cd ios && pod install
+```
+
+```javascript
+import { TabbyButton } from '@network-international/react-native-ngenius/tabby';
+
+// order is the order response received from NGenius create order API (same as initiateCardPayment)
+<TabbyButton
+  order={order}
+  onResult={({ status, error }) => {
+    // 'Success'        paid
+    // 'PostAuthReview' paid, under review: hold fulfilment until it clears
+    // 'Failed'         declined, or the outcome could not be confirmed: check the order
+    // 'Aborted'        payer backed out: nothing charged, the order is still payable
+    // 'Unavailable'    Tabby would not open a checkout (amount, currency, ...): offer another method
+  }}
+/>
+```
+
+The button only appears when your outlet offers Tabby on the order (`TABBY` in
+`paymentMethods.apm`); otherwise it renders nothing. Tabby is imported from its own entry point,
+so apps that don't use it don't need `react-native-webview`.
+
 ## Quick Links
 
 * [Basic Usage](https://github.com/network-international/react-native-ngenius/wiki/Basic-Usage)
