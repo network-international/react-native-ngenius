@@ -138,6 +138,7 @@ static NSUInteger cardTestResponseBytes;
     cardTestBody = nil; cardTestStatus = status; cardTestRequestCount = 0;
     cardTestPath = nil; cardTestMethod = nil;
     cardTestTokenCount = tokenCount; cardTestResponseBytes = 0;
+    NSString *testPAN = [@"4" stringByPaddingToLength:16 withString:@"1" startingAtIndex:0];
     BOOL validUsageType = [usageType isEqualToString:@"ONCE_OFF"] || [usageType isEqualToString:@"PERMANENT"];
     XCTestExpectation *done = [self expectationWithDescription:@"Native Card result"];
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -149,7 +150,9 @@ static NSUInteger cardTestResponseBytes;
             @"sdk": @{ @"name": @"react-native-ngenius", @"version": @"3.2.9" },
             @"device": @{ @"platform": @"IOS", @"osVersion": @"26.0", @"timezoneOffsetMinutes": @0 }
         };
-        card = [[NiTokenizationCard alloc] initWithConfig:@{ @"requestId": @"native-fixture", @"labels": @{} }
+        card = [[NiTokenizationCard alloc] initWithConfig:@{
+            @"requestId": @"native-fixture", @"labels": @{}, @"acceptedSchemes": @[@"Visa"]
+        }
           ready:^(NSString *requestId) {
             XCTAssertTrue([requestId isEqualToString:@"native-fixture"]);
             NSMutableDictionary *request = [@{
@@ -175,6 +178,8 @@ static NSUInteger cardTestResponseBytes;
                 XCTAssertTrue([cardTestBody[@"consentData"] isEqual:consent]);
                 XCTAssertTrue([cardTestBody[@"card"] isKindOfClass:NSDictionary.class]);
                 XCTAssertTrue([cardTestBody[@"card"] count] == 4);
+                XCTAssertEqualObjects(cardTestBody[@"card"][@"pan"], testPAN);
+                XCTAssertEqualObjects(cardTestBody[@"card"][@"expiry"], @"2099-12");
                 if (status == 200) {
                     XCTAssertTrue([result isEqualToString:@"Response"]);
                     NSArray<NSDictionary *> *tokens = response[@"tokens"];
@@ -194,9 +199,10 @@ static NSUInteger cardTestResponseBytes;
                 }
             }
             XCTAssertTrue([[(UITextField *)[card valueForKey:@"pan"] text] length] == 0);
+            XCTAssertNil([card valueForKey:@"panDigits"]);
             XCTAssertTrue([[(UITextField *)[card valueForKey:@"cvv"] text] length] == 0);
             XCTAssertFalse([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
-            XCTAssertTrue([(UIView *)[card valueForKey:@"processingView"] isHidden]);
+            XCTAssertTrue([(UIView *)[card valueForKey:@"activityIndicator"] isHidden]);
             cardTestBody = nil; card = nil; [done fulfill];
           }];
         NSURLSessionConfiguration *transport = NSURLSessionConfiguration.ephemeralSessionConfiguration;
@@ -204,19 +210,69 @@ static NSUInteger cardTestResponseBytes;
         [card setValue:transport forKey:@"sessionConfiguration"];
         [card presentFrom:parent];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UITextField *pan = [card valueForKey:@"pan"]; UITextField *cvv = [card valueForKey:@"cvv"];
-            XCTAssertTrue(pan.secureTextEntry); XCTAssertTrue(cvv.secureTextEntry);
+            UITextField *pan = [card valueForKey:@"pan"];
+            UITextField *cvv = [card valueForKey:@"cvv"];
+            UITextField *expiry = [card valueForKey:@"expiry"];
+            UITextField *holder = [card valueForKey:@"holder"];
+            UIView *cardDetails = [card valueForKey:@"cardDetails"];
+            XCTAssertTrue([pan isDescendantOfView:cardDetails]);
+            XCTAssertTrue([expiry isDescendantOfView:cardDetails]);
+            XCTAssertTrue([cvv isDescendantOfView:cardDetails]);
+            XCTAssertFalse([holder isDescendantOfView:cardDetails]);
+            CGRect panFrame = [pan convertRect:pan.bounds toView:cardDetails];
+            CGRect expiryFrame = [expiry convertRect:expiry.bounds toView:cardDetails];
+            CGRect cvvFrame = [cvv convertRect:cvv.bounds toView:cardDetails];
+            XCTAssertGreaterThan(CGRectGetMinY(expiryFrame), CGRectGetMaxY(panFrame));
+            if (!UIContentSizeCategoryIsAccessibilityCategory(cardDetails.traitCollection.preferredContentSizeCategory)) {
+                XCTAssertEqualWithAccuracy(CGRectGetMinY(expiryFrame), CGRectGetMinY(cvvFrame), 1);
+                XCTAssertGreaterThan(CGRectGetWidth(panFrame), CGRectGetWidth(expiryFrame));
+            }
+            XCTAssertNotNil(cvv.rightView);
+            XCTAssertTrue(cvv.secureTextEntry);
+            XCTAssertEqualObjects(pan.placeholder, @"•••• •••• •••• 1234");
+            XCTAssertEqualObjects(expiry.placeholder, @"MM/YY");
+            XCTAssertEqualObjects(cvv.placeholder, @"123");
+            XCTAssertEqualObjects(holder.placeholder, @"Enter name on card");
             XCTAssertFalse([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
-            XCTAssertTrue([(UIView *)[card valueForKey:@"processingView"] isHidden]);
+            XCTAssertTrue([(UIView *)[card valueForKey:@"activityIndicator"] isHidden]);
             if (cancel) { [card cancel]; return; }
-            pan.text = [@"4" stringByPaddingToLength:16 withString:@"1" startingAtIndex:0];
+            UIImageView *schemeIcon = [card valueForKey:@"schemeIcon"];
+            XCTAssertEqual(schemeIcon.superview, pan.rightView);
+            UIImage *genericSchemeImage = schemeIcon.image;
+            for (NSArray<NSString *> *example in @[
+                @[@"4", @""], @[@"407197", @"mada"], @[@"66900901", @"Jaywan"],
+                @[@"62212", @"Discover"], @[@"62235", @"Discover"],
+                @[@"62123", @""], @[@"621234", @"UnionPay"]
+            ]) {
+                [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(0, pan.text.length)
+                        replacementString:example[0]];
+                XCTAssertEqualObjects(pan.accessibilityHint ?: @"", example[1]);
+            }
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(0, pan.text.length) replacementString:@""];
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:[testPAN substringToIndex:2]];
+            XCTAssertEqualObjects(pan.text, @"••");
+            XCTAssertEqualObjects(pan.accessibilityHint, @"Visa");
+            XCTAssertNotEqual(schemeIcon.image, genericSchemeImage);
+            XCTAssertFalse([pan canPerformAction:@selector(copy:) withSender:nil]);
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(2, 0) replacementString:[testPAN substringFromIndex:2]];
+            XCTAssertEqualObjects(pan.text, @"•••• •••• •••• ••••");
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(4, 1) replacementString:@""];
+            XCTAssertEqualObjects(pan.text, @"•••• •••• •••• •••");
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(0, pan.text.length)
+                    replacementString:[NSString stringWithFormat:@"%@ %@ %@", [testPAN substringToIndex:4],
+                                       [testPAN substringWithRange:NSMakeRange(4, 4)], [testPAN substringFromIndex:8]]];
             cvv.text = [NSString stringWithFormat:@"%d", 100 + 20 + 3];
-            [(UITextField *)[card valueForKey:@"expiry"] setText:@"12/99"];
-            [(UITextField *)[card valueForKey:@"holder"] setText:@"QA Test"];
+            [expiry.delegate textField:expiry shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"1299"];
+            XCTAssertEqualObjects(expiry.text, @"12/99");
+            holder.text = @"QA Test";
             [card prepare];
             if (validUsageType) {
                 XCTAssertTrue([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
-                XCTAssertFalse([(UIView *)[card valueForKey:@"processingView"] isHidden]);
+                UIActivityIndicatorView *spinner = [card valueForKey:@"activityIndicator"];
+                UIButton *pay = [card valueForKey:@"submitButton"];
+                XCTAssertFalse(spinner.isHidden);
+                XCTAssertEqual(spinner.superview, pay);
+                XCTAssertFalse(pay.isEnabled);
             }
         });
     });
@@ -224,6 +280,30 @@ static NSUInteger cardTestResponseBytes;
     XCTAssertEqual(cardTestRequestCount, !cancel && validUsageType ? 1 : 0);
 }
 - (void)testNativeCardVerifiedRequestAndSafeBridgeResponse { [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT" tokenCount:2]; }
+
+- (void)testNativeCardShowsGroupedDigitsWhenMaskingIsOff {
+    XCTestExpectation *done = [self expectationWithDescription:@"Card number visibility"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *parent = [[UIApplication.sharedApplication.delegate window] rootViewController];
+        NiTokenizationCard *card = [[NiTokenizationCard alloc] initWithConfig:@{
+            @"requestId": @"pan-visibility-fixture", @"maskPaymentInfo": @NO
+        }
+            ready:^(NSString *requestId) { XCTFail(@"This test only edits the card form"); }
+            result:^(NSString *result, NSDictionary *response) { XCTAssertEqualObjects(result, @"Aborted"); [done fulfill]; }];
+        [card presentFrom:parent];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UITextField *pan = [card valueForKey:@"pan"];
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"4242424242424242"];
+            XCTAssertEqualObjects(pan.text, @"4242 4242 4242 4242");
+            [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(4, 1) replacementString:@""];
+            XCTAssertEqualObjects(pan.text, @"4244 2424 2424 242");
+            XCTAssertFalse([pan canPerformAction:@selector(copy:) withSender:nil]);
+            XCTAssertTrue([(UITextField *)[card valueForKey:@"cvv"] isSecureTextEntry]);
+            [card cancel];
+        });
+    });
+    [self waitForExpectations:@[done] timeout:10];
+}
 - (void)testNativeCardErrorDoesNotExposeResponseBody { [self runNativeCardWithStatus:401 cancel:NO usageType:@"ONCE_OFF" tokenCount:2]; }
 - (void)testNativeCardCancelClearsFieldsWithoutSubmitting { [self runNativeCardWithStatus:200 cancel:YES usageType:@"PERMANENT" tokenCount:2]; }
 - (void)testNativeCardRejectsMissingUsageType { [self runNativeCardWithStatus:200 cancel:NO usageType:nil tokenCount:2]; }
@@ -241,9 +321,11 @@ static NSUInteger cardTestResponseBytes;
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *parent = [[UIApplication.sharedApplication.delegate window] rootViewController];
         NSString *backLabel = rtl ? @"رجوع" : @"Retour";
+        CGFloat measuredHeight = round(0.61 * parent.view.bounds.size.height);
         __block NiTokenizationCard *card;
         card = [[NiTokenizationCard alloc] initWithConfig:@{
-            @"requestId": @"native-back-fixture", @"rtl": @(rtl),
+            @"requestId": @"native-back-fixture", @"rtl": @(rtl), @"mode": rtl ? @"fullscreen" : @"bottomSheet",
+            @"sheetHeight": @(measuredHeight), @"sheetHeightFraction": @0.64, @"sheetMaxWidth": @560,
             @"labels": @{ @"back": backLabel, @"processing": @"Saving fixture" }
         } ready:^(NSString *requestId) {
             readyCount += 1;
@@ -255,7 +337,7 @@ static NSUInteger cardTestResponseBytes;
                 XCTAssertEqual([[(UITextField *)[card valueForKey:key] text] length], 0);
             }
             XCTAssertFalse([(UIActivityIndicatorView *)[card valueForKey:@"activityIndicator"] isAnimating]);
-            XCTAssertTrue([(UIView *)[card valueForKey:@"processingView"] isHidden]);
+            XCTAssertTrue([(UIView *)[card valueForKey:@"activityIndicator"] isHidden]);
             XCTAssertNil(parent.presentedViewController);
             card = nil;
             [done fulfill];
@@ -265,13 +347,26 @@ static NSUInteger cardTestResponseBytes;
         [card setValue:transport forKey:@"sessionConfiguration"];
         [card presentFrom:parent];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UINavigationController *navigation = (UINavigationController *)parent.presentedViewController;
-            XCTAssertTrue([navigation isKindOfClass:UINavigationController.class]);
+            UIViewController *presentation = parent.presentedViewController;
+            XCTAssertNotNil(presentation);
             UISemanticContentAttribute expected = rtl ? UISemanticContentAttributeForceRightToLeft : UISemanticContentAttributeForceLeftToRight;
-            XCTAssertEqual(navigation.view.semanticContentAttribute, expected);
-            XCTAssertEqual(navigation.navigationBar.semanticContentAttribute, expected);
+            XCTAssertEqual(presentation.view.semanticContentAttribute, expected);
+            UIView *panel = [card valueForKey:@"panel"];
+            CGFloat expectedHeight = rtl ? presentation.view.bounds.size.height : measuredHeight;
+            XCTAssertEqualWithAccuracy(panel.frame.size.height, expectedHeight, 1);
+            UIScrollView *scroll = [card valueForKey:@"scroll"];
+            CGRect originalPanelFrame = panel.frame;
+            CGRect keyboardInView = presentation.view.bounds;
+            keyboardInView.size.height = 240;
+            keyboardInView.origin.y = CGRectGetMaxY(presentation.view.bounds) - keyboardInView.size.height;
+            CGRect keyboardOnScreen = [presentation.view convertRect:keyboardInView toCoordinateSpace:presentation.view.window.screen.coordinateSpace];
+            [NSNotificationCenter.defaultCenter postNotificationName:UIKeyboardDidChangeFrameNotification object:nil
+                userInfo:@{ UIKeyboardFrameEndUserInfoKey: [NSValue valueWithCGRect:keyboardOnScreen] }];
+            [presentation.view layoutIfNeeded];
+            XCTAssertGreaterThan(scroll.contentInset.bottom, 0);
+            XCTAssertTrue(CGRectEqualToRect(panel.frame, originalPanelFrame));
             __block UIButton *back = nil;
-            [self findSubviewInView:navigation.view matching:^BOOL(UIView *view) {
+            [self findSubviewInView:presentation.view matching:^BOOL(UIView *view) {
                 if ([view isKindOfClass:UIButton.class] && [view.accessibilityIdentifier isEqualToString:@"tokenization-card-back"]) {
                     back = (UIButton *)view;
                     return YES;
@@ -280,7 +375,8 @@ static NSUInteger cardTestResponseBytes;
             }];
             XCTAssertNotNil(back);
             XCTAssertEqualObjects(back.accessibilityLabel, backLabel);
-            XCTAssertEqual(back.semanticContentAttribute, expected);
+            XCTAssertEqual(back.effectiveUserInterfaceLayoutDirection,
+                           rtl ? UIUserInterfaceLayoutDirectionRightToLeft : UIUserInterfaceLayoutDirectionLeftToRight);
             XCTAssertTrue(back.bounds.size.width >= 44 && back.bounds.size.height >= 44);
             // Arbitrary native-only text proves Back clears inputs without validation or submission.
             for (NSString *key in @[@"pan", @"expiry", @"cvv", @"holder"]) {

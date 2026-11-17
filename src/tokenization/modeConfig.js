@@ -26,6 +26,7 @@ const resolveModeConfig = (value, language = 'en') => {
     .filter(section => DEFAULT_SECTION_ORDER.includes(section)))];
   return {
     tokenType: source.tokenType === undefined ? UsageType.PERMANENT : source.tokenType,
+    addCardsBeforePay: source.addCardsBeforePay === true,
     returnButtonName: plainLabel(source.returnButtonName) || t(language, 'CONTINUE_SHOPPING'),
     returnButtonStyle: ['text', 'link', 'button'].includes(source.returnButtonStyle) ? source.returnButtonStyle : 'button',
     showSecurityNote: source.showSecurityNote === true,

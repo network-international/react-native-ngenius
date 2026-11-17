@@ -185,10 +185,15 @@ it.each(['success', 'empty'])('omits redundant list %s feedback', async importSt
   expect(byId(`token-import-${importStatus}`)).toHaveLength(0);
   expect(JSON.stringify(tree.toJSON())).not.toContain('Saved payment methods loaded');
 });
-it('keeps an actionable load failure without a false success message', async () => {
-  await renderScreen({ importStatus: 'error' });
+it('shows a failed refresh with no retry or payment buttons when it is unrecoverable', async () => {
+  await renderScreen({ savedTokens: { failed: true, tokens: [] },
+    loadError: 'Session unavailable', showContinueShopping: true,
+    onRetrySavedTokens: jest.fn() });
+  expect(byId('saved-tokens-loading')).toHaveLength(0);
   expect(byId('token-import-error')).toHaveLength(1);
-  expect(JSON.stringify(tree.toJSON())).not.toContain('Payment method saved');
+  expect(byId('saved-tokens-retry')).toHaveLength(0);
+  expect(byId('tokenization-method-CARD')).toHaveLength(0);
+  expect(byId('tokenization-continue-shopping')).toHaveLength(0);
 });
 
 it('announces loading and hides actionable methods until the list resolves', async () => {
@@ -204,7 +209,7 @@ it('announces loading and hides actionable methods until the list resolves', asy
 it('allows list retry and hides saved rows while native verification is busy', async () => {
   const onRetrySavedTokens = jest.fn();
   const props = await renderScreen({ savedTokens: { failed: true, tokens: [] }, onRetrySavedTokens,
-    modeConfig: { presentation: 'fullscreen' } });
+    canRetryLoad: true, modeConfig: { presentation: 'fullscreen' } });
   act(() => byId('saved-tokens-retry')[0].props.onPress());
   expect(onRetrySavedTokens).toHaveBeenCalledTimes(1);
   act(() => tree.update(React.createElement(TokenizationScreen, { ...props, status: 'VERIFYING', savedTokens: { tokens: [verified] } })));
@@ -261,6 +266,7 @@ it('shows the supplied title/subtitle and shield without inventing order fields 
   expect(byId('tokenization-page-title')[0].props.children).toBe('Complete your booking');
   expect(byId('tokenization-page-subtitle')).toHaveLength(1);
   expect(byId('tokenization-security-shield')).toHaveLength(1);
+  expect(tree.root.findAll(node => node.type === 'Text' && node.props.children === 'Secure checkout')).toHaveLength(1);
   expect(byId('tokenization-powered-by')).toHaveLength(1);
   expect(byId('tokenization-order-summary')).toHaveLength(0);
   expect(JSON.stringify(tree.toJSON())).not.toContain('Privacy Policy');
@@ -327,6 +333,26 @@ it('renders only the supplied order data and honors the configured initial discl
   expect(byId('order-summary-shipping')).toHaveLength(0);
   act(() => byId('order-summary-header')[0].props.onPress());
   expect(byId('order-summary-item')).toHaveLength(0);
+});
+
+it('hides the order amount while a session loads or checkout shows an error', async () => {
+  const { normalizeOrderDetails } = require('../orderDetails');
+  const orderSummary = normalizeOrderDetails({
+    orderDetails: { amount: { currencyCode: 'AED', value: 3910 } },
+  });
+  const props = await renderScreen({ orderSummary });
+  expect(byId('order-summary-amount')).toHaveLength(1);
+  for (const next of [
+    { savedTokens: { loading: true, tokens: [] } },
+    { loadError: 'Could not load payment methods' },
+    { status: 'FAILED', errorMessage: 'Card was not verified' },
+    { selectionStatus: 'failed', selectionError: 'Payment method was not selected' },
+  ]) {
+    act(() => tree.update(React.createElement(TokenizationScreen, { ...props, ...next })));
+    expect(byId('tokenization-order-summary')).toHaveLength(0);
+  }
+  act(() => tree.update(React.createElement(TokenizationScreen, props)));
+  expect(byId('order-summary-amount')).toHaveLength(1);
 });
 
 it.each([

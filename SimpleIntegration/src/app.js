@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
+  SafeAreaView,
   Text,
   ScrollView,
   TouchableHighlight,
@@ -381,7 +382,8 @@ const App = () => {
   }, []);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.welcome} testID="Label">
         NGenius React native SDK
       </Text>
@@ -467,13 +469,16 @@ const App = () => {
         animating={creatingOrder}
       />
     </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#F5FCFF' },
   container: {
     flexGrow: 1,
-    paddingVertical: 50,
+    paddingTop: Platform.OS === 'android' ? 32 : 8,
+    paddingBottom: 32,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F5FCFF',

@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { Modal, Platform, Dimensions } from 'react-native';
 import TokenizationScreen from './ui/TokenizationScreen';
-import TokenizationPresentation from './ui/TokenizationPresentation';
+import TokenizationPresentation, { SHEET_HEIGHT_FRACTION, SHEET_MAX_WIDTH } from './ui/TokenizationPresentation';
 import { captureApplePayToken } from './nativeWallets';
 import { startNativeCardTokenization } from './nativeCards';
 const { mapNativeCardColors } = require('./mapNativeCardColors');
@@ -34,6 +34,7 @@ const {
 } = require('./paymentOutcome');
 const { walletTokenizationOrder } = require('./walletTokenizationOrder');
 const { normalizeOrderDetails } = require('./orderDetails');
+const { acceptedCardSchemes } = require('./acceptedCardSchemes');
 const {
   runGooglePayTokenization,
   runWalletTokenization,
@@ -45,6 +46,7 @@ const {
 
 // Card capture stays native so PAN/CVV never cross the React Native bridge.
 const FLOW = 'TOKENIZATION';
+const SELECTION_CONFIRMATION_MS = 1800;
 const LOADING_TOKENS = { loading: true, tokens: [], failed: false };
 
 const NgeniusTokenization = ({
@@ -66,7 +68,7 @@ const NgeniusTokenization = ({
   modeConfig,
   onSelectionComplete,
 }) => {
-  // Explicit details never merge with or silently fall back to a legacy order.
+  // Optional caller context is for language, consent and native capture.
   const suppliedOrder = orderDetails == null ? legacyOrder : orderDetails;
   const order = suppliedOrder && typeof suppliedOrder === 'object' && !Array.isArray(suppliedOrder)
     ? suppliedOrder : undefined;
@@ -93,6 +95,7 @@ const NgeniusTokenization = ({
   onResultRef.current = onResult;
   onSelectionCompleteRef.current = onSelectionComplete;
   const resolvedModeConfig = useMemo(() => resolveModeConfig(modeConfig, language), [modeConfig, language]);
+  const { addCardsBeforePay, tokenType, showSecurityNote } = resolvedModeConfig;
   const theme = useMemo(
     () => resolveTokenizationTheme(branding, { language }),
     [branding, language],
@@ -102,6 +105,17 @@ const NgeniusTokenization = ({
   const [applePaySupported, setApplePaySupported] = useState(false);
   const [googlePaySupported, setGooglePaySupported] = useState(false);
   const [hideForNative, setHideForNative] = useState(false);
+  const [cardFormOpen, setCardFormOpen] = useState(false);
+  const sheetHeight = useRef(undefined);
+  const onSheetLayout = useCallback(event => {
+    const height = event.nativeEvent.layout.height;
+    if (height > 0) sheetHeight.current = height;
+  }, []);
+  const [modalShown, setModalShown] = useState(false);
+  const modalVisible = Boolean(visible) && !hideForNative && !selectionClosed;
+  useEffect(() => {
+    if (!modalVisible) setModalShown(false);
+  }, [modalVisible]);
 
   const sessionRef = useRef(null);
   if (sessionRef.current == null) {
@@ -109,13 +123,9 @@ const NgeniusTokenization = ({
   }
   const wasVisibleRef = useRef(false);
   const sessionOrderRef = useRef(order);
-  const presentationSource = sessionOrderRef.current;
-  const presentationOrder = useMemo(() => normalizeOrderDetails({
-    order: presentationSource, language,
-  }), [presentationSource, language]);
   const consent = resolveConsentInformation({
     skipConsent,
-    order: presentationSource,
+    order: sessionOrderRef.current,
     tncUrl: tnc.url,
   });
   const consentDiagnostic = tnc.loaded ? consent?.diagnostic : undefined;
@@ -165,6 +175,7 @@ const NgeniusTokenization = ({
       setSelectionStatus('idle');
       setSelectionError(undefined);
       setLoadFailure(null);
+      setSavedTokens(LOADING_TOKENS);
       setActionsDisabled(false);
       setSelectionClosed(false);
       nativeCardCancelRef.current?.();
@@ -175,6 +186,7 @@ const NgeniusTokenization = ({
       setStatus(VERIFICATION_STATES.READY);
       setErrorMessage(undefined);
       setHideForNative(false);
+      setCardFormOpen(false);
       nativeGateRef.current = null;
       return;
     }
@@ -193,6 +205,7 @@ const NgeniusTokenization = ({
       setStatus(VERIFICATION_STATES.READY);
       setErrorMessage(undefined);
       setHideForNative(false);
+      setCardFormOpen(false);
       setSessionNonce(n => n + 1);
     } else if (!sessionOrderRef.current && order) {
       sessionOrderRef.current = order;
@@ -237,6 +250,7 @@ const NgeniusTokenization = ({
     sessionOrderRef.current = order;
     setSessionNonce(n => n + 1);
     setHideForNative(false);
+    setCardFormOpen(false);
     setStatus(VERIFICATION_STATES.READY);
     setErrorMessage(undefined);
     setLoadFailure(null);
@@ -266,9 +280,16 @@ const NgeniusTokenization = ({
     const revision = journey.listRevision;
     const fail = error => {
       if (!isCurrent() || journey.listRevision !== revision) return;
+      const initializing = !journey.client;
       const failure = paymentFailure({
-        stage: journey.client ? 'refresh' : 'initialize', error, sessionID: journey.sessionRef,
+        stage: initializing ? 'initialize' : 'refresh', error, sessionID: journey.sessionRef,
       });
+      if (initializing) {
+        sessionRef.current.close();
+        setSelectionClosed(true);
+        reportResult(failure.result, true);
+        return;
+      }
       setTnc({ loaded: false, url: undefined });
       setSavedTokens({ loading: false, tokens: [], failed: true });
       setSelectedTokenRef(null);
@@ -288,12 +309,14 @@ const NgeniusTokenization = ({
         const response = await client.getSession({ outletRef, sessionRef: tokenizationSessionRef, skipConsent });
         if (!isCurrent() || journey.listRevision !== revision) return;
         if (!Array.isArray(response?.tokens)) throw new Error('Session token list is unavailable');
+        const { tokens, page, tncUrl, amount, orderSummary, maskPaymentInfo } = response;
+        const acceptedSchemes = acceptedCardSchemes(response.paymentMethods?.card);
         journey.client = client;
-        setTnc({ loaded: true, url: response.tncUrl });
-        setSavedTokens({ loading: false, tokens: response.tokens, page: response.page, failed: false });
-        setSelectedTokenRef(current => revision === 0
-          ? defaultSelectedTokenRef(response.tokens, current)
-          : savedPaymentMethodSelection(response.tokens, current) ? current : null);
+        setTnc({ loaded: true, url: tncUrl });
+        setSavedTokens({ loading: false, tokens, page, failed: false, amount, orderSummary, acceptedSchemes, maskPaymentInfo });
+        setSelectedTokenRef(current => revision === 0 && !addCardsBeforePay
+          ? defaultSelectedTokenRef(tokens, current)
+          : savedPaymentMethodSelection(tokens, current) ? current : null);
       } catch (error) {
         fail(error);
       }
@@ -302,7 +325,7 @@ const NgeniusTokenization = ({
     return () => {
       cancelled = true;
     };
-  }, [visible, outletRef, tokenizationSessionRef, skipConsent, refreshNonce, reportResult]);
+  }, [visible, outletRef, tokenizationSessionRef, skipConsent, refreshNonce, reportResult, addCardsBeforePay]);
 
   useEffect(() => {
     if (!visible) {
@@ -393,12 +416,16 @@ const NgeniusTokenization = ({
   const isSameSession = previousSessionRef.current.outletRef === outletRef &&
     previousSessionRef.current.sessionRef === tokenizationSessionRef;
   const visibleTokens = isSameSession ? savedTokens : LOADING_TOKENS;
-  const { tokenType } = resolvedModeConfig;
+  const { loading, failed, amount, orderSummary } = visibleTokens;
+  const presentationOrder = useMemo(() => loading || failed
+    ? null
+    : normalizeOrderDetails({ orderDetails: { amount, orderSummary }, language }),
+  [loading, failed, amount, orderSummary, language]);
   const selectionUiRef = useRef(null);
   selectionUiRef.current = {
     savedTokens: visibleTokens, selectedTokenRef, status, visible, selectionStatus,
     tokenizationSessionRef, outletRef, skipConsent, termsUrl: consent?.url,
-    language, methods, tokenType, actionsDisabled,
+    language, methods, tokenType, addCardsBeforePay, actionsDisabled,
   };
   const isCurrentJourney = useCallback(() => {
     const latest = selectionUiRef.current;
@@ -431,7 +458,7 @@ const NgeniusTokenization = ({
     }
   }, [language, reportResult, restoreRnModal, tokenizationSessionRef]);
 
-  const persistSelection = useCallback(async (tokenRef, { afterAdd = false } = {}) => {
+  const persistSelection = useCallback(async (tokenRef, { showConfirmation = true } = {}) => {
     if (!isCurrentJourney() || selectionAttemptRef.current) return;
     const client = backendSessionRef.current?.client;
     const attempt = {};
@@ -458,12 +485,12 @@ const NgeniusTokenization = ({
       sessionRef.current.close();
       reportSelectionComplete(tokenizationSessionRef);
     };
-    if (afterAdd) {
+    if (!showConfirmation) {
       close();
     } else {
       selectionUiRef.current = { ...selectionUiRef.current, selectionStatus: 'confirmed' };
       setSelectionStatus('confirmed');
-      selectionTimerRef.current = setTimeout(close, 1100);
+      selectionTimerRef.current = setTimeout(close, SELECTION_CONFIRMATION_MS);
     }
   }, [handleActionFailure, isCurrentJourney, outletRef, reportSelectionComplete, tokenizationSessionRef]);
 
@@ -479,19 +506,31 @@ const NgeniusTokenization = ({
       const { tokens, page, tncUrl } = updatedTokenList;
       journey.listRevision += 1;
       setTnc(current => ({ loaded: true, url: tncUrl ?? current.url }));
-      setSavedTokens({ loading: false, tokens, page, failed: false });
+      setSavedTokens(current => ({ ...current, loading: false, tokens, page, failed: false }));
       setSelectedTokenRef(current => savedPaymentMethodSelection(tokens, current) ? current : null);
+      if (method === 'CARD' && addCardsBeforePay) {
+        const previousRefs = new Set(previous.tokens.map(token => token?.tokenRef));
+        const addedCard = tokens.some(token => token?.type === 'CARD' &&
+          !previousRefs.has(token.tokenRef) && savedPaymentMethodSelection(tokens, token.tokenRef));
+        if (addedCard) {
+          sessionRef.current.endNative();
+          setStatus(VERIFICATION_STATES.READY);
+          restoreRnModal();
+          return;
+        }
+        return handleActionFailure({ stage: 'add', error: error || result, legacyResult: result, method });
+      }
       const tokenRef = newVerifiedTokenRef(previous.tokens, tokens, method, {
         previousPage: previous.page, updatedPage: page,
       });
       if (tokenRef) {
         // The native Pay action already chose this new method. Persist the choice
         // before returning control to the merchant, and never select a prior card.
-        return persistSelection(tokenRef, { afterAdd: true });
+        return persistSelection(tokenRef, { showConfirmation: method === 'CARD' });
       }
     }
     handleActionFailure({ stage: 'add', error: error || result, legacyResult: result, method });
-  }, [handleActionFailure, persistSelection, restoreRnModal]);
+  }, [addCardsBeforePay, handleActionFailure, persistSelection, restoreRnModal]);
 
   const onSelectMethod = useCallback(
     async method => {
@@ -500,6 +539,7 @@ const NgeniusTokenization = ({
         !isCurrentJourney() || terminalOutcomeRef.current || current.savedTokens.loading ||
         current.savedTokens.failed || current.actionsDisabled ||
         !Object.is(current.tokenType, tokenType) ||
+        current.addCardsBeforePay !== addCardsBeforePay ||
         current.skipConsent !== skipConsent || current.termsUrl !== consent?.url || current.language !== language ||
         !current.methods.includes(method) ||
         ![VERIFICATION_STATES.READY, VERIFICATION_STATES.FAILED].includes(current.status) ||
@@ -529,7 +569,7 @@ const NgeniusTokenization = ({
         return;
       }
       if (!sessionRef.current.tryBeginNative()) return;
-      // Card consent is accepted at the native Pay action after valid input.
+      // Card consent is accepted on native submission after valid input.
       // Wallet terms sit below the wallet button and acceptance starts there.
       const accepted = skipConsent !== true;
       const walletAcceptedAt = method === 'CARD' ? undefined : new Date().toISOString();
@@ -552,51 +592,71 @@ const NgeniusTokenization = ({
         if (isCurrent()) applyAddOutcome(outcome, current.savedTokens, method);
       };
       const fail = error => finish({ state: VERIFICATION_STATES.FAILED, error });
-      if (method === 'CARD') {
-        runAfterRnModalHidden(async () => {
-          if (!isCurrent()) return;
-          try {
-            const attempt = startNativeCardTokenization({
-              client: sessionClient,
-              outletRef,
-              sessionRef: tokenizationSessionRef,
-              usageType,
-              getConsentData,
-              isCurrent,
-              onVerifying: () => {
-                if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
+      const runCard = async () => {
+        setCardFormOpen(true);
+        try {
+          const attempt = startNativeCardTokenization({
+            client: sessionClient,
+            outletRef,
+            sessionRef: tokenizationSessionRef,
+            usageType,
+            getConsentData,
+            isCurrent,
+            onVerifying: () => {
+              if (isCurrent()) setStatus(VERIFICATION_STATES.VERIFYING);
+            },
+            presentation: {
+              mode: resolvedModeConfig.presentation,
+              sheetHeight: sheetHeight.current,
+              sheetHeightFraction: SHEET_HEIGHT_FRACTION,
+              sheetMaxWidth: SHEET_MAX_WIDTH,
+              colors: mapNativeCardColors(theme),
+              rtl: language === 'ar',
+              acceptedSchemes: current.savedTokens.acceptedSchemes,
+              maskPaymentInfo: current.savedTokens.maskPaymentInfo !== false,
+              ...(showSecurityNote ? { securityNote: t(language, 'CARD_DETAILS_SECURE') } : {}),
+              labels: {
+                title: t(language, addCardsBeforePay ? 'ADD_NEW_CARD' : 'PAY_BY_CARD'),
+                cardInformation: t(language, 'CARD_INFORMATION'),
+                pan: t(language, 'CARD_NUMBER'),
+                panPlaceholder: '•••• •••• •••• 1234',
+                acceptedSchemes: t(language, 'ACCEPTED_CARD_SCHEMES'),
+                expiry: t(language, 'CARD_EXPIRY'),
+                expiryPlaceholder: t(language, 'CARD_EXPIRY_PLACEHOLDER'),
+                cvv: t(language, 'CARD_CVV'),
+                cvvPlaceholder: 'CVV',
+                name: t(language, 'CARDHOLDER_NAME'),
+                namePlaceholder: t(language, 'CARDHOLDER_PLACEHOLDER'),
+                submit: t(language, addCardsBeforePay ? 'ADD_CARD' : 'PAY'),
+                cancel: t(language, 'CANCEL'),
+                back: t(language, 'BACK'),
+                processing: t(language, 'VERIFYING_PAYMENT_METHOD'),
+                invalid: t(language, 'CARD_INPUT_INVALID'),
               },
-              presentation: {
-                colors: mapNativeCardColors(theme),
-                rtl: language === 'ar',
-                labels: {
-                  title: t(language, 'PAY_BY_CARD'),
-                  pan: t(language, 'CARD_NUMBER'),
-                  expiry: t(language, 'CARD_EXPIRY'),
-                  cvv: t(language, 'CARD_CVV'),
-                  name: t(language, 'CARDHOLDER_NAME'),
-                  submit: t(language, 'PAY'),
-                  cancel: t(language, 'CANCEL'),
-                  back: t(language, 'BACK'),
-                  processing: t(language, 'VERIFYING_PAYMENT_METHOD'),
-                  invalid: t(language, 'CARD_INPUT_INVALID'),
-                },
-                ...(consent ? { consent: {
-                  text: `${t(language, 'CONTINUING_AGREEMENT')} ${t(language, 'PAYMENT_DISCLAIMER_2')}.`,
-                  linkLabel: t(language, 'PAYMENT_DISCLAIMER_2'),
-                  url: consent.url,
-                } } : {}),
-              },
-            });
-            nativeCardCancelRef.current = attempt.cancel;
-            const outcome = await attempt.promise;
-            if (isCurrent()) nativeCardCancelRef.current = null;
+              ...(consent ? { consent: {
+                text: `${t(language, 'CONTINUING_AGREEMENT')} ${t(language, 'PAYMENT_DISCLAIMER_2')}.`,
+                linkLabel: t(language, 'PAYMENT_DISCLAIMER_2'),
+                url: consent.url,
+              } } : {}),
+            },
+          });
+          nativeCardCancelRef.current = attempt.cancel;
+          const outcome = await attempt.promise;
+          if (isCurrent()) {
+            nativeCardCancelRef.current = null;
             finish(outcome);
-          } catch (error) {
-            if (isCurrent()) nativeCardCancelRef.current = null;
-            fail(error);
+            setCardFormOpen(false);
           }
-        });
+        } catch (error) {
+          if (isCurrent()) {
+            nativeCardCancelRef.current = null;
+            fail(error);
+            setCardFormOpen(false);
+          }
+        }
+      };
+      if (method === 'CARD') {
+        runCard();
         return;
       }
       const runWallet = async () => {
@@ -638,6 +698,9 @@ const NgeniusTokenization = ({
       sessionClient,
       outletRef,
       tokenType,
+      addCardsBeforePay,
+      resolvedModeConfig.presentation,
+      showSecurityNote,
       applyAddOutcome,
       handleActionFailure,
       runAfterRnModalHidden,
@@ -688,10 +751,11 @@ const NgeniusTokenization = ({
   };
   return (
     <Modal
-      visible={Boolean(visible) && !hideForNative && !selectionClosed}
+      visible={modalVisible}
       animationType={bottomSheet ? 'none' : 'slide'}
       presentationStyle={bottomSheet ? 'overFullScreen' : 'fullScreen'}
       transparent={bottomSheet}
+      onShow={() => setModalShown(true)}
       onRequestClose={() => handleDismiss('back')}
       onDismiss={() => {
         if (nativeGateRef.current) {
@@ -702,6 +766,9 @@ const NgeniusTokenization = ({
         theme={theme}
         language={language}
         modeConfig={resolvedModeConfig}
+        shown={modalVisible && modalShown}
+        covered={cardFormOpen}
+        onSheetLayout={onSheetLayout}
         dismissDisabled={dismissDisabled}
         onCancel={handleDismiss}
       >
@@ -721,11 +788,12 @@ const NgeniusTokenization = ({
           canRetryLoad={loadFailure?.retryable === true}
           onRetrySavedTokens={retrySavedTokens}
           methods={methods}
-          status={status}
+          status={cardFormOpen ? VERIFICATION_STATES.READY : status}
           errorMessage={errorMessage}
-          actionsDisabled={actionsDisabled}
+          actionsDisabled={actionsDisabled || cardFormOpen}
           dismissDisabled={dismissDisabled}
           showContinueShopping={showContinueShopping}
+          accessibilityHidden={cardFormOpen}
           onSelectMethod={onSelectMethod}
           onCancel={handleDismiss}
         />

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   DeviceEventEmitter,
+  Keyboard,
   NativeModules,
   Text,
   TextInput,
@@ -14,7 +15,6 @@ import {
   createTokenizationClient,
 } from '@network-international/react-native-ngenius';
 const { registerCardContext } = require('../../src/tokenization/cardContext');
-const { validReference } = require('../../src/tokenization/api/endpoints');
 
 const OUTLET_REF = 'a6b162e9-7a75-403c-b238-6303b2df455c';
 const BASE_URL = 'https://paypage-sandbox.platform.network.ae';
@@ -60,7 +60,12 @@ const PREVIEW_SCENARIOS = [
   { id: 'expired', label: 'Session expires when you tap Pay' },
   { id: 'unauthorized', label: 'Invalid Access-Token on open' },
   { id: 'notFound', label: 'Outlet or session not found' },
+  { id: 'loading', label: 'Slow session loading' },
+  { id: 'cardForm', label: 'Native card form · preview only' },
+  { id: 'cardFormUnmasked', label: 'Native card form · visible test number' },
 ];
+const NATIVE_CARD_PREVIEW_SCENARIOS = ['cardForm', 'cardFormUnmasked'];
+const EMPTY_PREVIEW_SCENARIOS = ['new', 'declined', ...NATIVE_CARD_PREVIEW_SCENARIOS];
 const previewCard = (tokenRef, scheme, last4, expiry, status = 'VERIFIED') => ({
   tokenRef,
   type: 'CARD',
@@ -71,12 +76,6 @@ const PREVIEW_SAVED = [
   previewCard('preview-card', 'VISA', '4242', '2030-12'),
   previewCard('preview-no-expiry', 'MASTERCARD', '4444'),
 ];
-const PREVIEW_NEW = previewCard(
-  'preview-added',
-  'MASTERCARD',
-  '1111',
-  '2031-03',
-);
 const PREVIEW_FAILED = previewCard(
   'preview-declined',
   'VISA',
@@ -101,7 +100,6 @@ const QA_STYLES = {
 };
 const ORDER = {
   action: 'VERIFY',
-  amount: { value: 100, currencyCode: 'AED', formattedValue: '1.00' },
   paymentMethods: {
     card: ['VISA', 'MASTERCARD'],
     wallet: ['APPLE_PAY', 'GOOGLE_PAY'],
@@ -123,24 +121,57 @@ export const previewTransport =
     if (scenario === 'notFound') {
       return { status: 404 };
     }
+    if (scenario === 'loading') {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
     return {
       status: 200,
       text: JSON.stringify({
-        tokens: ['new', 'declined'].includes(scenario) ? [] : PREVIEW_SAVED,
+        tokens: EMPTY_PREVIEW_SCENARIOS.includes(scenario) ? [] : PREVIEW_SAVED,
+        ...(scenario === 'cardFormUnmasked' ? { maskPaymentInfo: false } : {}),
+        paymentMethods: { card: ['VISA', 'MASTERCARD'] },
+        amount: { currencyCode: 'AED', value: 100 },
         tncUrl: 'https://example.com/preview-terms',
       }),
     };
   };
 
-// A scoped fixture for the sample app. No native form data or payment request
-// is sent during a preview. Restore the actual bridge on preview close.
+// Offline previews never send card data to a network transport.
 const installPreviewCard = scenario => {
   const bridge = NativeModules?.NiSdk;
   if (!bridge || !DeviceEventEmitter?.emit) {
     return undefined;
   }
+  if (NATIVE_CARD_PREVIEW_SCENARIOS.includes(scenario)) {
+    const originalPresent = bridge.presentTokenizationCard;
+    const originalSubmit = bridge.submitTokenizationCard;
+    let submittedRequest;
+    let timer;
+    const present = (options, callback) => originalPresent(options, (status, response) => {
+      if (status === 'Aborted' && submittedRequest === options.requestId) {
+        submittedRequest = undefined;
+        callback('Response', { tokens: [previewCard('preview-native-card', 'VISA', '4242', '2030-12')] });
+      } else {
+        callback(status, response);
+      }
+    });
+    const submit = requestId => {
+      timer = setTimeout(() => {
+        submittedRequest = requestId;
+        bridge.cancelTokenizationCard(requestId);
+      }, 2200);
+    };
+    bridge.presentTokenizationCard = present;
+    bridge.submitTokenizationCard = submit;
+    return () => {
+      clearTimeout(timer);
+      if (bridge.presentTokenizationCard === present) bridge.presentTokenizationCard = originalPresent;
+      if (bridge.submitTokenizationCard === submit) bridge.submitTokenizationCard = originalSubmit;
+    };
+  }
   let pending;
   let timer;
+  const added = [];
   const finish = (requestId, status, response) => {
     if (pending?.id !== requestId) {
       return;
@@ -158,8 +189,20 @@ const installPreviewCard = scenario => {
       }, 120);
     },
     submitTokenizationCard: requestId => {
-      const tokens = scenario === 'declined' ? [PREVIEW_FAILED] : [PREVIEW_NEW];
-      const saved = ['new', 'declined'].includes(scenario) ? [] : PREVIEW_SAVED;
+      if (pending?.id !== requestId) {
+        return;
+      }
+      if (scenario !== 'declined') {
+        const index = added.length;
+        added.push(previewCard(
+          `preview-added-${index}`,
+          index % 2 === 0 ? 'MASTERCARD' : 'VISA',
+          String(1111 + index).slice(-4),
+          '2031-03',
+        ));
+      }
+      const tokens = scenario === 'declined' ? [PREVIEW_FAILED] : added;
+      const saved = EMPTY_PREVIEW_SCENARIOS.includes(scenario) ? [] : PREVIEW_SAVED;
       timer = setTimeout(
         () => finish(requestId, 'Response', { tokens: [...tokens, ...saved] }),
         220,
@@ -269,28 +312,8 @@ export default function TokenizationQA() {
       .trim()
       .replace(/^Bearer\s+/i, '')
       .trim();
-    if (!preview && !accessToken) {
-      Alert.alert(
-        'Access-Token required',
-        'Paste a fresh TOKENIZATION_SDK Access-Token.',
-      );
-      return;
-    }
     const reference = preview ? PREVIEW_SESSION_REF : sessionDraft.trim();
-    if (!reference) {
-      Alert.alert(
-        'Session reference required',
-        'Enter the sessionRef created through the gateway by your merchant backend.',
-      );
-      return;
-    }
-    if (!validReference(reference)) {
-      Alert.alert(
-        'Invalid session reference',
-        'Enter the sessionRef from your merchant backend.',
-      );
-      return;
-    }
+    Keyboard.dismiss();
     token.current = preview ? '' : accessToken;
     tokenSetAt.current = Date.now();
     setDraft('');
@@ -453,6 +476,7 @@ export default function TokenizationQA() {
           branding={brand.branding}
           modeConfig={{
             tokenType: preview ? undefined : 'ONCE_OFF',
+            addCardsBeforePay: !(preview && ['new', ...NATIVE_CARD_PREVIEW_SCENARIOS].includes(scenario.id)),
             presentation: fullscreen ? 'fullscreen' : 'bottomSheet',
             backdropBlur,
             sectionOrder: cardFirst ? ['card', 'tokens', 'wallets'] : undefined,
@@ -463,7 +487,7 @@ export default function TokenizationQA() {
           sessionRef={sessionRef}
           onResult={outcome => {
             setResult(outcome);
-            if (outcome.statusCode === 200 || outcome.statusCode === 499) {
+            if (outcome.statusCode === 200 || outcome.statusCode === 499 || !outcome.sessionID) {
               close();
             }
           }}

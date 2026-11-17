@@ -18,6 +18,33 @@ public class TokenizationCardValidationTest {
         assertNull(TokenizationCardValidation.expiry("13/99"));
         assertNull(TokenizationCardValidation.expiry("01/20"));
     }
+    @Test public void detectsSchemesWithoutGuessingAnUnfinishedMastercardPrefix() {
+        assertEquals("Visa", TokenizationCardValidation.scheme("4"));
+        assertNull(TokenizationCardValidation.scheme("222"));
+        assertNull(TokenizationCardValidation.scheme("2220"));
+        assertEquals("Mastercard", TokenizationCardValidation.scheme("2221"));
+        assertEquals("Mastercard", TokenizationCardValidation.scheme("2720"));
+        assertNull(TokenizationCardValidation.scheme("2721"));
+        assertEquals("American Express", TokenizationCardValidation.scheme("37"));
+    }
+    @Test public void recognizesLocalSchemesAndResolvesDiscoverBeforeUnionPay() {
+        assertNull(TokenizationCardValidation.scheme("6690090"));
+        assertEquals("Jaywan", TokenizationCardValidation.scheme("66900901"));
+        assertEquals("Jaywan", TokenizationCardValidation.scheme("97845001"));
+        assertEquals("Visa", TokenizationCardValidation.scheme("40719"));
+        assertEquals("mada", TokenizationCardValidation.scheme("407197"));
+        assertEquals("mada", TokenizationCardValidation.scheme("513213"));
+        assertNull(TokenizationCardValidation.scheme("62123"));
+        assertEquals("UnionPay", TokenizationCardValidation.scheme("621234"));
+        assertEquals("Discover", TokenizationCardValidation.scheme("622123"));
+    }
+    @Test public void validatesCvvLengthAndAsciiDigits() {
+        assertTrue(TokenizationCardValidation.validCvv("4", "123"));
+        assertFalse(TokenizationCardValidation.validCvv("4", "1234"));
+        assertFalse(TokenizationCardValidation.validCvv("4", "12a"));
+        assertTrue(TokenizationCardValidation.validCvv("37", "1234"));
+        assertFalse(TokenizationCardValidation.validCvv("37", "123"));
+    }
     @Test public void acceptsOnlyTheSessionCardEndpointForTheGivenReference() {
         String url = "https://sandbox.test/api/outlets/outlet/payment-tokenization-sessions/session-1/cards";
         assertTrue(TokenizationCardValidation.validEndpoint(url, "session-1"));

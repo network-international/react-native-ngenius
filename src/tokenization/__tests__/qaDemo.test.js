@@ -1,4 +1,4 @@
-jest.mock('react-native', () => ({ View: 'View', Text: 'Text', TextInput: 'TextInput', Switch: 'Switch', TouchableOpacity: 'TouchableOpacity', Alert: { alert: jest.fn() } }));
+jest.mock('react-native', () => ({ View: 'View', Text: 'Text', TextInput: 'TextInput', Switch: 'Switch', TouchableOpacity: 'TouchableOpacity', Alert: { alert: jest.fn() }, Keyboard: { dismiss: jest.fn() } }));
 jest.mock('@network-international/react-native-ngenius', () => ({
   NgeniusTokenization: 'NgeniusTokenization',
   createTokenizationClient: jest.fn(() => ({})),
@@ -30,10 +30,6 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   expect(tree.root.findByProps({ testID: 'qa-session-ref' }).props.secureTextEntry).toBe(true);
   const input = id => tree.root.findByProps({ testID: id }).props;
   act(() => input('qa-access-token').onChangeText('Bearer fixture-short-lived'));
-  act(() => input('qa-session-ref').onChangeText('invalid reference'));
-  act(() => { input('qa-open-tokenization').onPress(); });
-  expect(Alert.alert).toHaveBeenCalledWith('Invalid session reference', expect.any(String));
-  expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(0);
   act(() => input('qa-session-ref').onChangeText(' merchant-session '));
   act(() => { tree.root.findByProps({ testID: 'qa-open-tokenization' }).props.onPress(); });
   const provider = sdk.createTokenizationClient.mock.calls[0][0].getAccessToken;
@@ -50,15 +46,19 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   await expect(provider()).rejects.toThrow('short-lived');
 });
 
-it('requires a gateway-created session reference and makes no request when it is missing', () => {
+it('passes missing session information to the SDK and displays its result on the host', () => {
   const fetch = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Unexpected network request'));
   try {
     act(() => { tree = renderer.create(React.createElement(QA)); });
     const input = id => tree.root.findByProps({ testID: id }).props;
     act(() => input('qa-access-token').onChangeText('fixture-short-lived'));
     act(() => { input('qa-open-tokenization').onPress(); });
-    expect(Alert.alert).toHaveBeenCalledWith('Session reference required', expect.any(String));
+    expect(Alert.alert).not.toHaveBeenCalled();
+    const { onResult, sessionRef } = tree.root.findByType('NgeniusTokenization').props;
+    expect(sessionRef).toBe('');
+    act(() => onResult({ statusCode: 400, message: 'Cannot initialize SDK.' }));
     expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(0);
+    expect(JSON.stringify(tree.toJSON())).toContain('Cannot initialize SDK.');
     expect(fetch).not.toHaveBeenCalled();
   } finally {
     fetch.mockRestore();
@@ -75,6 +75,8 @@ it('drives the offline session preview and closes after confirmed selection', as
   await expect(transport({ method: 'POST' })).rejects.toThrow('Unsupported preview operation');
   const list = await transport({ method: 'GET' });
   expect(JSON.parse(list.text).tokens[0]).toMatchObject({ tokenRef: 'preview-card', status: 'VERIFIED' });
+  expect(JSON.parse(list.text).amount).toEqual({ currencyCode: 'AED', value: 100 });
+  expect(screen.props.order.amount).toBeUndefined();
   await expect(transport({ method: 'PUT' })).resolves.toEqual({ status: 204 });
   act(() => screen.props.onResult({ statusCode: 200, message: 'Payment method selected.', sessionID: 'preview-session' }));
   expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(0);
@@ -99,7 +101,7 @@ it('sets presentation, branding and optional checkout return in the preview', ()
   expect(screen.props.modeConfig).toMatchObject({
     presentation: 'fullscreen', backdropBlur: true, sectionOrder: ['card', 'tokens', 'wallets'],
   });
-  act(() => screen.props.onResult({ statusCode: 402, message: 'Payment session expired.' }));
+  act(() => screen.props.onResult({ statusCode: 402, message: 'Payment session expired.', sessionID: 'preview-session' }));
   expect(tree.root.findAllByType('NgeniusTokenization')).toHaveLength(1);
 });
 
@@ -111,4 +113,6 @@ it('uses distinct fixtures for invalid initialization, expiry during selection, 
   await expect(previewTransport('expired')(get)).resolves.toMatchObject({ status: 200 });
   await expect(previewTransport('expired')(put)).resolves.toEqual({ status: 401 });
   expect(JSON.parse((await previewTransport('new')(get)).text).tokens).toEqual([]);
+  expect(JSON.parse((await previewTransport('cardFormUnmasked')(get)).text))
+    .toMatchObject({ tokens: [], maskPaymentInfo: false });
 });

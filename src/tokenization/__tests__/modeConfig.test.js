@@ -5,7 +5,7 @@ const { UsageType } = require('../usageType');
 it.each(['en', 'fr', 'ar'])('defaults to a compact sheet and provides a localized optional return label in %s', language => {
   expect(resolveModeConfig(undefined, language)).toEqual({
     tokenType: UsageType.PERMANENT, returnButtonName: t(language, 'CONTINUE_SHOPPING'), returnButtonStyle: 'button',
-    presentation: 'bottomSheet', backdropBlur: false, sectionOrder: ['tokens', 'wallets', 'card'],
+    presentation: 'bottomSheet', backdropBlur: false, addCardsBeforePay: false, sectionOrder: ['tokens', 'wallets', 'card'],
     showSecurityNote: false, orderSummaryInitiallyExpanded: false, labels: {},
   });
 });
@@ -16,7 +16,7 @@ it.each(['text', 'link', 'button'])('supports merchant return label and %s prese
 it('falls back for missing/invalid values and ignores unsupported consent or artwork overrides', () => {
   expect(resolveModeConfig({ returnButtonName: ' ', returnButtonStyle: 'hidden', labels: { pageTitle: 'Choose a method', consent: 'Injected', addCard: null }, consentText: 'Injected' })).toEqual({
     tokenType: UsageType.PERMANENT, returnButtonName: t('en', 'CONTINUE_SHOPPING'), returnButtonStyle: 'button',
-    presentation: 'bottomSheet', backdropBlur: false, sectionOrder: ['tokens', 'wallets', 'card'],
+    presentation: 'bottomSheet', backdropBlur: false, addCardsBeforePay: false, sectionOrder: ['tokens', 'wallets', 'card'],
     showSecurityNote: false, orderSummaryInitiallyExpanded: false, labels: { pageTitle: 'Choose a method' },
   });
   expect(resolveModeConfig({ returnButtonName: 'line\nbreak' }).returnButtonName).toBe(t('en', 'CONTINUE_SHOPPING'));

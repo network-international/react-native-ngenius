@@ -165,8 +165,18 @@ export interface TokenizationTokenList {
   tncUrl?: string;
 }
 
+export interface TokenizationSession extends TokenizationTokenList {
+  /** Card schemes enabled for the outlet, supplied by Get Session. */
+  paymentMethods?: { card?: string[] };
+  /** When explicitly false, show the entered card number on the native form. */
+  maskPaymentInfo?: boolean;
+  /** Optional checkout amount supplied by Get Session. */
+  amount?: TokenizationMoney;
+  orderSummary?: TokenizationOrderDetails['orderSummary'];
+}
+
 export interface TokenizationClient {
-  getSession(args: { outletRef: string; sessionRef: string; skipConsent?: boolean }): Promise<TokenizationTokenList>;
+  getSession(args: { outletRef: string; sessionRef: string; skipConsent?: boolean }): Promise<TokenizationSession>;
   selectToken(args: { outletRef: string; sessionRef: string; tokenRef: string }): Promise<{ status: 'SELECTED' }>;
   /** Wallet capture requires explicit support. The built-in client is backend-pending. */
   readonly supportsAddWallet?: boolean;
@@ -219,7 +229,7 @@ export interface TokenizationResult {
 export interface NgeniusTokenizationProps {
   visible?: boolean;
   order?: NGeniusOrder;
-  /** Optional display/currency context. Takes precedence over order without merging fields. */
+  /** Optional language, consent and native wallet context. Checkout amounts come from Get Session. */
   orderDetails?: TokenizationOrderDetails;
   /** Include CONTINUE_SHOPPING to display the optional return action. */
   paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY' | 'CONTINUE_SHOPPING'>;
@@ -284,6 +294,8 @@ export interface TokenizationSelectionCompletion {
 export interface TokenizationModeConfig {
   /** Sent as usageType on Add Card or Add Wallet. Defaults to PERMANENT when omitted. */
   tokenType?: UsageType;
+  /** Return to the method list after adding a card and let the shopper choose a card before paying. */
+  addCardsBeforePay?: boolean;
   /** Defaults to bottomSheet. */
   presentation?: 'bottomSheet' | 'fullscreen';
   /** Blur the merchant app behind the bottom sheet when supported by the device. */

@@ -18,15 +18,17 @@ export default function SavedTokensSkeleton({ styles, label }) {
     <View testID="saved-tokens-loading" accessible accessibilityRole="progressbar"
       accessibilityLabel={label} accessibilityState={{ busy: true }}>
       <Animated.View style={{ opacity }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        {[0, 1, 2].map(index => (
+        {[0, 1].map(index => (
           <View key={index} style={styles.skeletonRow}>
             <View style={styles.skeletonIcon} />
             <View style={styles.savedDetails}>
               <View style={styles.skeletonLine} />
               <View style={[styles.skeletonLine, styles.skeletonShortLine]} />
             </View>
+            <View style={styles.skeletonRadio} />
           </View>
         ))}
+        <View style={styles.skeletonButton} />
       </Animated.View>
     </View>
   );

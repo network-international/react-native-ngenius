@@ -2,10 +2,12 @@ jest.mock('react-native', () => ({
   View: 'View', Pressable: 'Pressable',
   StyleSheet: { create: styles => styles },
   Dimensions: { get: () => ({ height: 840 }) },
+  Platform: { OS: 'android' },
+  Easing: { out: jest.fn(), cubic: jest.fn() },
   AccessibilityInfo: { isReduceMotionEnabled: jest.fn().mockResolvedValue(true) },
   Animated: {
     View: 'AnimatedView',
-    Value: function Value() { this.setValue = jest.fn(); },
+    Value: function Value() { this.setValue = jest.fn(); this.interpolate = jest.fn(); },
     timing: jest.fn(() => ({ start: jest.fn(), stop: jest.fn() })),
     spring: jest.fn(() => ({ start: jest.fn() })),
   },
@@ -15,7 +17,7 @@ jest.mock('react-native', () => ({
 }));
 
 const React = require('react');
-const { UIManager } = require('react-native');
+const { AccessibilityInfo, Animated, UIManager } = require('react-native');
 const { create, act } = require('react-test-renderer');
 const TokenizationPresentation = require('../ui/TokenizationPresentation').default;
 const { resolveTokenizationTheme } = require('../resolveTheme');
@@ -69,4 +71,26 @@ it('renders fullscreen directly without sheet controls or blur', async () => {
   await render({ modeConfig: { presentation: 'fullscreen', backdropBlur: true } });
   expect(tree.root.findAllByType('Chooser')).toHaveLength(1);
   expect(byId('tokenization-backdrop')).toHaveLength(0);
+});
+
+it('keeps the backdrop and restores the same Android sheet after the native form closes', async () => {
+  await render({ covered: true });
+  const panel = byId('tokenization-sheet-panel')[0];
+  const presentation = tree.root.findByType(TokenizationPresentation);
+  expect(panel.props.style).toContainEqual({ opacity: 0 });
+  expect(byId('tokenization-backdrop')).toHaveLength(1);
+  act(() => tree.update(React.createElement(TokenizationPresentation, { ...presentation.props, covered: false })));
+  expect(byId('tokenization-sheet-panel')[0]).toBe(panel);
+  expect(panel.props.style).not.toContainEqual({ opacity: 0 });
+});
+
+it('waits for the native modal to become visible before running the entrance animation', async () => {
+  AccessibilityInfo.isReduceMotionEnabled.mockResolvedValueOnce(false);
+  const start = jest.fn();
+  Animated.timing.mockReturnValueOnce({ start, stop: jest.fn() });
+  await render({ shown: false });
+  expect(start).not.toHaveBeenCalled();
+  const presentation = tree.root.findByType(TokenizationPresentation);
+  act(() => tree.update(React.createElement(TokenizationPresentation, { ...presentation.props, shown: true })));
+  expect(start).toHaveBeenCalledTimes(1);
 });

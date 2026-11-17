@@ -281,35 +281,41 @@ it('does not collect on cancel and rejects a cancelled-session click', async () 
   expect(session().acceptanceTimestamp()).toBeUndefined();
 });
 
-it('does not start deferred iOS Card presentation after the session closes', async () => {
+it('cancels the open iOS Card form when the host closes the session', async () => {
   Platform.OS = 'ios';
+  const cancel = jest.fn();
+  const card = deferred();
+  startNativeCardTokenization.mockReturnValueOnce({ promise: card.promise, cancel });
   await open();
   await select('CARD');
-  const dismiss = modal().onDismiss;
   await update({ visible: false });
-  await act(async () => { dismiss(); jest.advanceTimersByTime(1000); await flush(); });
-  expect(startNativeCardTokenization).not.toHaveBeenCalled();
+  await act(async () => { card.resolve({ state: 'READY' }); await flush(); });
+  expect(startNativeCardTokenization).toHaveBeenCalledTimes(1);
+  expect(cancel).toHaveBeenCalledTimes(1);
   expect(session().acceptanceTimestamp()).toBeUndefined();
 });
 
-it('uses raw orderDetails for the native context and a separate normalized order summary', async () => {
+it('uses raw orderDetails for native context and displays the amount from Get Session', async () => {
   const details = { language: 'ar', amount: { currencyCode: 'AED', value: '3910' }, paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] } };
-  await open({ orderDetails: details, order: { language: 'fr', amount: { currencyCode: 'USD', value: 100 } }, paymentMethods: undefined });
+  const client = defaultClient();
+  client.getSession.mockResolvedValue({ tokens: [], amount: { currencyCode: 'AED', value: '5490' } });
+  await open({ orderDetails: details, order: { language: 'fr', amount: { currencyCode: 'USD', value: 100 } },
+    paymentMethods: undefined, tokenizationClient: client });
   expect(screen().language).toBe('ar');
-  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', value: '3910', formattedValue: '39.10' });
+  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', value: '5490', formattedValue: '54.90' });
   expect(screen().methods).toEqual(['GOOGLE_PAY']);
   await select('GOOGLE_PAY');
   expect(native.initiateGooglePay).toHaveBeenCalledWith({ ...details, amount: { ...details.amount, value: 0, formattedValue: '0.00' } }, undefined);
   expect(details.amount.value).toBe('3910');
 });
 
-it.each(['outlet', 'reopen'])('keeps explicit orderDetails presentation and wallet capture on the same snapshot until %s', async boundary => {
+it.each(['outlet', 'reopen'])('keeps native wallet context on the same snapshot until %s', async boundary => {
   const first = { language: 'en', amount: { currencyCode: 'AED', value: '100' } };
   const next = { language: 'en', amount: { currencyCode: 'USD', value: '250' } };
   await open({ orderDetails: first });
   await update({ orderDetails: next, language: 'fr' });
   expect(screen().language).toBe('fr');
-  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', formattedValue: '1.00', text: 'AED 1,00' });
+  expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
   expect(native.initiateGooglePay).toHaveBeenLastCalledWith({
     ...first, amount: { ...first.amount, value: 0, formattedValue: '0.00' },
@@ -319,7 +325,7 @@ it.each(['outlet', 'reopen'])('keeps explicit orderDetails presentation and wall
     await update({ visible: false });
     await update({ visible: true });
   } else await update({ outletRef: 'outlet-2' });
-  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'USD', formattedValue: '2.50', text: 'USD 2,50' });
+  expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
   expect(native.initiateGooglePay).toHaveBeenLastCalledWith({
     ...next, amount: { ...next.amount, value: 0, formattedValue: '0.00' },
@@ -362,7 +368,7 @@ it.each(['invalid', [], 42])('does not use a hidden legacy wallet order when exp
 it.each([undefined, null])('keeps the legacy order alias when orderDetails is absent (%p)', async orderDetails => {
   const legacy = { amount: { currencyCode: 'AED', value: '3910' } };
   await open({ orderDetails, order: legacy });
-  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', formattedValue: '39.10' });
+  expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
   expect(native.initiateGooglePay).toHaveBeenCalledWith({
     ...legacy, amount: { ...legacy.amount, value: 0, formattedValue: '0.00' },

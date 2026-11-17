@@ -45,10 +45,19 @@ const tokenizationClient = createTokenizationClient({
   getAccessToken: () => merchantBackend.getTokenizationAccessToken(),
 });
 
+const walletMethods = tokenizationClient.supportsAddWallet === true
+  ? [
+      ...(applePayConfig ? ['APPLE_PAY'] : []),
+      ...(googlePayConfig ? ['GOOGLE_PAY'] : []),
+    ]
+  : [];
+
 <NgeniusTokenization
   visible={showTokenization}
   order={order}
-  paymentMethods={['CARD', 'CONTINUE_SHOPPING']}
+  paymentMethods={['CARD', ...walletMethods, 'CONTINUE_SHOPPING']}
+  applePayConfig={applePayConfig}
+  googlePayConfig={googlePayConfig}
   branding={merchantBranding}
   tokenizationClient={tokenizationClient}
   outletRef={outletRef}
@@ -61,28 +70,49 @@ const tokenizationClient = createTokenizationClient({
 />
 ```
 
-`order` supplies display and currency context. Native Card tokenization does not require a payment
-order. Use `paymentMethods` to enable the supported methods. Add `CONTINUE_SHOPPING` to show
-the optional return action. `branding` accepts PayPage branding fields. Register custom fonts in the host app.
+`order` supplies legacy context for language, consent and native wallet capture. Wallet capture uses
+`order.amount.currencyCode`. Native Card tokenization does not require a payment order.
+Add `CONTINUE_SHOPPING` to show the optional return action. `branding` accepts PayPage branding
+fields. Register custom fonts in the host app.
+
+Pass wallet configuration as optional props when opening `NgeniusTokenization`:
+
+- `APPLE_PAY` uses `applePayConfig` with `merchantIdentifier` and `countryCode`, plus optional
+  `merchantName`. The merchant ID must be in the iOS app's Apple Pay entitlements.
+- `GOOGLE_PAY` uses `googlePayConfig` with `merchantName`, `gateway`, `gatewayMerchantId`
+  and `environment` (`TEST` or `PRODUCTION`). Provide `merchantId` in production.
+
+Supply the config for each wallet enabled for the outlet. The SDK checks device availability and
+shows Apple Pay on iOS and Google Pay on Android. To enable wallet tokenization, use a client backed
+by a working `addWallet` implementation that declares `supportsAddWallet: true`. The built-in
+client still depends on the session-based Add Wallet endpoint, so the example currently offers cards.
 
 The merchant backend creates the tokenization session with any returning shopper token references
 in `advisedTokens` and passes the returned `sessionRef` to the app. Open the chooser with that
-reference. The SDK starts with Get Session to load the saved methods and `tncUrl`. Add and Select
+reference. The SDK starts with Get Session to load the saved methods, `tncUrl` and optional order details. Add and Select
 reuse the same reference, and Add updates the list directly from its response.
 
 Omit `modeConfig.tokenType` to use `PERMANENT`. For a one-time token, pass
 `modeConfig={{ tokenType: 'ONCE_OFF' }}`. The SDK sends this value as `usageType` on Add Card
 or Add Wallet and rejects an invalid explicit value with `INVALID_USAGE_TYPE`.
 
+Set `modeConfig.addCardsBeforePay` to enable **Add new card**. Each verified card returns
+the shopper to the method list in the same session. The shopper can add another card,
+choose a card from the list, and tap **Pay** to confirm the selection.
+
 With `skipConsent={false}` (default), the native Card form displays Terms and Conditions below
-**Pay** and records acceptance after valid input. Wallet actions display terms below the wallet
-buttons and record acceptance on the wallet tap. `skipConsent={true}` sends `?consentOff=true`
+the card form's submit button and records acceptance after valid input. Wallet actions display
+terms below the wallet buttons and record acceptance on the wallet tap. `skipConsent={true}` sends `?consentOff=true`
 on Get Session and `NOT_COLLECTED` with `skippedByMerchant: true` on Add. A valid terms URL
 makes the terms label a link.
 
-The default **Select payment method** chooser opens as a bottom sheet. Tap outside or swipe down
-to dismiss it. In fullscreen, use **Cancel**. Saved methods show masked funding details and
-`MM/YY` when supplied. Failed methods are hidden. **Pay by card** opens the native Card form.
+The default **Select payment method** chooser slides up as a bottom sheet. While the session loads,
+it shows placeholders for the payment methods. If initialization fails, the SDK closes and
+reports the error to the host via `onResult`. Tap outside or swipe down to dismiss the sheet.
+In fullscreen, use **Cancel** or **Close**. Saved methods show masked funding details and
+`MM/YY` when supplied. Failed methods are hidden. The native Card form follows the chooser's
+presentation mode. In bottom-sheet mode it opens at the same height as the chooser on iOS
+and Android. The form scrolls inside the sheet when the keyboard is open.
 
 ```jsx
 modeConfig={{
@@ -102,11 +132,12 @@ modeConfig={{
 
 ### Optional order details
 
-`orderDetails` adds display context without starting a payment. All fields are optional:
+The checkout shows order details returned by **Get Session** once loading completes.
+`amount` and `orderSummary` are optional in the response.
 
-```jsx
-const orderDetails = {
-  language: 'en',
+```js
+const getSessionResponse = {
+  tokens: [],
   amount: { currencyCode: 'AED', value: '3910' },
   orderSummary: {
     items: [{
@@ -120,8 +151,6 @@ const orderDetails = {
     total: { currencyCode: 'AED', value: '3910' },
   },
 };
-
-<NgeniusTokenization orderDetails={orderDetails} {...tokenizationProps} />
 ```
 
 Money accepts `{ currencyCode, value }`, where `value` is a nonnegative integer in minor units,
@@ -132,9 +161,9 @@ grouping. When both are supplied, `value` wins. Invalid or incomplete money is o
 
 The summary starts collapsed; `modeConfig.orderSummaryInitiallyExpanded: true` opens its details
 initially. Its header prefers the supplied summary total, then amount. Missing amounts, currency,
-items, quantities, fees and totals are never inferred, summed or converted. With no usable details,
-no summary appears. `orderDetails` replaces the legacy `order` display context rather than merging
-fields; omitting it retains the legacy fallback. Language resolves from supported `language`, then
+items, quantities, fees and totals are never inferred, summed or converted. The summary stays hidden
+during loading, while a checkout error is shown, and when Get Session returns no usable order details.
+Language resolves from supported `language`, then
 `orderDetails.language`, then `order.language`, then English (EN/FR/AR, including region tags).
 
 ### Confirm a method and hand off to the merchant
@@ -143,7 +172,8 @@ The shopper selects an existing token and taps **Pay**, or completes the native 
 **Pay** there. For a new method, the SDK verifies that the Add response identifies one new eligible
 token by comparing the complete before and after lists. It submits
 `PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-token`
-with `{ tokenRef }` and waits for acknowledgement. A successful Card Pay closes the SDK directly.
+with `{ tokenRef }` and waits for acknowledgement. Both new and saved cards show a brief
+**Payment method selected** confirmation before the SDK closes.
 If verification or selection fails, the chooser shows the error and remains available when the
 session can still be used. The merchant backend uses the confirmed session reference to start payment.
 
@@ -172,7 +202,8 @@ Supply a tokenization `baseUrl` and `getAccessToken`. Your backend obtains the s
   `skipConsent=true`. An empty Get Session token list or an omitted `tncUrl` is valid.
 - iOS and Android submit Add Card from the native form. PAN and CVV remain native. The SDK receives
   allowlisted token list fields. Custom JS transports support the offline chooser, where the native
-  form can open and cancel without sending HTTP. Card 3DS remains outside this POC.
+  form can open, cancel, and preview verification and selection without sending HTTP.
+  Card 3DS remains outside this POC.
 - The Add Wallet mapper preserves the original encrypted payload. The built-in client reports
   `ADD_WALLET_BACKEND_PENDING` before wallet capture until the session-based backend endpoint is
   available. Legacy payment wallet APIs remain separate.

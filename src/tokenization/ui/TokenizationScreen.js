@@ -5,6 +5,7 @@ import MethodList from './MethodList';
 import ConsentNotice from './ConsentNotice';
 import StatusView from './StatusView';
 import SavedTokens from './SavedTokens';
+import SavedTokensSkeleton from './SavedTokensSkeleton';
 import SelectionStatusView from './SelectionStatusView';
 import OrderSummary from './OrderSummary';
 import SecurityIcon from './SecurityIcon';
@@ -51,10 +52,11 @@ const TokenizationScreen = ({
   importStatus,
   orderSummary,
   loadError,
-  canRetryLoad = true,
+  canRetryLoad = false,
   actionsDisabled = false,
   dismissDisabled = false,
   showContinueShopping = false,
+  accessibilityHidden = false,
 }) => {
   const isRtl = String(language || 'en').toLowerCase().startsWith('ar');
   const styles = useMemo(
@@ -74,8 +76,12 @@ const TokenizationScreen = ({
   const labels = modeConfig.labels || {};
   const returnLabel = modeConfig.returnButtonName || t(language, 'CONTINUE_SHOPPING');
   const returnStyle = modeConfig.returnButtonStyle || 'button';
+  const addCardLabel = (hasSavedTokens ? labels.addAnotherCard : labels.addCard) ||
+    t(language, 'ADD_NEW_CARD');
   const methodLabels = {
-    CARD: labels.payByCard || (hasSavedTokens ? labels.addAnotherCard : labels.addCard) || t(language, 'PAY_BY_CARD'),
+    CARD: modeConfig.addCardsBeforePay
+      ? addCardLabel
+      : labels.payByCard || (hasSavedTokens ? labels.addAnotherCard : labels.addCard) || t(language, 'PAY_BY_CARD'),
     APPLE_PAY: t(language, 'APPLE_PAY'),
     GOOGLE_PAY: 'Google Pay',
   };
@@ -90,12 +96,13 @@ const TokenizationScreen = ({
   };
   const showMethods =
     !selectionPending && !selectionConfirmed && (status === VERIFICATION_STATES.READY || status === VERIFICATION_STATES.FAILED);
-  const closeLabel = status === VERIFICATION_STATES.SUCCESS ? t(language, 'CLOSE') : t(language, 'CANCEL');
-  const initializationFailed = Boolean(loadError || savedTokens?.failed || importStatus === 'error');
+  const showLoadError = Boolean(loadError || savedTokens?.failed || importStatus === 'error');
+  const showActionError = Boolean(errorMessage || selectionError ||
+    status === VERIFICATION_STATES.FAILED || selectionStatus === 'failed');
+  const closeLabel = showLoadError || status === VERIFICATION_STATES.SUCCESS ? t(language, 'CLOSE') : t(language, 'CANCEL');
   const showWallets = methods.some(method => method === 'APPLE_PAY' || method === 'GOOGLE_PAY');
   const visibleSections = (modeConfig.sectionOrder || DEFAULT_SECTION_ORDER).filter(section => {
-    if (section === 'tokens') return loadingTokens || hasSavedTokens;
-    if (loadingTokens) return false;
+    if (section === 'tokens') return hasSavedTokens;
     return section === 'wallets' ? showWallets : methods.includes('CARD');
   });
   const payLabel = labels.pay || labels.usePaymentMethod || t(language, 'PAY');
@@ -132,6 +139,8 @@ const TokenizationScreen = ({
         isFullscreen && Platform.OS === 'android' ? { paddingTop: StatusBar.currentHeight || 24 } : null,
       ]}
       testID="tokenization-screen"
+      accessibilityElementsHidden={accessibilityHidden}
+      importantForAccessibility={accessibilityHidden ? 'no-hide-descendants' : 'auto'}
     >
       <ScrollView
         style={styles.scroll}
@@ -140,26 +149,34 @@ const TokenizationScreen = ({
         testID="tokenization-scroll"
       >
         <View style={[styles.paymentPanel, !isFullscreen && styles.sheetPaymentPanel]} testID="tokenization-payment-panel">
-        <BrandingHeader theme={theme} styles={styles} testID="tokenization-branding-header" />
-        <View style={styles.pageTitleRow}>
-          <Text testID="tokenization-page-title" accessibilityRole="header" style={styles.pageTitle}>
-            {labels.pageTitle || t(language, 'SELECT_PAYMENT_METHOD')}
-          </Text>
-          <View testID="tokenization-security-shield" style={styles.securityShield} accessible accessibilityRole="image"
+        <View style={styles.merchantHeader}>
+          <View style={styles.merchantIdentity}>
+            <BrandingHeader theme={theme} styles={styles} testID="tokenization-branding-header" />
+          </View>
+          <View testID="tokenization-security-shield" style={styles.securityShield} accessible
             accessibilityLabel={t(language, 'SECURE_CHECKOUT')}>
-            <SecurityIcon color={theme.layout.colors.shieldStroke} />
+            <SecurityIcon color={theme.layout.colors.success} size={14} />
+            <Text style={styles.securityLabel}>{t(language, 'SECURE_CHECKOUT')}</Text>
           </View>
         </View>
-        {labels.pageSubtitle ? <Text testID="tokenization-page-subtitle" style={styles.pageSubtitle}>{labels.pageSubtitle}</Text> : null}
-        <OrderSummary value={orderSummary} styles={styles} labels={orderLabels}
-          initialExpanded={modeConfig.orderSummaryInitiallyExpanded} />
+        {!selectionConfirmed ? (
+          <Text testID="tokenization-page-title" accessibilityRole="header" style={styles.pageTitle}>
+            {showLoadError ? t(language, 'CHECKOUT_UNAVAILABLE') : labels.pageTitle || t(language, 'SELECT_PAYMENT_METHOD')}
+          </Text>
+        ) : null}
+        {!selectionConfirmed && !showLoadError && labels.pageSubtitle ? <Text testID="tokenization-page-subtitle" style={styles.pageSubtitle}>{labels.pageSubtitle}</Text> : null}
+        {!selectionConfirmed && !loadingTokens && !showLoadError && !showActionError ? <OrderSummary value={orderSummary} styles={styles} labels={orderLabels}
+          initialExpanded={modeConfig.orderSummaryInitiallyExpanded} /> : null}
         {selectionPending || selectionConfirmed ? (
           <SelectionStatusView status={selectionStatus} styles={styles}
             spinnerColor={theme.branding.focusColor}
+            successColor={theme.layout.colors.success}
             loadingLabel={labels.selectionPending || t(language, 'SELECTING_PAYMENT_METHOD')}
             confirmedLabel={labels.selectionSuccessTitle || t(language, 'PAYMENT_METHOD_SELECTED')}
             confirmedMessage={labels.selectionSuccessMessage} />
-        ) : initializationFailed ? (
+        ) : loadingTokens ? (
+          <SavedTokensSkeleton styles={styles} label={t(language, 'SAVED_TOKENS_LOADING')} />
+        ) : showLoadError ? (
           <>
             <ErrorBanner styles={styles} testID="token-import-error">
               {loadError || t(language, 'PAYMENT_INITIALIZATION_FAILED')}
@@ -172,7 +189,7 @@ const TokenizationScreen = ({
           </>
         ) : showMethods ? (
           <>
-            {errorMessage || status === VERIFICATION_STATES.FAILED || selectionStatus === 'failed' ? (
+            {showActionError ? (
               <ErrorBanner styles={styles} testID={selectionStatus === 'failed' ? 'selection-inline-error' : 'tokenization-inline-error'}>
                 {errorMessage || selectionError || labels.selectionError || t(language,
                   selectionStatus === 'failed' ? 'PAYMENT_METHOD_SELECTION_FAILED' : 'PAYMENT_METHOD_ADD_FAILED')}
@@ -213,8 +230,8 @@ const TokenizationScreen = ({
         </Text>
         </View>
       </ScrollView>
-      {!selectionConfirmed && (isFullscreen || showContinueShopping) ? <View style={[styles.returnFooter, !isFullscreen && styles.sheetReturnFooter]}>
-        {showContinueShopping ? (
+      {!selectionConfirmed && (isFullscreen || (showContinueShopping && !showLoadError)) ? <View style={[styles.returnFooter, !isFullscreen && styles.sheetReturnFooter]}>
+        {showContinueShopping && !showLoadError ? (
           <Pressable testID="tokenization-continue-shopping" accessibilityRole={returnStyle === 'link' ? 'link' : 'button'}
             accessibilityLabel={returnLabel} accessibilityState={{ disabled: closeDisabled }} disabled={closeDisabled}
             onPress={() => { if (!closeDisabled) onCancel?.('continueShopping'); }}

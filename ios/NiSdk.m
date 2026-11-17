@@ -3,6 +3,7 @@
 #import "NiTokenizationCard.h"
 #import <React/RCTBridge.h>
 #import <React/RCTEventDispatcher.h>
+#import <React/RCTUtils.h>
 #import <PassKit/PassKit.h>
 #import <UIKit/UIKit.h>
 
@@ -149,8 +150,9 @@ RCT_EXPORT_METHOD(presentTokenizationCard:(NSDictionary *)config result:(RCTResp
         NiTokenizationCard *card = [[NiTokenizationCard alloc] initWithConfig:config ready:^(NSString *requestId) { [self.bridge.eventDispatcher sendDeviceEventWithName:@"NiTokenizationCardReady" body:@{@"requestId": requestId}]; }
           result:^(NSString *status, NSDictionary *response) { self.tokenizationCard = nil; result(@[status, response]); }];
         self.tokenizationCard = card;
-        UIViewController *parent = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
-        NiSdkWhenParentFreeForPresentation(parent, 0, ^{ if (self.tokenizationCard == card) [card presentFrom:parent]; }, ^(NSString *presentedClass) { [card fail]; });
+        // Present over the active checkout modal so dismissing Card reveals the
+        // same chooser without presenting it a second time.
+        [card presentFrom:RCTPresentedViewController()];
     });
 }
 RCT_EXPORT_METHOD(submitTokenizationCard:(NSString *)requestId request:(NSDictionary *)request) {

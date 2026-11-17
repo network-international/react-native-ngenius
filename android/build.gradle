@@ -55,6 +55,9 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    sourceSets {
+        main.assets.srcDir '../src/tokenization/assets/card-schemes'
+    }
 }
 
 repositories {

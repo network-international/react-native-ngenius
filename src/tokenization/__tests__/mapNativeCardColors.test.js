@@ -8,7 +8,7 @@ describe('mapNativeCardColors', () => {
         buttonColour: '#112233',
         paymentFontColour: '#445566',
         mainHeadingColour: '#778899',
-        pageBackgroundColour: '#FAFAFA',
+        backgroundColour: '#FAFAFA',
       },
       { language: 'en' }
     );

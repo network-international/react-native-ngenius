@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Dimensions, PanResponder, Pressable, StyleSheet, UIManager, View, requireNativeComponent } from 'react-native';
+import { Animated, Dimensions, Easing, PanResponder, Platform, Pressable, StyleSheet, UIManager, View, requireNativeComponent } from 'react-native';
 import useReducedMotion from './useReducedMotion';
 
 const { t } = require('../strings');
 const BLUR_VIEW = 'NITokenizationBackdropBlur';
 const DISMISS_DISTANCE = 80;
+export const SHEET_HEIGHT_FRACTION = 0.64;
+export const SHEET_MAX_WIDTH = 560;
 let BlurView;
 
 const BackdropBlur = () => {
@@ -16,24 +18,29 @@ const BackdropBlur = () => {
   ) : null;
 };
 
-const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel, children }) => {
-  const offsetRef = useRef(null);
-  if (offsetRef.current == null) offsetRef.current = new Animated.Value(Dimensions.get('window').height);
-  const offset = offsetRef.current;
+const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel, shown, covered, onSheetLayout, children }) => {
+  const height = Dimensions.get('window').height;
+  const offset = useRef(new Animated.Value(height)).current;
   const reducedMotion = useReducedMotion(null);
   const dismissal = useRef({ dismissDisabled, onCancel, reducedMotion });
   dismissal.current = { dismissDisabled, onCancel, reducedMotion };
 
   useEffect(() => {
+    if (!shown) {
+      offset.setValue(height);
+      return undefined;
+    }
     if (reducedMotion == null) return undefined;
     if (reducedMotion) {
       offset.setValue(0);
       return undefined;
     }
-    const animation = Animated.timing(offset, { toValue: 0, duration: 220, useNativeDriver: true });
+    const animation = Animated.timing(offset, {
+      toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    });
     animation.start();
     return () => animation.stop();
-  }, [offset, reducedMotion]);
+  }, [height, offset, reducedMotion, shown]);
 
   const close = reason => {
     if (!dismissal.current.dismissDisabled) dismissal.current.onCancel?.(reason);
@@ -61,17 +68,23 @@ const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel,
   }, [offset]);
 
   return (
-    <View style={styles.root} testID="tokenization-bottom-sheet">
-      {backdropBlur ? <BackdropBlur /> : null}
-      <Pressable style={[styles.fill, styles.scrim]} testID="tokenization-backdrop" accessibilityRole="button"
-        accessibilityLabel={t(language, 'CANCEL')} accessibilityState={{ disabled: dismissDisabled }}
-        disabled={dismissDisabled} onPress={() => close('backdrop')} />
-      <Animated.View testID="tokenization-sheet-panel" accessibilityViewIsModal
+    <View style={styles.root} testID="tokenization-bottom-sheet"
+      accessibilityElementsHidden={covered} importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'}>
+      <Animated.View style={[styles.fill, { opacity: offset.interpolate({
+        inputRange: [0, height], outputRange: [1, 0], extrapolate: 'clamp',
+      }) }]}>
+        {backdropBlur ? <BackdropBlur /> : null}
+        <Pressable style={[styles.fill, styles.scrim]} testID="tokenization-backdrop" accessibilityRole="button"
+          accessibilityLabel={t(language, 'CANCEL')} accessibilityState={{ disabled: dismissDisabled }}
+          disabled={dismissDisabled} onPress={() => close('backdrop')} />
+      </Animated.View>
+      <Animated.View testID="tokenization-sheet-panel" accessibilityViewIsModal={!covered}
+        onLayout={onSheetLayout}
         onAccessibilityEscape={() => close('back')}
         {...gesture.panHandlers}
         style={[styles.panel, { backgroundColor: theme.branding.surfaceBackground },
-          reducedMotion == null && styles.pending,
-          { transform: [{ translateY: reducedMotion ? 0 : offset }] }]}>
+          covered && Platform.OS === 'android' && styles.coveredPanel,
+          { transform: [{ translateY: offset }] }]}>
         <View testID="tokenization-sheet-handle" style={styles.handleArea} accessible={false}>
           <View style={[styles.handle, { backgroundColor: theme.layout.colors.border }]} />
         </View>
@@ -81,11 +94,11 @@ const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel,
   );
 };
 
-export default function TokenizationPresentation({ theme, language, modeConfig, dismissDisabled = false, onCancel, children }) {
+export default function TokenizationPresentation({ theme, language, modeConfig, dismissDisabled = false, onCancel, shown = true, covered = false, onSheetLayout, children }) {
   if (modeConfig?.presentation === 'fullscreen') return children;
   return (
     <BottomSheet theme={theme} language={language} backdropBlur={modeConfig?.backdropBlur}
-      dismissDisabled={dismissDisabled} onCancel={onCancel}>{children}</BottomSheet>
+      dismissDisabled={dismissDisabled} onCancel={onCancel} shown={shown} covered={covered} onSheetLayout={onSheetLayout}>{children}</BottomSheet>
   );
 }
 
@@ -93,9 +106,10 @@ const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: 'flex-end' },
   fill: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 },
   scrim: { backgroundColor: 'rgba(15, 23, 26, 0.32)' },
-  panel: { height: '64%', width: '100%', maxWidth: 560, alignSelf: 'center',
+  panel: { height: `${SHEET_HEIGHT_FRACTION * 100}%`, width: '100%', maxWidth: SHEET_MAX_WIDTH, alignSelf: 'center',
     overflow: 'hidden', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  pending: { opacity: 0 },
-  handleArea: { height: 42, alignItems: 'center', justifyContent: 'center' },
+  // Android also resizes the chooser behind the native dialog when the keyboard opens.
+  coveredPanel: { opacity: 0 },
+  handleArea: { height: 32, alignItems: 'center', justifyContent: 'center' },
   handle: { width: 36, height: 4, borderRadius: 2 },
 });

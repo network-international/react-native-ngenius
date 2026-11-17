@@ -226,6 +226,24 @@ describe('TokenizationClient', () => {
       });
     });
 
+    it('keeps optional order data from Get Session and drops unrelated fields', async () => {
+      const amount = { currencyCode: 'AED', value: 3910 };
+      const client = createClient({ respond: () => jsonResponse(200, {
+        tokens: [],
+        amount: { ...amount, ignored: true },
+        orderSummary: {
+          items: [{ description: 'Tickets', quantity: 2, totalPrice: amount, ignored: true }],
+          total: amount,
+          ignored: true,
+        },
+      }) });
+      await expect(client.getSession({ sessionRef: SESSION, outletRef: OUTLET })).resolves.toEqual({
+        tokens: [],
+        amount,
+        orderSummary: { items: [{ description: 'Tickets', quantity: 2, totalPrice: amount }], total: amount },
+      });
+    });
+
     it('preserves response tncUrl independently of UI consent mode', async () => {
       const client = createClient({
         respond: () => jsonResponse(200, { tokens: [], tncUrl: 'https://merchant.test/terms' }),

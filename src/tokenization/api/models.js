@@ -206,6 +206,51 @@ const parseSavedTokensResponse = value => {
   return result;
 };
 
+const copySessionAmount = amount => {
+  if (typeof amount?.currencyCode !== 'string') return undefined;
+  const { currencyCode, value, formattedValue } = amount;
+  if (typeof value === 'number' || typeof value === 'string') return { currencyCode, value };
+  if (value == null && typeof formattedValue === 'string') return { currencyCode, formattedValue };
+  return undefined;
+};
+
+const parseTokenizationSession = value => {
+  const session = parseSavedTokensResponse(value);
+  const cardSchemes = value.paymentMethods?.card;
+  if (Array.isArray(cardSchemes)) {
+    session.paymentMethods = { card: cardSchemes.filter(scheme => typeof scheme === 'string') };
+  }
+  const maskPaymentInfo = value.maskPaymentInfo ?? value.order?.merchantAttributes?.maskPaymentInfo;
+  if (maskPaymentInfo === true || maskPaymentInfo === 'true') session.maskPaymentInfo = true;
+  if (maskPaymentInfo === false || maskPaymentInfo === 'false') session.maskPaymentInfo = false;
+  const amount = copySessionAmount(value.amount);
+  if (amount) session.amount = amount;
+
+  const summary = value.orderSummary;
+  if (summary && typeof summary === 'object' && !Array.isArray(summary)) {
+    const orderSummary = {};
+    for (const field of ['shipping', 'tax', 'total']) {
+      const money = copySessionAmount(summary[field]);
+      if (money) orderSummary[field] = money;
+    }
+    if (Array.isArray(summary.items)) {
+      orderSummary.items = summary.items.flatMap(item => {
+        if (typeof item?.description !== 'string') return [];
+        const { description, category, quantity } = item;
+        const totalPrice = copySessionAmount(item.totalPrice);
+        return [{
+          description,
+          ...(typeof category === 'string' ? { category } : {}),
+          ...(typeof quantity === 'string' || typeof quantity === 'number' ? { quantity } : {}),
+          ...(totalPrice ? { totalPrice } : {}),
+        }];
+      });
+    }
+    if (Object.keys(orderSummary).length) session.orderSummary = orderSummary;
+  }
+  return session;
+};
+
 const BROWSER_INFO_FIELDS = [
   'browserAcceptHeader',
   'browserJavaEnabled',
@@ -253,6 +298,7 @@ module.exports = {
   TOKEN_STATUSES,
   parseSavedCardResponse,
   parseSavedTokensResponse,
+  parseTokenizationSession,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 };

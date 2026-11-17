@@ -9,7 +9,7 @@ const {
 const { TOKENIZATION_PATHS, resolveTokenizationUrl } = require('./endpoints');
 const {
   parseSavedCardResponse,
-  parseSavedTokensResponse,
+  parseTokenizationSession,
   mapThreeDSAuthenticationsRequest,
   mapThreeDSChallengeResponseRequest,
 } = require('./models');
@@ -121,7 +121,7 @@ const createTokenizationClient = options => {
           outletRef: args?.outletRef, sessionRef: args?.sessionRef,
         }),
         query: args?.skipConsent === true ? [['consentOff', 'true']] : [],
-        parse: parseSavedTokensResponse,
+        parse: parseTokenizationSession,
         sanitizeError: true,
       }),
     selectToken: createSessionTokenSelector({ request: sendRequest }),
