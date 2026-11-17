@@ -139,6 +139,10 @@ export function HostedButton({ providerKey, logo, testID, order, onResult, disab
     setCovered(true);
     // Android reports form POSTs and server redirects only here, not to onShouldStartLoadWithRequest.
     onNavigate(nativeEvent.url);
+    // The payer chose Cancel and the request has gone to the scheme. Its cancel page can take a
+    // minute to load (Benefit's test host does), and the order stays payable either way, so the
+    // payer is returned now rather than left watching a spinner.
+    if (session.current.payerCancelled) finish();
   };
 
   const onLoadEnd = () => {
