@@ -12,6 +12,36 @@ All notable changes to `@network-international/react-native-ngenius` are documen
   flow: start the checkout, intercept Tabby's return, accept, then read the result off the order.
   Needs `react-native-webview` (optional peer dependency, only for apps that import Tabby).
   No native code changes.
+- **Tamara (buy now, pay later)**: `TamaraButton` from `@network-international/react-native-ngenius/tamara`.
+  A "Pay with Tamara" button for orders that offer Tamara (`TAMARA` in `paymentMethods.apm`).
+  Same flow, sheet and statuses as `TabbyButton`; as on native, both buttons share one
+  implementation and differ only in the provider's name and the reference sent to `/accept`.
+  If the payer cancels on Tamara's page, the button reports `Aborted` without finalising, so the
+  order stays payable.
+- **QPay (NAPS, Qatar)**: `QPayButton` from `@network-international/react-native-ngenius/qpay`.
+  A black "Pay with NAPS" button for QAR orders on QPay outlets. Opens QCB's hosted checkout in a
+  WebView and reports the same statuses as `TabbyButton`. Follows the native SDKs' flow: fetch the
+  QCB form from the gateway, post it from the paypage origin, then read the result off the order.
+  Unlike the native SDKs, a payment held for review is reported as `PostAuthReview`, not `Success`.
+- **KNET (Kuwait)**: `KnetButton` from `@network-international/react-native-ngenius/knet`.
+  A "Pay with KNET" button for KWD orders on KNET outlets. Opens KNET's hosted payment page in a
+  WebView and reports the same statuses as `TabbyButton`. Follows the native SDKs' flow: re-read
+  the order, start KNET, let KNET report to the gateway, then read the result off the order.
+  Cancelling on KNET's page, or closing it before paying, reports `Aborted` and leaves the order
+  payable.
+- **Benefit (Bahrain)**: `BenefitButton` from `@network-international/react-native-ngenius/benefit`.
+  A "Pay with Benefit" button for BHD purchases on Benefit outlets. Works like `KnetButton` (both
+  share one implementation, as on native), except that closing the sheet while Benefit may already
+  be taking the payment keeps the payer on Benefit's page and points them at its Cancel.
+- **AANI (UAE)**: `AaniButton` from `@network-international/react-native-ngenius/aani`.
+  A "Pay with AANI" button for orders that offer AANI. Request to Pay by mobile number, Emirates
+  ID, passport or email (approved in the payer's banking app), or a QR code to scan, as on
+  native; both wait up to 5 minutes for the approval. Pure React Native: no WebView and no new
+  dependencies (the QR code is drawn with views, using the MIT `qrcode-generator` encoder bundled
+  in `vendor/`).
+- All the buttons can be pressed again on the same order (for example after `Aborted`), and
+  several can be shown for one order: the order's one-time code is exchanged once and the
+  session is reused.
 
 ## [3.2.6] - 2026-10-13
 

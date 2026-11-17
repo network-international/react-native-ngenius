@@ -105,6 +105,103 @@ The button only appears when your outlet offers Tabby on the order (`TABBY` in
 `paymentMethods.apm`); otherwise it renders nothing. Tabby is imported from its own entry point,
 so apps that don't use it don't need `react-native-webview`.
 
+## Tamara (buy now, pay later)
+
+A ready-made "Pay with Tamara" button, the same as `TabbyButton`. It also needs
+`react-native-webview` (see Tabby above):
+
+```javascript
+import { TamaraButton } from '@network-international/react-native-ngenius/tamara';
+
+<TamaraButton
+  order={order}
+  onResult={({ status, error }) => {
+    // same statuses as TabbyButton: Success, PostAuthReview, Failed, Aborted, Unavailable
+  }}
+/>
+```
+
+The button only appears when your outlet offers Tamara on the order (`TAMARA` in
+`paymentMethods.apm`); otherwise it renders nothing. An order that offers both can show both
+buttons.
+
+## QPay (NAPS, Qatar)
+
+A ready-made "Pay with NAPS" button. It also needs `react-native-webview` (see Tabby above):
+
+```javascript
+import { QPayButton } from '@network-international/react-native-ngenius/qpay';
+
+<QPayButton
+  order={order}
+  onResult={({ status, error }) => {
+    // same statuses as TabbyButton: Success, PostAuthReview, Failed, Aborted, Unavailable
+  }}
+/>
+```
+
+The button only appears for a QAR order on an outlet with QPay enabled (the order's payment
+carries a `payment:qpay` link); otherwise it renders nothing.
+
+## KNET (Kuwait)
+
+A ready-made "Pay with KNET" button. It also needs `react-native-webview` (see Tabby above):
+
+```javascript
+import { KnetButton } from '@network-international/react-native-ngenius/knet';
+
+<KnetButton
+  order={order}
+  onResult={({ status, error }) => {
+    // same statuses as TabbyButton: Success, PostAuthReview, Failed, Aborted, Unavailable
+  }}
+/>
+```
+
+The button only appears for a KWD order on an outlet with KNET enabled (the order's payment
+carries a `payment:knet` link); otherwise it renders nothing. After `Aborted` the same order can
+be paid again, with KNET or another method.
+
+## Benefit (Bahrain)
+
+A ready-made "Pay with Benefit" button. It also needs `react-native-webview` (see Tabby above):
+
+```javascript
+import { BenefitButton } from '@network-international/react-native-ngenius/benefit';
+
+<BenefitButton
+  order={order}
+  onResult={({ status, error }) => {
+    // same statuses as TabbyButton: Success, PostAuthReview, Failed, Aborted, Unavailable
+  }}
+/>
+```
+
+The button only appears for a BHD `PURCHASE` order on an outlet that lists `BENEFIT` among its
+card schemes; otherwise it renders nothing. While a payment is in progress on Benefit's page,
+closing the sheet keeps the payer there and asks them to use Benefit's own Cancel, so a payment
+Benefit is already taking is not abandoned.
+
+## AANI (UAE)
+
+A ready-made "Pay with AANI" button. Unlike the others it needs no WebView:
+
+```javascript
+import { AaniButton } from '@network-international/react-native-ngenius/aani';
+
+<AaniButton
+  order={order}
+  onResult={({ status, error }) => {
+    // same statuses as TabbyButton: Success, PostAuthReview, Failed, Aborted, Unavailable
+  }}
+/>
+```
+
+The button only appears when your outlet offers AANI on the order (`AANI` in
+`paymentMethods.apm`). The payer enters their mobile number, Emirates ID, passport or email and
+approves the request in their banking app, or (when the outlet offers it) scans a QR code. The
+sheet waits up to 5 minutes for the approval.
+
 ## Quick Links
 
 * [Basic Usage](https://github.com/network-international/react-native-ngenius/wiki/Basic-Usage)
