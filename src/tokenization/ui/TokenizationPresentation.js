@@ -51,8 +51,9 @@ const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel,
       if (dismissal.current.reducedMotion) offset.setValue(0);
       else Animated.spring(offset, { toValue: 0, overshootClamping: true, useNativeDriver: true }).start();
     };
-    return PanResponder.create({
+    const handlers = {
       onMoveShouldSetPanResponder: (_, { dx, dy }) => !dismissal.current.dismissDisabled && dy > 8 && dy > Math.abs(dx),
+      onPanResponderGrant: () => offset.stopAnimation(),
       onPanResponderMove: (_, { dy }) => {
         if (!dismissal.current.reducedMotion) offset.setValue(Math.max(0, dy));
       },
@@ -64,7 +65,16 @@ const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel,
         }
       },
       onPanResponderTerminate: reset,
-    });
+      onPanResponderTerminationRequest: () => false,
+    };
+    return {
+      panel: PanResponder.create(handlers),
+      handle: PanResponder.create({
+        ...handlers,
+        onStartShouldSetPanResponder: () => !dismissal.current.dismissDisabled,
+        onStartShouldSetPanResponderCapture: () => !dismissal.current.dismissDisabled,
+      }),
+    };
   }, [offset]);
 
   return (
@@ -81,12 +91,13 @@ const BottomSheet = ({ theme, language, backdropBlur, dismissDisabled, onCancel,
       <Animated.View testID="tokenization-sheet-panel" accessibilityViewIsModal={!covered}
         onLayout={onSheetLayout}
         onAccessibilityEscape={() => close('back')}
-        {...gesture.panHandlers}
+        {...gesture.panel.panHandlers}
         style={[styles.panel, { backgroundColor: theme.branding.surfaceBackground },
           covered && Platform.OS === 'android' && styles.coveredPanel,
           { transform: [{ translateY: offset }] }]}>
-        <View testID="tokenization-sheet-handle" style={styles.handleArea} accessible={false}>
-          <View style={[styles.handle, { backgroundColor: theme.layout.colors.border }]} />
+        <View testID="tokenization-sheet-handle" style={styles.handleArea} accessible={false}
+          {...gesture.handle.panHandlers}>
+          <View pointerEvents="none" style={[styles.handle, { backgroundColor: theme.layout.colors.border }]} />
         </View>
         {children}
       </Animated.View>

@@ -7,7 +7,7 @@ jest.mock('react-native', () => ({
   AccessibilityInfo: { isReduceMotionEnabled: jest.fn().mockResolvedValue(true) },
   Animated: {
     View: 'AnimatedView',
-    Value: function Value() { this.setValue = jest.fn(); this.interpolate = jest.fn(); },
+    Value: function Value() { this.setValue = jest.fn(); this.interpolate = jest.fn(); this.stopAnimation = jest.fn(); },
     timing: jest.fn(() => ({ start: jest.fn(), stop: jest.fn() })),
     spring: jest.fn(() => ({ start: jest.fn() })),
   },
@@ -54,6 +54,25 @@ it('does not dismiss during an in-flight operation', async () => {
   act(() => sheet.onPanResponderRelease(null, { dy: 120, vy: 1 }));
   act(() => byId('tokenization-backdrop')[0].props.onPress());
   expect(onCancel).not.toHaveBeenCalled();
+});
+
+it('claims drags on the handle before child controls can consume them', async () => {
+  const onCancel = await render();
+  const handle = byId('tokenization-sheet-handle')[0].props;
+  expect(handle.onStartShouldSetPanResponder()).toBe(true);
+  expect(handle.onStartShouldSetPanResponderCapture()).toBe(true);
+  expect(handle.onPanResponderTerminationRequest()).toBe(false);
+  act(() => handle.onPanResponderGrant());
+  act(() => handle.onPanResponderMove(null, { dy: 100 }));
+  act(() => handle.onPanResponderRelease(null, { dy: 100, vy: 0.2 }));
+  expect(onCancel).toHaveBeenCalledWith('swipe');
+});
+
+it('does not claim the handle during an in-flight operation', async () => {
+  await render({ dismissDisabled: true });
+  const handle = byId('tokenization-sheet-handle')[0].props;
+  expect(handle.onStartShouldSetPanResponder()).toBe(false);
+  expect(handle.onStartShouldSetPanResponderCapture()).toBe(false);
 });
 
 it('provides a safe dimmed fallback if blur is unavailable, and uses the registered blur if available', async () => {
