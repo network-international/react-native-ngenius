@@ -7,19 +7,20 @@
 
 const path = require('path');
 
+const appNodeModules = path.resolve(__dirname, 'node_modules');
+const sdkRoot = path.resolve(__dirname, '..');
+
 module.exports = {
   projectRoot: __dirname,
-  watchFolders: [
-    path.resolve(__dirname, '..'),
-  ],
+  watchFolders: [sdkRoot],
   resolver: {
-    nodeModulesPaths: [
-      path.resolve(__dirname, 'node_modules'),
-    ],
+    // Use the app's React copy; resolving the SDK's copy causes Invalid Hook Call.
+    disableHierarchicalLookup: true,
+    nodeModulesPaths: [appNodeModules],
     extraNodeModules: {
-      '@network-international/react-native-ngenius': path.resolve(__dirname, '..'),
-      'react': path.resolve(__dirname, 'node_modules/react'),
-      'react-native': path.resolve(__dirname, 'node_modules/react-native'),
+      '@network-international/react-native-ngenius': sdkRoot,
+      react: path.join(appNodeModules, 'react'),
+      'react-native': path.join(appNodeModules, 'react-native'),
     },
   },
   transformer: {

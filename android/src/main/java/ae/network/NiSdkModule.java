@@ -54,6 +54,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     private Callback isSamsungPayEnabledCallback;
     private Callback googlePayResponseCallback;
     private PaymentsClient paymentsClient;
+    private TokenizationCard tokenizationCard;
 
     private final ActivityEventListener cardActivityEventListener = new BaseActivityEventListener() {
 
@@ -62,6 +63,8 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
             if ((requestCode == CARD_ACTIVITY_REQUEST_CODE && cardPayResponseCallback != null) ||
                     (requestCode == EXECUTE_THREE_DS_TWO_ACTIVITY_REQUEST_CODE && executeThreeDSTwoCallback != null)) {
                 Callback cb = requestCode == CARD_ACTIVITY_REQUEST_CODE ? cardPayResponseCallback : executeThreeDSTwoCallback;
+                if (requestCode == CARD_ACTIVITY_REQUEST_CODE) cardPayResponseCallback = null;
+                else executeThreeDSTwoCallback = null;
                 // This is the card payment intent
                 if (resultCode == Activity.RESULT_OK) {
                     CardPaymentData cardPaymentData = CardPaymentData.getFromIntent(data);
@@ -85,6 +88,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                 }
             } else if (requestCode == GOOGLE_PAY_REQUEST_CODE && googlePayResponseCallback != null) {
                 Callback cb = googlePayResponseCallback;
+                googlePayResponseCallback = null;
                 switch (resultCode) {
                     case Activity.RESULT_OK:
                         if (data != null) {
@@ -102,7 +106,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                                         cb.invoke("Failed", "Empty payment data");
                                     }
                                 } catch (JSONException e) {
-                                    cb.invoke("Failed", "Failed to parse payment data: " + e.getMessage());
+                                    cb.invoke("Failed", "Invalid wallet response");
                                 }
                             } else {
                                 cb.invoke("Failed", "Payment data is null");
@@ -139,6 +143,50 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
     @Override
     public String getName() {
         return "NiSdk";
+    }
+
+    @ReactMethod
+    public void presentTokenizationCard(ReadableMap config, Callback result) {
+        final JSONObject options = new JSONObject(config.toHashMap());
+        reactContext.runOnUiQueueThread(() -> {
+            Activity activity = getCurrentActivity();
+            if (activity == null || activity.isFinishing() || activity.isDestroyed() || tokenizationCard != null) { result.invoke("Failed", Arguments.createMap()); return; }
+            Callback ready = args -> {
+                WritableMap event = Arguments.createMap(); event.putString("requestId", options.optString("requestId"));
+                reactContext.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                    .emit("NiTokenizationCardReady", event);
+            };
+            Callback finish = args -> { tokenizationCard = null; result.invoke(args); };
+            try {
+                tokenizationCard = new TokenizationCard(activity, options, ready, finish);
+                tokenizationCard.show();
+            } catch (RuntimeException ignored) {
+                if (tokenizationCard != null) tokenizationCard.fail();
+                else result.invoke("Failed", Arguments.createMap());
+            }
+        });
+    }
+
+    @ReactMethod
+    public void submitTokenizationCard(String id, ReadableMap request) {
+        final JSONObject options = new JSONObject(request.toHashMap());
+        reactContext.runOnUiQueueThread(() -> {
+            if (tokenizationCard != null && tokenizationCard.requestId.equals(id)) tokenizationCard.submit(options);
+        });
+    }
+
+    @ReactMethod
+    public void cancelTokenizationCard(String id) {
+        reactContext.runOnUiQueueThread(() -> {
+            if (tokenizationCard != null && tokenizationCard.requestId.equals(id)) tokenizationCard.cancel();
+        });
+    }
+
+    @ReactMethod
+    public void failTokenizationCard(String id) {
+        reactContext.runOnUiQueueThread(() -> {
+            if (tokenizationCard != null && tokenizationCard.requestId.equals(id)) tokenizationCard.fail();
+        });
     }
 
     @ReactMethod
@@ -203,7 +251,12 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
 
     @ReactMethod
     public void initiateSamsungPay(ReadableMap orderResponse, String merchantName, String serviceId, Callback samsungPayResponseCallback) {
-        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()), serviceId);
+        Activity currentActivity = this.getCurrentActivity();
+        if (currentActivity == null) {
+            isSamsungPayEnabledCallback.invoke(false);
+            return;
+        }
+        PaymentClient paymentClient = new PaymentClient(currentActivity, serviceId);
         Order order = Utils.constructOrderFromReadableMap(orderResponse);
         this.samsungPayResponseCallback = samsungPayResponseCallback;
         paymentClient.launchSamsungPay(order, merchantName, this);
@@ -225,7 +278,12 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
 
     @ReactMethod
     public void isSamsungPayEnabled(String serviceId, Callback isSamsungPayEnabledCallback) {
-        PaymentClient paymentClient = new PaymentClient(Objects.requireNonNull(this.getCurrentActivity()), serviceId);
+        Activity currentActivity = this.getCurrentActivity();
+        if (currentActivity == null) {
+            isSamsungPayEnabledCallback.invoke(false);
+            return;
+        }
+        PaymentClient paymentClient = new PaymentClient(currentActivity, serviceId);
         this.isSamsungPayEnabledCallback = isSamsungPayEnabledCallback;
         paymentClient.getSupportedPaymentMethods(supportedPaymentTypesListeners);
     }
@@ -301,6 +359,10 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
 
     @ReactMethod
     public void initiateGooglePay(ReadableMap googlePayConfig, ReadableMap orderDetails, Callback googlePayCallback) {
+        if (googlePayResponseCallback != null) {
+            googlePayCallback.invoke("Failed", "Wallet already open");
+            return;
+        }
         try {
             if (googlePayConfig == null || orderDetails == null) {
                 googlePayCallback.invoke("Failed", "Configuration or order details are missing");
@@ -378,15 +440,18 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                     GOOGLE_PAY_REQUEST_CODE
                 );
             } else {
+                googlePayResponseCallback = null;
                 googlePayCallback.invoke("Failed", "Failed to create payment request");
             }
         } catch (JSONException e) {
             if (googlePayCallback != null) {
-                googlePayCallback.invoke("Failed", "JSON error: " + e.getMessage());
+                googlePayResponseCallback = null;
+                googlePayCallback.invoke("Failed", "Invalid wallet configuration");
             }
         } catch (Exception e) {
             if (googlePayCallback != null) {
-                googlePayCallback.invoke("Failed", "Error: " + e.getMessage());
+                googlePayResponseCallback = null;
+                googlePayCallback.invoke("Failed", "Wallet could not be opened");
             }
         }
     }

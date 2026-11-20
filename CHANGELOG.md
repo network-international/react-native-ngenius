@@ -2,6 +2,33 @@
 
 All notable changes to `@network-international/react-native-ngenius` are documented in this file.
 
+## [Unreleased]
+
+### Added
+- Tokenization chooser: first usable saved method selected by default, separate Verified status,
+  wallet identity, PayPage SVG scheme artwork, loading/retry feedback and native Card Back.
+- Optional `modeConfig` labels and return control; NI defaults apply when omitted.
+- Opt-in draft session selected-token adapter with progress, HTTP 200 confirmation and status-only
+  completion. Final backend contract and live session integration remain pending.
+- Optional `orderDetails` amount and collapsible summary with minor-unit string support,
+  supplied-data-only rendering and EN/FR/AR language fallback.
+- Configurable title/subtitle, summary labels, initial summary expansion, valid Privacy Policy link
+  and optional factual NI security note.
+
+### Changed
+- Compact hosted-preview-style chooser with green shield and NI footer. Card and wallet rows now
+  lead with the masked funding card, a separate zero-padded expiry line and source tag.
+- Replace the consent checkbox with click-to-agree: each actionable Add Card/Wallet click records
+  acceptance for that attempt. Existing selection, cancellation and legal links do not accept.
+  `skipConsent=true` hides the notice and keeps `NOT_COLLECTED` semantics.
+- Remove successful-list loaded text; preserve native Card/wallet capture and legacy PAYMENT APIs.
+
+### Integration notes
+- Install a compatible `react-native-svg` peer and rebuild the native app. SimpleIntegration uses
+  13.4.0 with React Native 0.70.3. SDK and native dependency release versions are unchanged.
+- DEV/UAT Add Card follows Hossam's 6 Nov guidance; the new deployed version and live retest are
+  pending. Screenshot mocks do not validate backend persistence or payment.
+
 ## [3.2.9] - 2026-11-02
 
 ### Upgrade notes
