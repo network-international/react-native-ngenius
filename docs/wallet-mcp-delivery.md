@@ -8,7 +8,7 @@ Status reviewed on 25 November 2026. These are delivery dependencies, not a clai
 - Apple Pay capture runs on iOS and Google Pay capture on Android. Capture uses zero in the current session currency; merchant payment remains a separate backend operation.
 - Wallet buttons require both native readiness and an explicitly capable Add Wallet adapter. The built-in client remains disabled until its session endpoint is confirmed.
 - Explicit Apple `supportedNetworks` and Google `allowedCardNetworks` are native capture settings, separate from `paymentMethods.card`. A wallet-only outlet's empty card list does not establish which networks its wallet can use. The session delivery shape for wallet settings still requires confirmation.
-- BFF master `1ec0a373` has `PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-payment-data` with `{ tokenRef, currency? }`. SDK `selectToken` now uses this route, with no automatic legacy-route retry.
+- Specification v29 now documents `PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-payment-data` and a `{ tokenRef, currency }` example; the BFF DTO keeps currency optional. SDK `selectToken` already uses this route, with no automatic legacy-route retry.
 - Get Session has a boolean `isMcpSelected`. The client preserves explicit booleans. It does not turn this into MCP eligibility, a selected currency, or a rate.
 
 ## Backend contracts required
@@ -19,11 +19,17 @@ Status reviewed on 25 November 2026. These are delivery dependencies, not a clai
 | Wallet configuration | Apple and Google public settings delivered for the outlet/session, including permitted wallet networks | Open the correct native sheet without moving business configuration into SDK initialization |
 | MCP initialization | Explicit eligibility/configuration and the authorized currency-list/quote operations | Load applicable currencies without treating an unselected flag as disabled MCP |
 | MCP state | Selected currency/quote in Get Session, validity rules and the merchant callback shape | Restore the shopper's choice and keep displayed and persisted currency consistent |
-| UAT | Deployment confirmation for selected-payment-data and an outlet enabled for wallets and MCP | Validate real contracts instead of treating fixtures as backend acceptance |
+| UAT | Eligible token and configured outlet for successful selection/currency persistence, plus wallet and MCP setup | The route is reachable; the negative route check is not proof of successful persistence or payment |
 
 The older generic save-wallet diagram returns a single token reference and does not define a session route. Add Card's `encryptedPayload` is a card JWE alternative to the card object; it must not be reused for Apple/Google payloads without a backend contract.
 
 Existing PayPage MCP retrieves currencies and quotes through Forex APIs. The tokenization token's authority to call those APIs and the required session context have not been established. Existing PayPage applies MCP to eligible card SALE/PURCHASE flows and restores the original currency when switching to a wallet. Those rules must be preserved; the current AUTH card demo is not evidence of MCP eligibility.
+
+## UAT check after specification v29
+
+The active Anzhelika UAT environment returned HTTP 200 for both credential refreshes, 201 for Create Session, and 200 for Get Session. Get Session returned `advisedTokens: []`, `paymentMethods: {}`, and the requested AUTH order amount/summary. A PUT to the new route with a UUID outside that empty session and the session currency returned the expected HTTP 400 `tokenNotInSession`. No token was selected and no merchant Pay was submitted. The normal Postman request was restored after this negative check.
+
+This confirms route availability and a session membership rejection. It does not confirm successful currency persistence. The outlet still requires usable payment configuration and an eligible session token. No session Add Wallet or MCP lookup/quote contract was added in specification v29.
 
 ## Remaining implementation and acceptance
 

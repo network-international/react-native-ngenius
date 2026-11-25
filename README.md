@@ -200,8 +200,11 @@ session can still be used. The merchant backend uses the confirmed session refer
 The client operation remains named `selectToken` for compatibility. It accepts an optional
 `currency` (three uppercase letters) and sends `{ tokenRef, currency }` when supplied. It never
 infers a currency from initialization props or retries the earlier route after an error.
-This route and DTO are present in PayPage BFF master at `1ec0a373`; deployment must be confirmed
-for the environment being tested. The checkout UI does not yet offer MCP currency selection.
+This route and `{ tokenRef, currency }` example are documented in the
+[Tokenization API Specification v29](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5230821378).
+UAT route validation returned the expected `400 tokenNotInSession` for a token outside a fresh
+empty session. Successful selection and currency persistence still require an eligible token
+and configured outlet. The checkout UI does not yet offer MCP currency selection.
 Get Session's boolean `isMcpSelected` is retained by the client, but it is not an eligibility
 flag, a currency list or a conversion quote. See [wallet and MCP delivery dependencies](docs/wallet-mcp-delivery.md).
 
