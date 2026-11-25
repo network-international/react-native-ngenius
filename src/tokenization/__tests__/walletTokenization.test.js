@@ -148,6 +148,25 @@ it('does not start a wallet action for a closed session', async () => {
   expect(addWallet).not.toHaveBeenCalled();
 });
 
+it.each(['consent', 'verifying'])('does not submit Add Wallet if the %s callback closes the journey', async boundary => {
+  let active = true;
+  const getConsentData = jest.fn(() => {
+    if (boundary === 'consent') active = false;
+    return skipped();
+  });
+  const onVerifying = jest.fn(() => { active = false; });
+  const { addWallet, initiateGooglePay, run } = setup({
+    getConsentData,
+    onVerifying,
+    isCurrent: () => active,
+  });
+  expect(await run()).toEqual({ state: VERIFICATION_STATES.READY });
+  expect(initiateGooglePay).toHaveBeenCalledTimes(1);
+  expect(getConsentData).toHaveBeenCalledTimes(1);
+  expect(onVerifying).toHaveBeenCalledTimes(boundary === 'verifying' ? 1 : 0);
+  expect(addWallet).not.toHaveBeenCalled();
+});
+
 it('returns to READY without a request when the shopper aborts capture', async () => {
   const { addWallet, initiateGooglePay, onVerifying, run } = setup();
   initiateGooglePay.mockRejectedValue({ status: 'Aborted' });

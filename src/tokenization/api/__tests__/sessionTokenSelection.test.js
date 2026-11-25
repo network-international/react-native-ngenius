@@ -16,7 +16,7 @@ const setup = ({ response = { status: 200, text: '' }, getAccessToken, transport
   return { client, provider, send };
 };
 
-describe('session token selection', () => {
+describe('session payment selection', () => {
   it('PUTs only tokenRef to the supplied session path, with just-in-time Access-Token', async () => {
     let tokenNumber = 0;
     const provider = jest.fn(async () => `fixture-access-${++tokenNumber}`);
@@ -30,7 +30,7 @@ describe('session token selection', () => {
     })).resolves.toEqual({ status: 'SELECTED' });
     await client.selectToken(args);
     expect(send.mock.calls[0][0]).toEqual({
-      url: `${BASE_URL}/api/outlets/outlet%201%2Fa/payment-tokenization-sessions/session-1/selected-token`,
+      url: `${BASE_URL}/api/outlets/outlet%201%2Fa/payment-tokenization-sessions/session-1/selected-payment-data`,
       method: 'PUT',
       headers: { 'Access-Token': 'fixture-access-1', 'Content-Type': 'application/json' },
       body: { tokenRef },
@@ -41,6 +41,39 @@ describe('session token selection', () => {
     expect(send.mock.calls[1][0].headers['Access-Token']).toBe('fixture-access-2');
     expect(Object.keys(send.mock.calls[0][0].body)).toEqual(['tokenRef']);
   });
+
+  it.each(['AED', 'USD', 'JPY'])('includes the selected currency %s without other caller fields', async currency => {
+    const { client, send } = setup();
+    await expect(client.selectToken({
+      ...args, currency, isMcpSelected: true, conversionRate: 'private-rate',
+    })).resolves.toEqual({ status: 'SELECTED' });
+    expect(send.mock.calls[0][0]).toMatchObject({
+      url: `${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1/selected-payment-data`,
+      method: 'PUT', body: { tokenRef, currency },
+    });
+    expect(Object.keys(send.mock.calls[0][0].body)).toEqual(['tokenRef', 'currency']);
+  });
+
+  it('omits an undefined currency instead of selecting a default', async () => {
+    const { client, send } = setup();
+    await client.selectToken({ ...args, currency: undefined });
+    expect(send.mock.calls[0][0].body).toEqual({ tokenRef });
+    expect(send.mock.calls[0][0].body).not.toHaveProperty('currency');
+  });
+
+  it.each([null, '', 'usd', ' USD', 'USD ', 'US', 'USDD', 'U1D', 'USD\n', 'USＤ', 123, {}, ['USD']])
+    ('rejects an invalid currency before authorization or transport (%#)', async currency => {
+      const { client, provider, send } = setup();
+      const error = await client.selectToken({ ...args, currency }).catch(value => value);
+      expect(error).toBeInstanceOf(TokenizationApiError);
+      expect(error.toJSON()).toEqual({
+        name: 'TokenizationApiError', status: 0, code: 'INVALID_CURRENCY',
+        message: 'currency must be a three-letter uppercase ISO code', errors: [],
+      });
+      expect(JSON.stringify(error)).not.toContain(tokenRef);
+      expect(provider).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    });
 
   it.each(['', '<html>ignored</html>', JSON.stringify({ tokenRef, cardDetails: 'private-echo' })])
     ('returns status only for HTTP200 without interpreting the response body (%#)', async text => {
@@ -89,13 +122,25 @@ describe('session token selection', () => {
     expect(send.mock.calls[0][0].body).toEqual({ tokenRef: 'tok_1' });
   });
 
+  it('does not fall back to a historical endpoint when selection is rejected', async () => {
+    const { client, send, provider } = setup({ response: { status: 404, text: 'private-response' } });
+    await expect(client.selectToken({ ...args, currency: 'USD' })).rejects.toMatchObject({
+      status: 404, code: 'SESSION_SELECTION_FAILED',
+    });
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].url).toBe(
+      `${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1/selected-payment-data`
+    );
+  });
+
   it('rejects a duplicate submit for the same session while the first request is in flight', async () => {
     let complete;
     const pending = new Promise(resolve => { complete = resolve; });
     const { client, send, provider } = setup({ transport: jest.fn(() => pending) });
-    const selection = client.selectToken(args);
-    await expect(client.selectToken(args)).rejects.toMatchObject({ code: 'SESSION_SELECTION_IN_PROGRESS' });
-    await expect(client.selectToken({ ...args, tokenRef: 'another-token' })).rejects.toMatchObject({
+    const selection = client.selectToken({ ...args, currency: 'AED' });
+    await expect(client.selectToken({ ...args, currency: 'USD' })).rejects.toMatchObject({ code: 'SESSION_SELECTION_IN_PROGRESS' });
+    await expect(client.selectToken({ ...args, tokenRef: 'another-token', currency: 'JPY' })).rejects.toMatchObject({
       code: 'SESSION_SELECTION_IN_PROGRESS',
     });
     expect(provider).toHaveBeenCalledTimes(1);
@@ -144,11 +189,11 @@ describe('session token selection', () => {
       baseUrl: `${BASE_URL}/`, getAccessToken: async () => 'fixture-access',
       fetchImpl,
     });
-    await expect(client.selectToken(args)).resolves.toEqual({ status: 'SELECTED' });
+    await expect(client.selectToken({ ...args, currency: 'USD' })).resolves.toEqual({ status: 'SELECTED' });
     expect(readBody).not.toHaveBeenCalled();
-    expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1/selected-token`, {
+    expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1/selected-payment-data`, {
       method: 'PUT', headers: { 'Access-Token': 'fixture-access', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tokenRef }),
+      body: JSON.stringify({ tokenRef, currency: 'USD' }),
       signal: expect.objectContaining({ aborted: false }),
     });
   });

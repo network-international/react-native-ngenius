@@ -49,7 +49,7 @@ const TOKENIZATION_PATHS = {
   getSession: sessionPath,
   // PAN/CVV stay native; this path is used only to prepare a native request.
   addCard: args => `${sessionPath(args)}/cards`,
-  selectToken: args => `${sessionPath(args)}/selected-token`,
+  selectToken: args => `${sessionPath(args)}/selected-payment-data`,
   threeDSAuthentications: (ids) => `${threeDSPath(ids)}/authentications`,
   threeDSChallengeResponse: (ids) => `${threeDSPath(ids)}/challenge-response`,
 };

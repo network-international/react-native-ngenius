@@ -2,7 +2,7 @@
 
 Record the build SHA and artifact name. This guide covers SDK 3.2.9 for NINGG-34386 (PR #75).
 
-Record the environment and backend deployment when testing Add Card and selected-token persistence.
+Record the environment and backend deployment when testing Add Card and selected-payment-data persistence.
 
 The SDK opens at **Select payment method**, as a bottom sheet by default. The card list uses masked numbers and shows `MM/YY` when available. An empty list still offers **Pay by card**. Use a build matching the current PR SHA. Offline screenshots use synthetic cards and fixture responses.
 
@@ -14,7 +14,7 @@ The SDK opens at **Select payment method**, as a bottom sheet by default. The ca
 
 **Presentation and branding.** Switch between **Harbour Travel** and **Citrus Market** to compare the PayPage-style `branding` palettes. Check the default bottom sheet, blur opt-in on a platform that supports it, and fullscreen. Dismiss the sheet by tapping outside or swiping down. Fullscreen has a Cancel control. Enable **Pay by card first** to test a custom section order. Enable **Show Continue Shopping** to pass `paymentMethods={['CONTINUE_SHOPPING']}`; the card and saved methods must stay available. The demo passes no `order` or method list, so methods and schemes come only from the session. Enable **Show card security note** to display the card safety line. Cycle EN, FR and AR to check localized labels and RTL.
 
-**Card.** **Pay by card** opens the native form on both platforms. Check invalid or expired fields and Back, then use approved sandbox test data and a fresh Access-Token. Keep PAN and CVV inside the native form. A successful verification returns the updated list in the same session. The SDK confirms the new method with `PUT selected-token`, shows progress, and closes after acknowledgment with no separate success screen. The card form shows only the scheme logos listed in Get Session `paymentMethods.card` (top level of the response); an explicit empty list hides Pay by card. On failure, the chooser reappears with an actionable message and no failed card in the list.
+**Card.** **Pay by card** opens the native form on both platforms. Check invalid or expired fields and Back, then use approved sandbox test data and a fresh Access-Token. Keep PAN and CVV inside the native form. A successful verification returns the updated list in the same session. The SDK confirms the new method with `PUT selected-payment-data`, shows progress, and closes after acknowledgment with no separate success screen. The card form shows only the scheme logos listed in Get Session `paymentMethods.card` (top level of the response); an explicit empty list hides Pay by card. On failure, the chooser reappears with an actionable message and no failed card in the list.
 
 **Token type.** The live QA screen uses `ONCE_OFF` to match the Card handover. The SDK still supports both `ONCE_OFF` and `PERMANENT`. Get Session carries no usage type.
 
@@ -35,6 +35,6 @@ Developer build: copy `src/config.example.js` to ignored `src/config.js` (public
 
 **Slow selection preview (offline mock).** Enable Offline UI preview, tap Scenario until
 **Slow selection · offline mock**, then open the preview, choose a saved card and tap Pay.
-The selected-token fixture waits two seconds: progress must remain visible and repeat Pay/dismissal
+The selection fixture waits two seconds: progress must remain visible and repeat Pay/dismissal
 must be blocked until acknowledgement. Then the SDK closes with result 200, without a happy screen.
 This scenario uses the specification-shaped session fixture and makes no UAT request. Live timing is unchanged.

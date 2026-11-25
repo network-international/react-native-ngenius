@@ -9,6 +9,30 @@
 @end
 
 @implementation NiTokenizationApplePay
++ (NSArray<PKPaymentNetwork> *)networksForConfig:(NSDictionary *)config {
+    id configured = config[@"supportedNetworks"];
+    if (!configured) return @[PKPaymentNetworkVisa, PKPaymentNetworkMasterCard, PKPaymentNetworkAmex];
+    if (![configured isKindOfClass:NSArray.class] || [configured count] == 0) return nil;
+    NSMutableDictionary<NSString *, PKPaymentNetwork> *available = [NSMutableDictionary new];
+    for (PKPaymentNetwork network in PKPaymentRequest.availableNetworks) available[network.uppercaseString] = network;
+    NSMutableArray<PKPaymentNetwork> *networks = [NSMutableArray new];
+    for (id value in configured) {
+        if (![value isKindOfClass:NSString.class]) return nil;
+        NSString *key = [[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] uppercaseString];
+        if ([key isEqualToString:@"UNIONPAY"]) key = @"CHINAUNIONPAY";
+        PKPaymentNetwork network = available[key];
+        if (!network) return nil;
+        if (![networks containsObject:network]) [networks addObject:network];
+    }
+    return networks;
+}
+
++ (BOOL)isSupported:(NSDictionary *)config {
+    NSArray<PKPaymentNetwork> *networks = [self networksForConfig:config];
+    return networks.count > 0 && [PKPaymentAuthorizationViewController canMakePaymentsUsingNetworks:networks
+                                                                                   capabilities:PKMerchantCapability3DS];
+}
+
 - (void)presentFrom:(UIViewController *)parent config:(NSDictionary *)config
         completion:(void (^)(NSString *, NSString *))completion {
     self.completion = completion;
@@ -16,7 +40,10 @@
     NSString *country = config[@"countryCode"];
     NSString *currency = config[@"currencyCode"];
     NSString *amount = config[@"amount"];
+    NSArray<PKPaymentNetwork> *networks = [self.class networksForConfig:config];
     if (!parent || parent.presentedViewController ||
+        networks.count == 0 ||
+        (config[@"supportedNetworks"] && ![self.class isSupported:config]) ||
         ![merchant isKindOfClass:NSString.class] || merchant.length == 0 ||
         ![country isKindOfClass:NSString.class] || country.length != 2 ||
         ![currency isKindOfClass:NSString.class] || currency.length != 3 ||
@@ -35,7 +62,7 @@
     request.countryCode = country;
     request.currencyCode = currency;
     request.merchantCapabilities = PKMerchantCapability3DS;
-    request.supportedNetworks = @[PKPaymentNetworkVisa, PKPaymentNetworkMasterCard, PKPaymentNetworkAmex];
+    request.supportedNetworks = networks;
     NSString *label = [config[@"merchantName"] isKindOfClass:NSString.class] ? config[@"merchantName"] : @"Total";
     request.paymentSummaryItems = @[[PKPaymentSummaryItem summaryItemWithLabel:label amount:total]];
     self.controller = [[PKPaymentAuthorizationViewController alloc] initWithPaymentRequest:request];

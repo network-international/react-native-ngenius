@@ -17,7 +17,7 @@ jest.mock('../ui/TokenizationPresentation', () => {
   const React = require('react');
   return ({ children, ...props }) => React.createElement('TokenizationPresentation', props, children);
 });
-jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn(), captureGooglePayToken: jest.fn() }));
+jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn(), captureGooglePayToken: jest.fn(), isApplePayTokenizationSupported: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../nativePayments', () => ({
   isApplePaySupported: jest.fn().mockResolvedValue(false),
   isGooglePaySupported: jest.fn().mockResolvedValue(false),
@@ -31,7 +31,7 @@ const { act } = renderer;
 const Component = require('../NgeniusTokenization').default;
 const { startNativeCardTokenization } = require('../nativeCards');
 const native = require('../../nativePayments');
-const { captureApplePayToken, captureGooglePayToken } = require('../nativeWallets');
+const { captureApplePayToken, captureGooglePayToken, isApplePayTokenizationSupported } = require('../nativeWallets');
 const { UsageType } = require('../usageType');
 const { createTokenizationClient } = require('../api/TokenizationClient');
 const card = {
@@ -333,7 +333,7 @@ it('keeps real adapter selection failure open without exposing response bodies',
   expect(modal().visible).toBe(true);
   expect(transport.mock.calls.map(([request]) => [request.method, request.url])).toEqual([
     ['GET', 'https://tokenization.test/api/outlets/outlet/payment-tokenization-sessions/session-1?consentOff=true'],
-    ['PUT', 'https://tokenization.test/api/outlets/outlet/payment-tokenization-sessions/session-1/selected-token'],
+    ['PUT', 'https://tokenization.test/api/outlets/outlet/payment-tokenization-sessions/session-1/selected-payment-data'],
   ]);
   expect(provider).toHaveBeenCalledTimes(2);
   expect(screen().selectionError).not.toContain(card.tokenRef);
@@ -1025,4 +1025,31 @@ it('reports a host close once when the shopper never tapped Cancel', async () =>
     statusCode: 499, message: 'Checkout closed by the merchant app.', sessionID: 'session-1',
   });
   expect(props.onCancel).not.toHaveBeenCalled();
+});
+
+
+it('checks explicit Apple networks before offering tokenization and does not broaden to generic device readiness', async () => {
+  const { Platform } = require('react-native');
+  const previousPlatform = Platform.OS;
+  const config = { merchantIdentifier: 'merchant.test', countryCode: 'AE', supportedNetworks: ['VISA'] };
+  Platform.OS = 'ios';
+  native.isApplePaySupported.mockResolvedValue(true);
+  isApplePayTokenizationSupported.mockResolvedValue(false);
+  const client = defaultClient();
+  client.getSession.mockResolvedValue({ tokens: [], paymentMethods: { wallet: ['APPLE_PAY'] }, amount: { currencyCode: 'AED', value: 1500 } });
+  try {
+    await open({ tokenizationClient: client, applePayConfig: config });
+    expect(isApplePayTokenizationSupported).toHaveBeenCalledWith(config);
+    expect(native.isApplePaySupported).not.toHaveBeenCalled();
+    expect(screen().methods).toEqual([]);
+    await act(async () => { tree.unmount(); });
+    tree = undefined;
+    isApplePayTokenizationSupported.mockResolvedValue(true);
+    await open({ tokenizationClient: client, applePayConfig: config });
+    expect(screen().methods).toEqual(['APPLE_PAY']);
+  } finally {
+    Platform.OS = previousPlatform;
+    native.isApplePaySupported.mockResolvedValue(false);
+    isApplePayTokenizationSupported.mockResolvedValue(false);
+  }
 });

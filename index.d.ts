@@ -53,6 +53,16 @@ export interface GooglePayConfig {
   /** Google Pay merchant ID (required in PRODUCTION). */
   merchantId?: string;
   merchantOrigin?: string;
+  /** Optional native card networks; readiness and capture use the same explicit list. */
+  allowedCardNetworks?: string[];
+  /** Optional ISO 3166-1 alpha-2 processing/acquirer-bank country for transactionInfo. */
+  countryCode?: string;
+}
+
+/** Public native capture settings for tokenization; not a Get Session response DTO. */
+export interface TokenizationApplePayConfig extends ApplePayConfig {
+  /** Explicit native wallet networks. Invalid or empty lists do not fall back to defaults. */
+  supportedNetworks?: string[];
 }
 
 export interface GooglePaySuccess extends PaymentSuccess {
@@ -182,6 +192,8 @@ export interface TokenizationSession extends TokenizationTokenList {
   paymentMethods?: { card?: string[]; wallet?: string[] };
   /** When explicitly false, show the entered card number on the native form. */
   maskPaymentInfo?: boolean;
+  /** Backend selection flag; does not establish MCP eligibility, currency options or a quote. */
+  isMcpSelected?: boolean;
   /** Optional checkout amount supplied by Get Session. */
   amount?: TokenizationMoney;
   orderSummary?: TokenizationOrderDetails['orderSummary'];
@@ -189,7 +201,7 @@ export interface TokenizationSession extends TokenizationTokenList {
 
 export interface TokenizationClient {
   getSession(args: { outletRef: string; sessionRef: string; skipConsent?: boolean }): Promise<TokenizationSession>;
-  selectToken(args: { outletRef: string; sessionRef: string; tokenRef: string }): Promise<{ status: 'SELECTED' }>;
+  selectToken(args: { outletRef: string; sessionRef: string; tokenRef: string; currency?: string }): Promise<{ status: 'SELECTED' }>;
   /** Wallet capture requires explicit support. The built-in client is backend-pending. */
   readonly supportsAddWallet?: boolean;
   addWallet(args: {
@@ -262,7 +274,7 @@ export interface NgeniusTokenizationProps {
   /** Session reference obtained by the merchant backend before opening the SDK. */
   sessionRef: string;
   modeConfig?: TokenizationModeConfig;
-  applePayConfig?: ApplePayConfig;
+  applePayConfig?: TokenizationApplePayConfig;
   googlePayConfig?: GooglePayConfig;
   onError?: (result: TokenizationResult) => void;
   onCancel?: () => void;

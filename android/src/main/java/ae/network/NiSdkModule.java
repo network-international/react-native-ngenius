@@ -309,6 +309,11 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
         return Wallet.getPaymentsClient(this.reactContext, walletOptions);
     }
 
+    private JSONArray googlePayNetworks(ReadableMap config) {
+        return new JSONArray(GooglePayConfiguration.networks(config.hasKey("allowedCardNetworks")
+            ? config.getArray("allowedCardNetworks").toArrayList() : null));
+    }
+
     @ReactMethod
     public void isGooglePaySupported(ReadableMap googlePayConfig, Callback callback) {
         try {
@@ -316,6 +321,8 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
                 callback.invoke(false);
                 return;
             }
+
+            if (googlePayConfig.hasKey("countryCode")) GooglePayConfiguration.country(googlePayConfig.getString("countryCode"));
 
             String environment = googlePayConfig.hasKey("environment") ? 
                     googlePayConfig.getString("environment") : "TEST";
@@ -334,7 +341,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
             
             JSONObject parameters = new JSONObject();
             parameters.put("allowedAuthMethods", new JSONArray().put("PAN_ONLY").put("CRYPTOGRAM_3DS"));
-            parameters.put("allowedCardNetworks", new JSONArray().put("VISA").put("MASTERCARD"));
+            parameters.put("allowedCardNetworks", googlePayNetworks(googlePayConfig));
             
             cardPaymentMethod.put("parameters", parameters);
             allowedPaymentMethods.put(cardPaymentMethod);
@@ -392,6 +399,9 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
             transactionInfo.put("totalPriceStatus", "FINAL");
             transactionInfo.put("totalPrice", orderDetails.getString("amount"));
             transactionInfo.put("currencyCode", orderDetails.getString("currencyCode"));
+            if (googlePayConfig.hasKey("countryCode")) {
+                transactionInfo.put("countryCode", GooglePayConfiguration.country(googlePayConfig.getString("countryCode")));
+            }
             paymentDataRequestJson.put("transactionInfo", transactionInfo);
 
             JSONObject merchantInfo = new JSONObject();
@@ -414,10 +424,7 @@ public class NiSdkModule extends ReactContextBaseJavaModule implements SamsungPa
             allowedAuthMethods.put("CRYPTOGRAM_3DS");
             parameters.put("allowedAuthMethods", allowedAuthMethods);
             
-            JSONArray allowedCardNetworks = new JSONArray();
-            allowedCardNetworks.put("VISA");
-            allowedCardNetworks.put("MASTERCARD");
-            parameters.put("allowedCardNetworks", allowedCardNetworks);
+            parameters.put("allowedCardNetworks", googlePayNetworks(googlePayConfig));
             cardPaymentMethod.put("parameters", parameters);
 
             JSONObject tokenizationSpecification = new JSONObject();

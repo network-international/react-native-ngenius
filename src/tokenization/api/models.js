@@ -265,6 +265,9 @@ const parseTokenizationSession = value => {
   const maskPaymentInfo = value.maskPaymentInfo ?? value.order?.merchantAttributes?.maskPaymentInfo;
   if (maskPaymentInfo === true || maskPaymentInfo === 'true') session.maskPaymentInfo = true;
   if (maskPaymentInfo === false || maskPaymentInfo === 'false') session.maskPaymentInfo = false;
+  // This is a selection flag, not MCP eligibility or a currency quote. Keep the
+  // backend value without inventing an enabled state or converted amount.
+  if (typeof value.isMcpSelected === 'boolean') session.isMcpSelected = value.isMcpSelected;
   if (value.paymentMethods !== undefined) session.paymentMethods = copyPaymentMethods(value.paymentMethods);
   // Amount and orderSummary come from orderDetails. Top-level amount and orderSummary
   // are a legacy UAT shape, read only when orderDetails is absent.

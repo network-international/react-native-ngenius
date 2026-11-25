@@ -72,7 +72,9 @@ const runWalletTokenization = async ({
       usageType,
       consentData: getConsentData ? getConsentData() : consent,
     });
+    if (!isCurrent()) return ready;
     onVerifying?.();
+    if (!isCurrent()) return ready;
     updatedTokenList = await withRequestDeadline(deadline => {
       deadline.throwIfExpired();
       return client.addWallet({ outletRef, sessionRef, ...request });

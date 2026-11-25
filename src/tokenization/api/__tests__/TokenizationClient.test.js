@@ -258,6 +258,7 @@ describe('TokenizationClient', () => {
         }],
         tncUrl: 'https://example.com/terms-and-conditions',
         paymentMethods: { card: ['VISA', 'MASTERCARD'], wallet: ['GOOGLE_PAY'] },
+        isMcpSelected: false,
         amount: orderDetails.amount,
         orderSummary: orderDetails.orderSummary,
       });
@@ -292,6 +293,14 @@ describe('TokenizationClient', () => {
       const { orderDetails } = spec.getSessionResponse;
       const getSession = body => createClient({ respond: () => jsonResponse(200, { advisedTokens: [], ...body }) })
         .getSession({ sessionRef: SESSION, outletRef: OUTLET });
+
+      it.each([true, false])('preserves the explicit MCP selection flag (%s) without inventing currency or eligibility', async isMcpSelected => {
+        await expect(getSession({ isMcpSelected })).resolves.toEqual({ tokens: [], isMcpSelected });
+      });
+
+      it.each([undefined, null, 'true', 'false', 0, 1, {}, []])('does not interpret a malformed MCP flag as selection (%j)', async isMcpSelected => {
+        await expect(getSession({ isMcpSelected })).resolves.toEqual({ tokens: [] });
+      });
 
       it('reads paymentMethods from the top level and ignores a nested orderDetails.paymentMethods', async () => {
         await expect(getSession({

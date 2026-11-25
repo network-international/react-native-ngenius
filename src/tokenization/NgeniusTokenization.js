@@ -8,7 +8,7 @@ import React, {
 import { Modal, Platform, Dimensions } from 'react-native';
 import TokenizationScreen from './ui/TokenizationScreen';
 import TokenizationPresentation, { SHEET_HEIGHT_FRACTION, SHEET_MAX_WIDTH } from './ui/TokenizationPresentation';
-import { captureApplePayToken, captureGooglePayToken } from './nativeWallets';
+import { captureApplePayToken, captureGooglePayToken, isApplePayTokenizationSupported } from './nativeWallets';
 import { startNativeCardTokenization } from './nativeCards';
 const { mapNativeCardColors } = require('./mapNativeCardColors');
 import {
@@ -332,7 +332,9 @@ const NgeniusTokenization = ({
     const loadWalletSupport = async () => {
       if (Platform.OS === 'ios') {
         try {
-          const supported = await isApplePaySupported();
+          const supported = applePayConfig?.supportedNetworks !== undefined
+            ? await isApplePayTokenizationSupported(applePayConfig)
+            : await isApplePaySupported();
           if (!cancelled) {
             setApplePaySupported(Boolean(supported));
           }
@@ -361,7 +363,7 @@ const NgeniusTokenization = ({
     return () => {
       cancelled = true;
     };
-  }, [visible, googlePayConfig]);
+  }, [visible, applePayConfig, googlePayConfig]);
 
   useEffect(() => {
     if (!hideForNative || Platform.OS !== 'ios') {

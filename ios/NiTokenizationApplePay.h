@@ -3,6 +3,7 @@
 
 // Tokenization-only capture. The existing PAYMENT Apple Pay controller is separate.
 @interface NiTokenizationApplePay : NSObject
++ (BOOL)isSupported:(NSDictionary *)config;
 - (void)presentFrom:(UIViewController *)parent
             config:(NSDictionary *)config
         completion:(void (^)(NSString *status, NSString *encryptedPayload))completion;

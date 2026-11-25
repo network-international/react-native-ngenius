@@ -190,12 +190,20 @@ Language resolves from supported `language`, then
 The shopper selects an existing token and taps **Pay**, or completes the native Card form and taps
 **Pay** there. For a new method, the SDK verifies that the Add response identifies one new eligible
 token by comparing the complete before and after lists. It submits
-`PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-token`
+`PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-payment-data`
 with `{ tokenRef }` and shows progress while it waits for acknowledgement. For both new and
 saved cards, the SDK closes and reports the result as soon as the selection is acknowledged,
 with no separate success screen. Payment itself happens later through the merchant backend.
 If verification or selection fails, the chooser shows the error and remains available when the
 session can still be used. The merchant backend uses the confirmed session reference to start payment.
+
+The client operation remains named `selectToken` for compatibility. It accepts an optional
+`currency` (three uppercase letters) and sends `{ tokenRef, currency }` when supplied. It never
+infers a currency from initialization props or retries the earlier route after an error.
+This route and DTO are present in PayPage BFF master at `1ec0a373`; deployment must be confirmed
+for the environment being tested. The checkout UI does not yet offer MCP currency selection.
+Get Session's boolean `isMcpSelected` is retained by the client, but it is not an eligibility
+flag, a currency list or a conversion quote. See [wallet and MCP delivery dependencies](docs/wallet-mcp-delivery.md).
 
 `onResult` receives `{ statusCode, message, sessionID? }`. `sessionID` is the merchant session reference
 and is omitted if the session could not be initialized. `200` means token selection is confirmed.

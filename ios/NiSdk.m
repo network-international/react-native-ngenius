@@ -188,6 +188,12 @@ RCT_EXPORT_METHOD(isApplePaySupported:(RCTResponseSenderBlock)sendResponse) {
     sendResponse(@[[NSNumber numberWithBool:isApplyPaySupportedOnDevice]]);
 }
 
+RCT_EXPORT_METHOD(isApplePayTokenizationSupported:(NSDictionary *)config callback:(RCTResponseSenderBlock)callback) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        callback(@[@([NiTokenizationApplePay isSupported:config])]);
+    });
+}
+
 RCT_EXPORT_METHOD(configureSDK:(NSDictionary *)config) {
     NISdk *sdkInstance = [NISdk sharedInstance];
     if (config[@"shouldShowOrderAmount"] != nil) {
