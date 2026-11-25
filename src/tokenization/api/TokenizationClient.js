@@ -5,6 +5,9 @@ const {
   errorFromSessionResponse,
   errorFromMalformedResponse,
   TokenizationApiError,
+  isTimeoutStatus,
+  isRequestTimeout,
+  requestTimeoutError,
 } = require('./errors');
 const { TOKENIZATION_PATHS, resolveTokenizationUrl } = require('./endpoints');
 const {
@@ -16,6 +19,7 @@ const {
 const { createFetchTransport, parseJsonBody } = require('./transport');
 const { addWalletBackendPending } = require('./addWallet');
 const { createSessionTokenSelector } = require('./sessionTokenSelection');
+const { withRequestDeadline } = require('./requestDeadline');
 
 const ACCESS_TOKEN_UNAVAILABLE = 'ACCESS_TOKEN_UNAVAILABLE';
 
@@ -24,6 +28,7 @@ const resolveAccessToken = async getAccessToken => {
   try {
     accessToken = await getAccessToken();
   } catch (error) {
+    if (isRequestTimeout(error)) throw requestTimeoutError();
     accessToken = undefined;
   }
   if (typeof accessToken !== 'string' || accessToken.length === 0) {
@@ -72,9 +77,12 @@ const createTokenizationClient = options => {
   const transport =
     options.transport || createFetchTransport(options.fetchImpl);
 
-  const sendRequest = async ({ method, path, query, body, responseMode }) => {
+  const sendRequest = ({ method, path, query, body, responseMode }) => withRequestDeadline(async deadline => {
     const url = resolveTokenizationUrl(baseUrl, path, query);
     const accessToken = await resolveAccessToken(getAccessToken);
+    // A provider may ignore cancellation and finish after the caller timed out.
+    // Never send a late request with its newly returned credential.
+    deadline.throwIfExpired();
     let response;
     try {
       const transportRequest = {
@@ -83,9 +91,14 @@ const createTokenizationClient = options => {
         headers: buildTokenizationHeaders({ accessToken }),
         body,
       };
+      if (deadline.signal) transportRequest.signal = deadline.signal;
       if (responseMode === 'status-only') transportRequest.responseMode = responseMode;
       response = await transport(transportRequest);
+      deadline.throwIfExpired();
+      if (isTimeoutStatus(response?.status)) throw requestTimeoutError();
     } catch (error) {
+      deadline.throwIfExpired();
+      if (isRequestTimeout(error)) throw requestTimeoutError();
       throw new TokenizationApiError({
         status: 0,
         code: 'NETWORK_ERROR',
@@ -93,7 +106,7 @@ const createTokenizationClient = options => {
       });
     }
     return response;
-  };
+  });
 
   const request = async ({ parse, sanitizeError = false, ...args }) => {
     const response = await sendRequest(args);
@@ -151,13 +164,12 @@ const createTokenizationClient = options => {
           code: 'NATIVE_CARD_TRANSPORT_UNAVAILABLE',
           message: 'Custom JS transport does not support native Card requests',
         });
-      return {
-        url: resolveTokenizationUrl(
-          baseUrl,
-          TOKENIZATION_PATHS.addCard({ outletRef, sessionRef }),
-        ),
-        accessToken: await resolveAccessToken(getAccessToken),
-      };
+      const url = resolveTokenizationUrl(baseUrl, TOKENIZATION_PATHS.addCard({ outletRef, sessionRef }));
+      return withRequestDeadline(async deadline => {
+        const accessToken = await resolveAccessToken(getAccessToken);
+        deadline.throwIfExpired();
+        return { url, accessToken };
+      });
     },
   });
 };

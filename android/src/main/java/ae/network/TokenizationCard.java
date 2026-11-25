@@ -58,11 +58,13 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -787,6 +789,7 @@ final class TokenizationCard {
             Map<String, Object> safeResponse = null;
             int httpStatus = 0;
             boolean networkError = false;
+            boolean timedOut = false;
             try {
                 if (finished) return;
                 HttpURLConnection request = (HttpURLConnection) new URL(endpoint).openConnection(); connection = request;
@@ -803,13 +806,19 @@ final class TokenizationCard {
                         safeResponse = TokenizationCardResponse.read(input);
                     }
                 }
-            } catch (IOException ignored) { networkError = httpStatus == 0; }
-            catch (RuntimeException ignored) { /* Keep malformed response contents out of the bridge. */ }
+            } catch (SocketTimeoutException ignored) { timedOut = true; }
+            catch (IOException ignored) { networkError = httpStatus == 0; }
+            catch (RuntimeException ignored) {
+                // Gson wraps read timeouts while parsing the response stream.
+                timedOut = ignored.getCause() instanceof SocketTimeoutException;
+            }
             finally { Arrays.fill(payload, (byte) 0); if (connection != null) { connection.disconnect(); connection = null; } }
-            final Map<String, Object> response = safeResponse;
-            final Map<String, Object> failure = httpStatus >= 400 && httpStatus <= 599
-                ? Collections.singletonMap("httpStatus", httpStatus)
-                : networkError ? Collections.singletonMap("code", "NETWORK_ERROR") : null;
+            final Map<String, Object> response = timedOut ? null : safeResponse;
+            Map<String, Object> failureDetails = new HashMap<>();
+            if (httpStatus >= 400 && httpStatus <= 599) failureDetails.put("httpStatus", httpStatus);
+            if (timedOut || httpStatus == 408 || httpStatus == 504) failureDetails.put("code", "REQUEST_TIMEOUT");
+            else if (networkError) failureDetails.put("code", "NETWORK_ERROR");
+            final Map<String, Object> failure = failureDetails;
             main.post(() -> finish(response == null ? "Failed" : "Response", response != null ? response : failure));
         });
     }

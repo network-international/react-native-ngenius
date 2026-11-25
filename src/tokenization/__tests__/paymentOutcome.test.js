@@ -44,6 +44,28 @@ it('keeps retryable verification and connection failures distinct from an unavai
   });
 });
 
+it.each(['initialize', 'refresh', 'select', 'add'])('ends a timed-out %s safely without suggesting a repeated mutation', stage => {
+  for (const error of [
+    { code: 'REQUEST_TIMEOUT', message: 'private upstream detail' },
+    { status: 408 },
+    { httpStatus: 504 },
+  ]) {
+    const failure = paymentFailure({ stage, error, sessionID: 'session-1' });
+    expect(failure).toEqual({
+      result: {
+        statusCode: 408,
+        message: stage === 'initialize'
+          ? 'Cannot initialize SDK: request timed out.'
+          : 'Request timed out. Check the session status before retrying.',
+        ...(stage === 'initialize' ? {} : { sessionID: 'session-1' }),
+      },
+      messageKey: 'PAYMENT_REQUEST_TIMEOUT',
+      retryable: false,
+    });
+    expect(JSON.stringify(failure)).not.toContain('private');
+  }
+});
+
 it('reports a confirmed method separately from explicit dismissal and omits an invalid session reference', () => {
   expect(paymentSuccess('session-1')).toEqual({ statusCode: 200, message: 'Payment method confirmed.', sessionID: 'session-1' });
   expect(paymentCancellation('session-1', 'swipe')).toEqual({

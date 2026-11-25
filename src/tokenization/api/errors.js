@@ -18,6 +18,15 @@ class TokenizationApiError extends Error {
   }
 }
 
+const isTimeoutStatus = status => status === 408 || status === 504;
+const isRequestTimeout = error => error?.code === 'REQUEST_TIMEOUT' ||
+  isTimeoutStatus(error?.status) || isTimeoutStatus(error?.httpStatus);
+const requestTimeoutError = () => new TokenizationApiError({
+  status: 408,
+  code: 'REQUEST_TIMEOUT',
+  message: 'Tokenization request timed out',
+});
+
 const HTTP_ERROR_FALLBACK = {
   400: { code: 'INVALID_REQUEST', message: 'Invalid request' },
   401: { code: 'UNAUTHORIZED', message: 'Authentication failed' },
@@ -48,6 +57,7 @@ const parseErrorItems = (value) => {
 };
 
 const errorFromResponse = ({ status, body }) => {
+  if (isTimeoutStatus(status)) return requestTimeoutError();
   const fallback = HTTP_ERROR_FALLBACK[status] || {
     code: 'UNKNOWN_ERROR',
     message: 'Request failed',
@@ -67,20 +77,20 @@ const errorFromResponse = ({ status, body }) => {
 };
 
 const errorFromMalformedResponse = ({ status }) =>
-  new TokenizationApiError({
+  isTimeoutStatus(status) ? requestTimeoutError() : new TokenizationApiError({
     status,
     code: 'MALFORMED_RESPONSE',
     message: 'Response was not valid JSON',
   });
 
-const errorFromSessionResponse = ({ status }) => new TokenizationApiError({
+const errorFromSessionResponse = ({ status }) => isTimeoutStatus(status) ? requestTimeoutError() : new TokenizationApiError({
   status,
   ...(HTTP_ERROR_FALLBACK[status] || { code: 'UNKNOWN_ERROR', message: 'Request failed' }),
 });
 
 // Selection errors must not contain an echoed token, session or response body.
 const errorFromSessionSelectionResponse = ({ status } = {}) =>
-  new TokenizationApiError({
+  isTimeoutStatus(status) ? requestTimeoutError() : new TokenizationApiError({
     status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
     code: 'SESSION_SELECTION_FAILED',
     message: 'Payment method selection could not be saved',
@@ -93,4 +103,7 @@ module.exports = {
   errorFromSessionResponse,
   errorFromMalformedResponse,
   errorFromSessionSelectionResponse,
+  isTimeoutStatus,
+  isRequestTimeout,
+  requestTimeoutError,
 };

@@ -114,6 +114,8 @@ export const startNativeCardTokenization = ({
           }
           if (error?.code === 'ACCESS_TOKEN_UNAVAILABLE') {
             preparationFailure = failure('ACCESS_TOKEN_UNAVAILABLE', 'Access token is not available');
+          } else if (error?.code === 'REQUEST_TIMEOUT' || [408, 504].includes(httpStatusOf(error))) {
+            preparationFailure = failure('REQUEST_TIMEOUT', 'Card request timed out.', httpStatusOf(error));
           }
           try {
             native.failTokenizationCard(requestId);
@@ -132,8 +134,11 @@ export const startNativeCardTokenization = ({
           return;
         }
         if (status !== 'Response') {
-          const code = response?.code === 'NETWORK_ERROR' ? 'NETWORK_ERROR' : 'NATIVE_CARD_REQUEST_FAILED';
-          finish(preparationFailure || failure(code, undefined, httpStatusOf(response)));
+          const httpStatus = httpStatusOf(response);
+          const code = response?.code === 'REQUEST_TIMEOUT' || [408, 504].includes(httpStatus)
+            ? 'REQUEST_TIMEOUT'
+            : response?.code === 'NETWORK_ERROR' ? 'NETWORK_ERROR' : 'NATIVE_CARD_REQUEST_FAILED';
+          finish(preparationFailure || failure(code, undefined, httpStatus));
           return;
         }
         try {

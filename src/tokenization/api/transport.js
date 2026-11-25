@@ -1,13 +1,16 @@
+const { isTimeoutStatus } = require('./errors');
+
 const createFetchTransport = (fetchImpl) => {
   const fetchFn = fetchImpl || globalThis.fetch;
   if (typeof fetchFn !== 'function') {
     throw new Error('fetch is not available; supply a transport to createTokenizationClient');
   }
-  return async ({ url, method, headers, body, responseMode }) => {
+  return async ({ url, method, headers, body, responseMode, signal }) => {
     const init = {
       method,
       headers,
     };
+    if (signal) init.signal = signal;
     if (body !== undefined) {
       init.body = JSON.stringify(body);
     }
@@ -15,7 +18,9 @@ const createFetchTransport = (fetchImpl) => {
     return {
       status: response.status,
       // Selection acknowledges HTTP status only; other operations need JSON.
-      text: responseMode === 'status-only' ? undefined : await response.text(),
+      // A known timeout response is sanitized by status; never wait for its body.
+      text: responseMode === 'status-only' || isTimeoutStatus(response.status)
+        ? undefined : await response.text(),
     };
   };
 };

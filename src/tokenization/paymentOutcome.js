@@ -55,6 +55,18 @@ const paymentFailure = ({ stage, error, sessionID }) => {
     );
   }
 
+  // A timeout does not establish whether a session mutation was accepted.
+  // End this attempt without offering a repeat Add/Select on the same session.
+  if (code === 'REQUEST_TIMEOUT' || status === 408 || status === 504) {
+    return failure(
+      408,
+      initializing
+        ? 'Cannot initialize SDK: request timed out.'
+        : 'Request timed out. Check the session status before retrying.',
+      'PAYMENT_REQUEST_TIMEOUT',
+    );
+  }
+
   if (code === 'NETWORK_ERROR') {
     return failure(
       503,

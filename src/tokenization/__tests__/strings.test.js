@@ -21,6 +21,7 @@ describe('tokenization strings', () => {
       'TOKEN_SAVE_FAILED',
       'VERIFYING_PAYMENT_METHOD',
       'VERIFICATION_PENDING',
+      'PAYMENT_REQUEST_TIMEOUT',
     ];
     ['en', 'fr', 'ar'].forEach((language) => {
       keys.forEach((key) => expect(typeof STRINGS[language][key]).toBe('string'));

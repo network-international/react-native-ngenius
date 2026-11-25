@@ -2,6 +2,7 @@ jest.mock('react-native', () => ({ DeviceEventEmitter: { addListener: jest.fn() 
 const { NativeModules, DeviceEventEmitter } = require('react-native');
 const { startNativeCardTokenization } = require('../nativeCards');
 const { createTokenizationClient } = require('../api/TokenizationClient');
+const { registerCardContext } = require('../cardContext');
 const { skipped } = require('./fixtures/consent');
 const { addCardResponse } = require('./fixtures/tokenizationApiSpec');
 const { UsageType } = require('../usageType');
@@ -132,6 +133,48 @@ it('reports the HTTP status for an expired session without forwarding other nati
   const outcome = await attempt.promise;
   expect(outcome).toMatchObject({ state: 'FAILED', result: { httpStatus: 401 } });
   expect(JSON.stringify(outcome)).not.toContain('sensitive native error body');
+});
+
+it.each([
+  { code: 'REQUEST_TIMEOUT' },
+  { httpStatus: 408 },
+  { httpStatus: 504 },
+  { code: 'REQUEST_TIMEOUT', httpStatus: 504 },
+])('keeps a native request timeout terminal and sanitized for %j', async response => {
+  const attempt = create();
+  await ready(id);
+  result('Failed', { ...response, message: 'private native timeout details' });
+  const outcome = await attempt.promise;
+  expect(outcome).toMatchObject({ state: 'FAILED', result: { code: 'REQUEST_TIMEOUT' } });
+  if (response.httpStatus) expect(outcome.result.httpStatus).toBe(response.httpStatus);
+  expect(JSON.stringify(outcome)).not.toContain('private native timeout details');
+  result('Response', { tokens: [verifiedCard] });
+  await ready(id);
+  expect(await attempt.promise).toBe(outcome);
+  expect(native.submitTokenizationCard).toHaveBeenCalledTimes(1);
+  expect(DeviceEventEmitter.addListener.mock.results[0].value.remove).toHaveBeenCalledTimes(1);
+});
+
+it('preserves a preparation timeout without submitting or exposing provider details', async () => {
+  const prepareRequest = jest.fn().mockRejectedValue({ code: 'REQUEST_TIMEOUT', message: 'private provider details' });
+  const client = registerCardContext({}, { prepareRequest });
+  const attempt = create({ client });
+  await ready(id);
+  const outcome = await attempt.promise;
+  expect(outcome).toMatchObject({ state: 'FAILED', result: { code: 'REQUEST_TIMEOUT' } });
+  expect(JSON.stringify(outcome)).not.toContain('private provider details');
+  expect(native.failTokenizationCard).toHaveBeenCalledWith(id);
+  expect(native.submitTokenizationCard).not.toHaveBeenCalled();
+  result('Response', { tokens: [verifiedCard] });
+  expect(await attempt.promise).toBe(outcome);
+  expect(prepareRequest).toHaveBeenCalledTimes(1);
+});
+
+it('keeps a connection failure distinct from a timeout', async () => {
+  const attempt = create();
+  await ready(id);
+  result('Failed', { code: 'NETWORK_ERROR' });
+  expect(await attempt.promise).toMatchObject({ state: 'FAILED', result: { code: 'NETWORK_ERROR' } });
 });
 
 it('retains a valid masked card when the native response has no expiry', async () => {

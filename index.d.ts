@@ -241,11 +241,11 @@ export interface TokenizationResult {
 export interface NgeniusTokenizationProps {
   visible?: boolean;
   /**
-   * Legacy context, not needed for Card. Used for language, consent wording and native wallet
-   * capture. Its amount, orderSummary and paymentMethods are ignored; Get Session supplies them.
+   * Legacy context, not needed for Card. Used for language, consent wording and non-monetary
+   * native wallet context. Get Session supplies amounts, wallet currency, summary and methods.
    */
   order?: NGeniusOrder;
-  /** Legacy language, consent and native wallet context. Checkout amounts and methods come from Get Session. */
+  /** Legacy language, consent and non-monetary wallet context. Amounts, currency and methods come from Get Session. */
   orderDetails?: TokenizationOrderDetails;
   /**
    * Can only narrow the methods allowed by Get Session; it never enables a method.

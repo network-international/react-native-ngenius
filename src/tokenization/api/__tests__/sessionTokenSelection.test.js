@@ -35,6 +35,7 @@ describe('session token selection', () => {
       headers: { 'Access-Token': 'fixture-access-1', 'Content-Type': 'application/json' },
       body: { tokenRef },
       responseMode: 'status-only',
+      signal: expect.objectContaining({ aborted: false }),
     });
     expect(provider).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1][0].headers['Access-Token']).toBe('fixture-access-2');
@@ -148,6 +149,7 @@ describe('session token selection', () => {
     expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1/selected-token`, {
       method: 'PUT', headers: { 'Access-Token': 'fixture-access', 'Content-Type': 'application/json' },
       body: JSON.stringify({ tokenRef }),
+      signal: expect.objectContaining({ aborted: false }),
     });
   });
 });

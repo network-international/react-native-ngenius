@@ -55,11 +55,11 @@ Other supported labels: savedMethodsTitle, addMethodTitle, selectionPending, sel
 
 ## Session selection
 
-The chooser starts with Get Session using the merchant-provided `sessionRef` and records the shopper's confirmed choice within that session. After successful selection and the confirmation animation, it closes and passes `sessionRef` to `onSelectionComplete`. See the [current tokenization contract](tokenization-contract.md).
+The chooser starts with Get Session using the merchant-provided `sessionRef` and records the shopper's confirmed choice within that session. The current flow closes immediately after selection acknowledgement, with no separate success screen, and passes `sessionRef` to `onSelectionComplete`. See the [current tokenization contract](tokenization-contract.md).
 
 ## Review evidence
 
-[RN Implementation Notes](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5451218947) contains screenshots and per-build context; [QA Testing Guide](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5615386697) separates frontend checks from backend validation. Native Card screenshots use blank fields. Demo terms navigation and wallet/token responses are labeled fixtures, without secrets or payment payloads.
+[RN Implementation Notes](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5451218947) contains screenshots and per-build context; [QA Testing Guide](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5713658046) separates frontend checks from backend validation. Native Card screenshots use blank fields. Demo terms navigation and wallet/token responses are labeled fixtures, without secrets or payment payloads.
 
 Internal references are the hosted Museum preview for the compact shell and modern PayPage for NI card artwork. Official [Apple Pay](https://developer.apple.com/design/human-interface-guidelines/apple-pay) and [Google Pay](https://developers.google.com/pay/api/android/guides/brand-guidelines) guidance govern actual platform wallet buttons. These references do not establish comparative conversion performance.
 

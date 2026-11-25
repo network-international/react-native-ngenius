@@ -585,6 +585,7 @@ describe('TokenizationClient', () => {
       expect(readBody).toHaveBeenCalledTimes(1);
       expect(fetchImpl).toHaveBeenCalledWith(`${BASE_URL}/api/outlets/outlet-1/payment-tokenization-sessions/session-1`, {
         method: 'GET',
+        signal: expect.objectContaining({ aborted: false }),
         headers: {
           [HEADER_ACCESS_TOKEN]: ACCESS_TOKEN,
           [HEADER_CONTENT_TYPE]: 'application/json',

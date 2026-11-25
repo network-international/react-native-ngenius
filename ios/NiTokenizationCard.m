@@ -723,7 +723,10 @@ static NSURL *NICardTermsURL(id value) {
             if ([body isKindOfClass:NSDictionary.class]) safe = [self safeResponse:body];
         }
         NSDictionary *failure = nil;
-        if (status >= 400 && status <= 599) failure = @{ @"httpStatus": @(status) };
+        BOOL timedOut = [error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorTimedOut;
+        if (status == 408 || status == 504) failure = @{ @"code": @"REQUEST_TIMEOUT", @"httpStatus": @(status) };
+        else if (timedOut) failure = @{ @"code": @"REQUEST_TIMEOUT" };
+        else if (status >= 400 && status <= 599) failure = @{ @"httpStatus": @(status) };
         else if (error && status == 0) failure = @{ @"code": @"NETWORK_ERROR" };
         dispatch_async(dispatch_get_main_queue(), ^{ [self finish:safe ? @"Response" : @"Failed" response:safe ?: failure]; });
     }];

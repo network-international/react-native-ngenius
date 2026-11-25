@@ -67,8 +67,9 @@ To show the optional return action, pass `paymentMethods={['CONTINUE_SHOPPING']}
 contains only `CONTINUE_SHOPPING` does not narrow the session methods.
 
 `order` and `orderDetails` are optional legacy context for language, consent wording and native
-wallet capture. Their amount, summary and methods are ignored. Wallet capture uses
-`order.amount.currencyCode`. Native Card tokenization does not need them.
+wallet context. Their amount, summary and methods are ignored. Wallet capture uses zero in the
+currency supplied by the current Get Session response; a missing or invalid session currency
+prevents capture. Native Card tokenization does not need these legacy props.
 
 Pass wallet configuration as optional props when opening `NgeniusTokenization`:
 
@@ -204,6 +205,12 @@ after opening. Other failure codes report the failed operation. Recoverable erro
 while the SDK is still open and can be followed by a successful result or dismissal. Start payment
 only on `200`. Use either `onResult` or the existing `onSelectionComplete` for the payment handoff.
 
+`408` means the request timed out and its outcome could not be confirmed. Initialization timeout
+closes the SDK and omits `sessionID`. A timeout after initialization displays a localized message,
+disables further actions and reports the known session reference. Closing that screen does not
+replace the timeout with a cancellation result. The merchant must check the session before retrying;
+the SDK never automatically repeats Add or Select after a timeout.
+
 ## Supported methods
 
 - Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
@@ -219,6 +226,13 @@ uses its API key to issue the token, and the app returns it from this function. 
 provider for each request and sends the token in `Access-Token`. It does not store, refresh or log the token.
 Keep API keys, Basic credentials and token issuance on your backend. An unavailable token fails
 with `ACCESS_TOKEN_UNAVAILABLE` before sending a request.
+
+The built-in client gives credential resolution, sending and reading a response one shared
+30-second deadline. It attempts to abort a timed-out request when the runtime supports it, and
+ignores late completion even when the transport cannot abort. A credential provider resolving
+after the deadline cannot send a late request. Native Card credential preparation has its own
+30-second deadline; native HTTP connect/read limits remain separate. HTTP `408`/`504` and native
+request timeouts are returned as a sanitized `REQUEST_TIMEOUT` error.
 
 ## POC status
 

@@ -17,7 +17,7 @@ jest.mock('../ui/TokenizationPresentation', () => {
   const React = require('react');
   return ({ children, ...props }) => React.createElement('TokenizationPresentation', props, children);
 });
-jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn() }));
+jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn(), captureGooglePayToken: jest.fn() }));
 jest.mock('../../nativePayments', () => ({
   isApplePaySupported: jest.fn().mockResolvedValue(false),
   isGooglePaySupported: jest.fn().mockResolvedValue(false),
@@ -31,7 +31,7 @@ const { act } = renderer;
 const Component = require('../NgeniusTokenization').default;
 const { startNativeCardTokenization } = require('../nativeCards');
 const native = require('../../nativePayments');
-const { captureApplePayToken } = require('../nativeWallets');
+const { captureApplePayToken, captureGooglePayToken } = require('../nativeWallets');
 const { UsageType } = require('../usageType');
 const { createTokenizationClient } = require('../api/TokenizationClient');
 const card = {
@@ -85,9 +85,10 @@ const noTokenizationOrPayment = () => {
   expect(native.initiateApplePay).not.toHaveBeenCalled();
   expect(native.initiateGooglePay).not.toHaveBeenCalled();
   expect(captureApplePayToken).not.toHaveBeenCalled();
+  expect(captureGooglePayToken).not.toHaveBeenCalled();
   if (props.tokenizationClient.addWallet) expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
 };
-beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); startNativeCardTokenization.mockReset(); });
+beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); startNativeCardTokenization.mockReset(); captureGooglePayToken.mockReset(); });
 afterEach(() => {
   if (tree) act(() => tree.unmount());
   tree = undefined;
@@ -457,14 +458,14 @@ it.each(['outlet', 'reopen'])('replaces the session methods and order snapshot a
   };
   native.isGooglePaySupported.mockResolvedValueOnce(true);
   if (boundary === 'reopen') native.isGooglePaySupported.mockResolvedValueOnce(true);
-  native.initiateGooglePay.mockResolvedValueOnce({ token: 'fixture-encrypted-wallet' });
+  captureGooglePayToken.mockResolvedValueOnce({ token: 'fixture-encrypted-wallet' });
   startNativeCardTokenization.mockReturnValueOnce({
     promise: Promise.resolve({ state: 'FAILED', result: { status: 'FAILED' } }), cancel: jest.fn(),
   });
   const client = defaultClient();
   client.getSession
     .mockResolvedValueOnce({ tokens: [card], paymentMethods: { card: ['VISA'], wallet: [] } })
-    .mockResolvedValue({ tokens: [card], paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] } });
+    .mockResolvedValue({ tokens: [card], paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] }, amount: { currencyCode: 'KWD' } });
   client.addWallet.mockResolvedValue({ tokens: [{ ...card, type: 'WALLET', walletType: 'GOOGLE_PAY' }] });
   await open({ order: firstOrder, tokenizationClient: client });
   expect(screen().methods).toEqual(['CARD']);
@@ -488,8 +489,8 @@ it.each(['outlet', 'reopen'])('replaces the session methods and order snapshot a
   expect(screen().methods).toEqual(['GOOGLE_PAY']);
   expect(screen().orderSummary).toBeNull();
   await act(async () => { screen().onSelectMethod('GOOGLE_PAY'); await flush(); });
-  expect(native.initiateGooglePay).toHaveBeenCalledWith({
-    ...nextOrder, amount: { ...nextOrder.amount, value: 0, formattedValue: '0.00' },
+  expect(captureGooglePayToken).toHaveBeenCalledWith({
+    ...nextOrder, amount: { currencyCode: 'KWD', value: 0, formattedValue: '0.000' },
   }, undefined);
   expect(nextOrder.amount).toEqual({ currencyCode: 'USD', value: 200 });
 });
@@ -507,6 +508,57 @@ it('ignores a late Get result after a same-outlet session change', async () => {
   expect(client.getSession).toHaveBeenLastCalledWith({ outletRef: 'outlet', sessionRef: 'session-2', skipConsent: true });
   await confirm();
   expect(client.selectToken).toHaveBeenCalledWith({ outletRef: 'outlet', sessionRef: 'session-2', tokenRef: other.tokenRef });
+});
+
+it('uses the currency from the latest current Get Session for wallet capture without init order context', async () => {
+  native.isGooglePaySupported.mockResolvedValueOnce(true);
+  captureGooglePayToken.mockRejectedValue({ status: 'Aborted' });
+  const client = defaultClient();
+  client.getSession.mockResolvedValueOnce({ tokens: [], amount: { currencyCode: 'JPY', value: '1000' }, paymentMethods: { wallet: ['GOOGLE_PAY'] } })
+    .mockResolvedValue({ tokens: [], amount: { currencyCode: 'BHD', value: '2500' }, paymentMethods: { wallet: ['GOOGLE_PAY'] } });
+  await open({ order: undefined, tokenizationClient: client });
+  await act(async () => { screen().onSelectMethod('GOOGLE_PAY'); await flush(); });
+  expect(captureGooglePayToken).toHaveBeenLastCalledWith({
+    amount: { currencyCode: 'JPY', value: 0, formattedValue: '0' },
+  }, undefined);
+  await update({ order: { amount: { currencyCode: 'USD', value: 100 } } });
+  await act(async () => { screen().onRetrySavedTokens(); await flush(); });
+  await act(async () => { screen().onSelectMethod('GOOGLE_PAY'); await flush(); });
+  expect(captureGooglePayToken).toHaveBeenLastCalledWith({
+    amount: { currencyCode: 'BHD', value: 0, formattedValue: '0.000' },
+  }, undefined);
+  expect(client.addWallet).not.toHaveBeenCalled();
+  expect(client.selectToken).not.toHaveBeenCalled();
+  expect(native.initiateGooglePay).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['android', undefined], ['android', { currencyCode: 'ZZZ' }],
+  ['ios', undefined], ['ios', { currencyCode: 'PRIVATE' }],
+])('rejects missing or invalid session currency before opening the %s wallet (%#)', async (platform, amount) => {
+  const { Platform } = require('react-native');
+  const originalPlatform = Platform.OS;
+  Platform.OS = platform;
+  if (platform === 'android') native.isGooglePaySupported.mockResolvedValueOnce(true);
+  else native.isApplePaySupported.mockResolvedValueOnce(true);
+  try {
+    const client = defaultClient();
+    client.getSession.mockResolvedValue({ tokens: [], amount, paymentMethods: { wallet: ['APPLE_PAY', 'GOOGLE_PAY'] } });
+    await open({ tokenizationClient: client, order: { amount: { currencyCode: 'AED', value: 100 } } });
+    await act(async () => { screen().onSelectMethod(platform === 'ios' ? 'APPLE_PAY' : 'GOOGLE_PAY'); await flush(); });
+    expect(captureGooglePayToken).not.toHaveBeenCalled();
+    expect(captureApplePayToken).not.toHaveBeenCalled();
+    expect(client.addWallet).not.toHaveBeenCalled();
+    expect(client.selectToken).not.toHaveBeenCalled();
+    expect(modal().visible).toBe(true);
+    expect(screen().status).toBe('FAILED');
+    expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'INVALID_WALLET_REQUEST' }));
+    expect(JSON.stringify(props.onError.mock.calls)).not.toContain('PRIVATE');
+  } finally {
+    Platform.OS = originalPlatform;
+    native.isApplePaySupported.mockResolvedValue(false);
+    native.isGooglePaySupported.mockResolvedValue(false);
+  }
 });
 
 it('shows only the current Get Session amount and preserves it through Add Card', async () => {
@@ -820,6 +872,104 @@ it.each([401, 404, 503])('closes on initialization HTTP %s and reports one error
   await update({ visible: false });
   expect(props.onResult).toHaveBeenCalledTimes(1);
   expect(props.onCancel).not.toHaveBeenCalled();
+});
+
+const timeoutErrors = [
+  { code: 'REQUEST_TIMEOUT' },
+  { status: 408 },
+  { status: 504 },
+];
+// Manual dismissal keeps the legacy onCancel UI event. The terminal merchant
+// outcome must remain the single 408 result, never a later cancellation/499.
+it.each(timeoutErrors)('closes once on initialization timeout without returning a session ID (%j)', async error => {
+  const client = defaultClient();
+  client.getSession.mockRejectedValue({ ...error, message: 'private response' });
+  await open({ tokenizationClient: client });
+  expect(modal().visible).toBe(false);
+  expect(props.onResult).toHaveBeenCalledWith({ statusCode: 408, message: 'Cannot initialize SDK: request timed out.' });
+  expect(props.onSelectionComplete).not.toHaveBeenCalled();
+  await act(async () => { screen().onRetrySavedTokens(); screen().onCancel('cancel'); await flush(); });
+  await update({ visible: false });
+  expect(client.getSession).toHaveBeenCalledTimes(1);
+  expect(props.onResult).toHaveBeenCalledTimes(1);
+  expect(props.onCancel).not.toHaveBeenCalled();
+});
+
+it.each(timeoutErrors)('makes a refresh timeout terminal with disabled actions and no retry (%j)', async error => {
+  const client = defaultClient();
+  await open({ tokenizationClient: client });
+  client.getSession.mockRejectedValueOnce({ ...error, message: 'private response' });
+  await act(async () => { screen().onRetrySavedTokens(); await flush(); });
+  expect(screen().loadError).toMatch(/couldn't confirm the result in time/i);
+  expect(screen().actionsDisabled).toBe(true);
+  expect(screen().canRetryLoad).toBe(false);
+  expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 408, sessionID: 'session-1' }));
+  await act(async () => {
+    screen().onRetrySavedTokens(); screen().onSelectMethod('CARD');
+    screen().onSelectToken(other.tokenRef); screen().onConfirmSavedToken(card.tokenRef);
+    await flush();
+  });
+  expect(client.getSession).toHaveBeenCalledTimes(2);
+  expect(client.selectToken).not.toHaveBeenCalled();
+  expect(startNativeCardTokenization).not.toHaveBeenCalled();
+  expect(props.onSelectionComplete).not.toHaveBeenCalled();
+  act(() => { screen().onCancel('swipe'); screen().onCancel('cancel'); });
+  await update({ visible: false });
+  expect(props.onResult).toHaveBeenCalledTimes(1);
+  expect(props.onCancel).toHaveBeenCalledTimes(1);
+});
+
+it.each(timeoutErrors)('makes a selected-token timeout terminal without confirming, retrying, or cancelling the result (%j)', async error => {
+  const client = defaultClient();
+  client.selectToken.mockRejectedValue({ ...error, message: 'private response' });
+  await open({ tokenizationClient: client });
+  await confirm();
+  expect(modal().visible).toBe(true);
+  expect(screen().selectionStatus).toBe('failed');
+  expect(screen().selectionError).toMatch(/couldn't confirm the result in time/i);
+  expect(screen().actionsDisabled).toBe(true);
+  expect(screen().canRetryLoad).toBe(false);
+  expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 408, sessionID: 'session-1' }));
+  await act(async () => {
+    screen().onSelectToken(other.tokenRef); screen().onRetrySavedTokens(); screen().onSelectMethod('CARD');
+    await flush();
+  });
+  await confirm();
+  expect(screen().selectedTokenRef).toBe(card.tokenRef);
+  expect(client.selectToken).toHaveBeenCalledTimes(1);
+  expect(client.getSession).toHaveBeenCalledTimes(1);
+  expect(startNativeCardTokenization).not.toHaveBeenCalled();
+  expect(props.onSelectionComplete).not.toHaveBeenCalled();
+  act(() => { screen().onCancel('swipe'); screen().onCancel('cancel'); });
+  await update({ visible: false });
+  expect(props.onResult).toHaveBeenCalledTimes(1);
+  expect(props.onCancel).toHaveBeenCalledTimes(1);
+});
+
+it.each(timeoutErrors)('keeps a native Add timeout fatal without selecting a token or overwriting it on dismissal (%j)', async error => {
+  startNativeCardTokenization.mockReturnValue({
+    promise: Promise.resolve({ state: 'FAILED', result: { ...error, status: error.status || 'FAILED', message: 'private response' } }),
+    cancel: jest.fn(),
+  });
+  const client = defaultClient();
+  await open({ tokenizationClient: client });
+  await act(async () => { screen().onSelectMethod('CARD'); await flush(); });
+  expect(screen().status).toBe('FAILED');
+  expect(screen().errorMessage).toMatch(/couldn't confirm the result in time/i);
+  expect(screen().actionsDisabled).toBe(true);
+  expect(screen().savedTokens.tokens).toEqual([card, other]);
+  expect(client.selectToken).not.toHaveBeenCalled();
+  expect(props.onSelectionComplete).not.toHaveBeenCalled();
+  expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 408, sessionID: 'session-1' }));
+  await act(async () => { screen().onSelectMethod('CARD'); screen().onRetrySavedTokens(); await flush(); });
+  await confirm();
+  expect(startNativeCardTokenization).toHaveBeenCalledTimes(1);
+  expect(client.getSession).toHaveBeenCalledTimes(1);
+  expect(client.selectToken).not.toHaveBeenCalled();
+  act(() => { screen().onCancel('swipe'); screen().onCancel('cancel'); });
+  await update({ visible: false });
+  expect(props.onResult).toHaveBeenCalledTimes(1);
+  expect(props.onCancel).toHaveBeenCalledTimes(1);
 });
 
 it.each(['READY', 'FAILED'])('keeps the iOS chooser presented when the native card form returns %s', async state => {

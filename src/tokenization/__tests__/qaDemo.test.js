@@ -2,7 +2,7 @@
 // configuration. These factories fail if a future entry imports that graph.
 jest.mock('../../../SimpleIntegration/src/config', () => {
   throw new Error('Legacy gateway config must not be loaded by the tokenization demo');
-});
+}, { virtual: true });
 jest.mock('../../../SimpleIntegration/src/ngenius-apis', () => {
   throw new Error('Legacy direct-payment APIs must not be loaded by the tokenization demo');
 });

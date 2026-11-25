@@ -8,11 +8,10 @@ import React, {
 import { Modal, Platform, Dimensions } from 'react-native';
 import TokenizationScreen from './ui/TokenizationScreen';
 import TokenizationPresentation, { SHEET_HEIGHT_FRACTION, SHEET_MAX_WIDTH } from './ui/TokenizationPresentation';
-import { captureApplePayToken } from './nativeWallets';
+import { captureApplePayToken, captureGooglePayToken } from './nativeWallets';
 import { startNativeCardTokenization } from './nativeCards';
 const { mapNativeCardColors } = require('./mapNativeCardColors');
 import {
-  initiateGooglePay,
   isApplePaySupported,
   isGooglePaySupported,
 } from '../nativePayments';
@@ -550,10 +549,14 @@ const NgeniusTokenization = ({
         rejectAction(walletBackendPendingError());
         return;
       }
-      const activeOrder = sessionOrderRef.current || order;
-      if (!activeOrder && method !== 'CARD') {
-        rejectAction({ code: 'ORDER_NOT_FOUND', message: 'Order not found' });
-        return;
+      let walletOrder;
+      if (method !== 'CARD') {
+        try {
+          walletOrder = walletTokenizationOrder(sessionOrderRef.current, current.savedTokens.amount);
+        } catch (error) {
+          rejectAction(error);
+          return;
+        }
       }
       if (!sessionRef.current.tryBeginNative()) return;
       // Card consent is accepted on native submission after valid input.
@@ -652,7 +655,7 @@ const NgeniusTokenization = ({
           outletRef,
           sessionRef: tokenizationSessionRef,
           usageType,
-          order: walletTokenizationOrder(activeOrder),
+          order: walletOrder,
           getConsentData,
           isCurrent,
           onVerifying: () => {
@@ -664,7 +667,7 @@ const NgeniusTokenization = ({
             ? await runWalletTokenization({
               ...common, method, googlePayConfig: applePayConfig, captureWallet: captureApplePayToken,
             })
-            : await runGooglePayTokenization({ ...common, googlePayConfig, initiateGooglePay });
+            : await runGooglePayTokenization({ ...common, googlePayConfig, initiateGooglePay: captureGooglePayToken });
           finish(outcome);
         } catch (error) {
           fail(error);

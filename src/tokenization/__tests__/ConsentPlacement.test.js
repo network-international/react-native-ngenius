@@ -4,7 +4,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('../ui/TokenizationScreen', () => 'TokenizationScreen');
 jest.mock('../ui/TokenizationPresentation', () => ({ children }) => children);
-jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn() }));
+jest.mock('../nativeWallets', () => ({ captureApplePayToken: jest.fn(), captureGooglePayToken: jest.fn() }));
 jest.mock('../nativeCards', () => ({ startNativeCardTokenization: jest.fn() }));
 jest.mock('../../nativePayments', () => ({
   initiateCardPayment: jest.fn(), initiateApplePay: jest.fn(), initiateGooglePay: jest.fn(),
@@ -27,7 +27,7 @@ const Component = require('../NgeniusTokenization').default;
 const { startNativeCardTokenization } = require('../nativeCards');
 const { createTokenizationSession } = require('../session');
 const native = require('../../nativePayments');
-const { captureApplePayToken } = require('../nativeWallets');
+const { captureApplePayToken, captureGooglePayToken } = require('../nativeWallets');
 const { UsageType } = require('../usageType');
 const order = { action: 'VERIFY', paymentMethods: { card: ['VISA'], wallet: ['GOOGLE_PAY', 'APPLE_PAY'] } };
 const card = { tokenRef: '8a880dc0-d2d2-4067-bcb1-b08d1690b26e', type: 'CARD', status: 'VERIFIED', cardDetails: { scheme: 'VISA', last4: '1234', expiry: '2031-07' } };
@@ -41,7 +41,7 @@ const session = () => createTokenizationSession.mock.results[createTokenizationS
 const sessionPaymentMethods = { card: ['VISA'], wallet: ['GOOGLE_PAY', 'APPLE_PAY'] };
 const defaultClient = () => ({
   createSession: jest.fn(),
-  getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/terms', paymentMethods: sessionPaymentMethods }),
+  getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/terms', paymentMethods: sessionPaymentMethods, amount: { currencyCode: 'AED' } }),
   supportsAddWallet: true,
   addWallet: jest.fn(async ({ walletType }) => ({ tokens: [wallet(walletType)] })),
   selectToken: jest.fn().mockResolvedValue({ status: 'SELECTED' }),
@@ -71,7 +71,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   Platform.OS = 'android';
   startNativeCardTokenization.mockReset().mockImplementation(() => ({ promise: new Promise(() => {}), cancel: jest.fn() }));
-  native.initiateGooglePay.mockReset().mockResolvedValue({ token: 'opaque-wallet' });
+  captureGooglePayToken.mockReset().mockResolvedValue({ token: 'opaque-wallet' });
   native.isApplePaySupported.mockReset().mockResolvedValue(true);
   native.isGooglePaySupported.mockReset().mockResolvedValue(true);
   captureApplePayToken.mockReset().mockResolvedValue({ token: 'opaque-wallet' });
@@ -119,7 +119,7 @@ it.each([
 ])('records %s click time, uses the configured token type and blocks duplicates', async (method, tokenType, usageType) => {
   Platform.OS = method === 'APPLE_PAY' ? 'ios' : 'android';
   const capture = deferred();
-  const fn = method === 'APPLE_PAY' ? captureApplePayToken : native.initiateGooglePay;
+  const fn = method === 'APPLE_PAY' ? captureApplePayToken : captureGooglePayToken;
   fn.mockReturnValueOnce(capture.promise);
   await open({ modeConfig: { tokenType } });
   jest.setSystemTime(new Date('2026-11-06T08:02:00.000Z'));
@@ -158,7 +158,7 @@ it.each(['APPLE_PAY', 'GOOGLE_PAY'])('hides session-allowed %s while wallet toke
   await select(method);
   expect(modal().visible).toBe(true);
   expect(captureApplePayToken).not.toHaveBeenCalled();
-  expect(native.initiateGooglePay).not.toHaveBeenCalled();
+  expect(captureGooglePayToken).not.toHaveBeenCalled();
   expect(tokenizationClient.addWallet).not.toHaveBeenCalled();
   expect(props.onError).not.toHaveBeenCalled();
   expect(session().acceptanceTimestamp()).toBeUndefined();
@@ -166,7 +166,7 @@ it.each(['APPLE_PAY', 'GOOGLE_PAY'])('hides session-allowed %s while wallet toke
 
 it('keeps skipConsent NOT_COLLECTED with a request-time timestamp and no terms/locale', async () => {
   const capture = deferred();
-  native.initiateGooglePay.mockReturnValueOnce(capture.promise);
+  captureGooglePayToken.mockReturnValueOnce(capture.promise);
   await open({ skipConsent: true, language: 'ar' });
   await select('GOOGLE_PAY');
   expect(session().acceptanceTimestamp()).toBeUndefined();
@@ -181,7 +181,7 @@ it('keeps skipConsent NOT_COLLECTED with a request-time timestamp and no terms/l
 it.each([undefined, 'javascript:alert(1)'])('preserves the existing optional-URL contract without inventing terms (%p)', async tncUrl => {
   await open({ tokenizationClient: {
     ...defaultClient(),
-    getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl, paymentMethods: sessionPaymentMethods }),
+    getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl, paymentMethods: sessionPaymentMethods, amount: { currencyCode: 'AED' } }),
   } });
   expect(screen().consent.url).toBeNull();
   await select('GOOGLE_PAY');
@@ -232,7 +232,7 @@ it('rejects stale consent-mode and terms-context handlers before recording accep
 });
 
 it.each(['Aborted', 'Failed'])('records a fresh click timestamp after a wallet %s retry', async status => {
-  native.initiateGooglePay.mockRejectedValueOnce({ status });
+  captureGooglePayToken.mockRejectedValueOnce({ status });
   await open();
   await select('GOOGLE_PAY');
   expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
@@ -258,7 +258,7 @@ it('uses the new native Pay time after returning from Card Back', async () => {
 
 it.each(['close', 'outlet', 'session', 'unmount'])('invalidates acceptance and outstanding wallet work on %s', async boundary => {
   const capture = deferred();
-  native.initiateGooglePay.mockReturnValueOnce(capture.promise);
+  captureGooglePayToken.mockReturnValueOnce(capture.promise);
   await open();
   await select('GOOGLE_PAY');
   if (boundary === 'unmount') { act(() => tree.unmount()); tree = undefined; }
@@ -295,32 +295,35 @@ it('cancels the open iOS Card form when the host closes the session', async () =
   expect(session().acceptanceTimestamp()).toBeUndefined();
 });
 
-it('uses raw orderDetails for native context and takes the amount and methods from Get Session', async () => {
+it('uses non-monetary orderDetails context and takes wallet currency and methods from Get Session', async () => {
   const details = { language: 'ar', amount: { currencyCode: 'AED', value: '3910' }, paymentMethods: { card: [], wallet: ['APPLE_PAY'] } };
   const client = defaultClient();
   client.getSession.mockResolvedValue({
-    tokens: [], amount: { currencyCode: 'AED', value: '5490' }, paymentMethods: { card: ['VISA'], wallet: ['GOOGLE_PAY'] },
+    tokens: [], amount: { currencyCode: 'USD', value: '5490' }, paymentMethods: { card: ['VISA'], wallet: ['GOOGLE_PAY'] },
   });
   await open({ orderDetails: details, order: { language: 'fr', amount: { currencyCode: 'USD', value: 100 } },
     paymentMethods: undefined, tokenizationClient: client });
   expect(screen().language).toBe('ar');
-  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', value: '5490', formattedValue: '54.90' });
+  expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'USD', value: '5490', formattedValue: '54.90' });
   expect(screen().methods).toEqual(['CARD', 'GOOGLE_PAY']);
   await select('GOOGLE_PAY');
-  expect(native.initiateGooglePay).toHaveBeenCalledWith({ ...details, amount: { ...details.amount, value: 0, formattedValue: '0.00' } }, undefined);
+  expect(captureGooglePayToken).toHaveBeenCalledWith({ ...details, amount: { currencyCode: 'USD', value: 0, formattedValue: '0.00' } }, undefined);
   expect(details.amount.value).toBe('3910');
 });
 
-it.each(['outlet', 'reopen'])('keeps native wallet context on the same snapshot until %s', async boundary => {
+it.each(['outlet', 'reopen'])('keeps non-monetary wallet context on its snapshot and uses each current session currency after %s', async boundary => {
   const first = { language: 'en', amount: { currencyCode: 'AED', value: '100' } };
   const next = { language: 'en', amount: { currencyCode: 'USD', value: '250' } };
-  await open({ orderDetails: first });
+  const client = defaultClient();
+  client.getSession.mockResolvedValueOnce({ tokens: [], amount: { currencyCode: 'BHD' }, paymentMethods: sessionPaymentMethods })
+    .mockResolvedValue({ tokens: [], amount: { currencyCode: 'JPY' }, paymentMethods: sessionPaymentMethods });
+  await open({ orderDetails: first, tokenizationClient: client });
   await update({ orderDetails: next, language: 'fr' });
   expect(screen().language).toBe('fr');
   expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
-  expect(native.initiateGooglePay).toHaveBeenLastCalledWith({
-    ...first, amount: { ...first.amount, value: 0, formattedValue: '0.00' },
+  expect(captureGooglePayToken).toHaveBeenLastCalledWith({
+    ...first, amount: { currencyCode: 'BHD', value: 0, formattedValue: '0.000' },
   }, undefined);
 
   if (boundary === 'reopen') {
@@ -329,8 +332,8 @@ it.each(['outlet', 'reopen'])('keeps native wallet context on the same snapshot 
   } else await update({ outletRef: 'outlet-2' });
   expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
-  expect(native.initiateGooglePay).toHaveBeenLastCalledWith({
-    ...next, amount: { ...next.amount, value: 0, formattedValue: '0.00' },
+  expect(captureGooglePayToken).toHaveBeenLastCalledWith({
+    ...next, amount: { currencyCode: 'JPY', value: 0, formattedValue: '0' },
   }, undefined);
 });
 
@@ -358,22 +361,22 @@ it.each(['outlet', 'reopen'])('keeps saving terms on the active order snapshot u
   });
 });
 
-it.each(['invalid', [], 42])('does not use a hidden legacy wallet order when explicit orderDetails is invalid (%p)', async orderDetails => {
+it.each(['invalid', [], 42])('captures from session currency without a hidden legacy wallet order when explicit orderDetails is invalid (%p)', async orderDetails => {
   await open({ orderDetails, order: { amount: { currencyCode: 'AED', value: '3910' } } });
   expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
-  expect(native.initiateGooglePay).not.toHaveBeenCalled();
-  expect(props.tokenizationClient.addWallet).not.toHaveBeenCalled();
-  expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({ error: 'Order not found' }));
+  expect(captureGooglePayToken).toHaveBeenCalledWith({ amount: { currencyCode: 'AED', value: 0, formattedValue: '0.00' } }, undefined);
+  expect(props.tokenizationClient.addWallet).toHaveBeenCalledTimes(1);
+  expect(props.onError).not.toHaveBeenCalled();
 });
 
-it.each([undefined, null])('keeps the legacy order alias when orderDetails is absent (%p)', async orderDetails => {
-  const legacy = { amount: { currencyCode: 'AED', value: '3910' } };
+it.each([undefined, null])('keeps only non-monetary legacy order context when orderDetails is absent (%p)', async orderDetails => {
+  const legacy = { language: 'ar', amount: { currencyCode: 'USD', value: '3910' } };
   await open({ orderDetails, order: legacy });
   expect(screen().orderSummary).toBeNull();
   await select('GOOGLE_PAY');
-  expect(native.initiateGooglePay).toHaveBeenCalledWith({
-    ...legacy, amount: { ...legacy.amount, value: 0, formattedValue: '0.00' },
+  expect(captureGooglePayToken).toHaveBeenCalledWith({
+    ...legacy, amount: { currencyCode: 'AED', value: 0, formattedValue: '0.00' },
   }, undefined);
 });
 

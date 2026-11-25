@@ -191,6 +191,48 @@ it('preserves an adapter authentication status without exposing its error body',
   expect(JSON.stringify(outcome)).not.toContain('encrypted bytes');
 });
 
+it('preserves an adapter request timeout for the fatal merchant outcome without exposing its error body', async () => {
+  const { addWallet, run } = setup();
+  addWallet.mockRejectedValue({ code: 'REQUEST_TIMEOUT', status: 408, message: payload });
+  const outcome = await run();
+  expect(outcome).toMatchObject({
+    state: VERIFICATION_STATES.FAILED,
+    result: { code: 'REQUEST_TIMEOUT', httpStatus: 408 },
+  });
+  expect(JSON.stringify(outcome)).not.toContain('encrypted bytes');
+});
+
+it('starts the Add Wallet deadline after user capture and ignores an adapter result received after the deadline', async () => {
+  jest.useFakeTimers();
+  try {
+    let finishCapture, finishAdd;
+    const capture = new Promise(resolve => { finishCapture = resolve; });
+    const add = new Promise(resolve => { finishAdd = resolve; });
+    const { addWallet, initiateGooglePay, run } = setup();
+    initiateGooglePay.mockReturnValue(capture);
+    addWallet.mockReturnValue(add);
+    const pending = run();
+    jest.advanceTimersByTime(45000);
+    expect(addWallet).not.toHaveBeenCalled();
+    finishCapture({ token: payload });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(addWallet).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(30000);
+    const outcome = await pending;
+    expect(outcome).toMatchObject({
+      state: VERIFICATION_STATES.FAILED,
+      result: { code: 'REQUEST_TIMEOUT', httpStatus: 408 },
+    });
+    expect(outcome).not.toHaveProperty('updatedTokenList');
+    finishAdd(tokenList);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(outcome).not.toHaveProperty('updatedTokenList');
+    expect(addWallet).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 it('does not update the list if the session closes before Add Wallet returns', async () => {
   let active = true;
   const { addWallet, run } = setup({ isCurrent: () => active });

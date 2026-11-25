@@ -58,7 +58,7 @@ it('keeps display amount separate from the immutable wallet zero-value context',
   ] } };
   const before = JSON.stringify(source);
   const model = normalizeOrderDetails({ orderDetails: source, language: 'fr' });
-  const capture = require('../walletTokenizationOrder').walletTokenizationOrder(source);
+  const capture = require('../walletTokenizationOrder').walletTokenizationOrder(source, source.amount);
   expect(model.language).toBe('fr');
   expect(model.amount.formattedValue).toBe('39.10');
   expect(model.amount.text).toBe('AED 39,10');
