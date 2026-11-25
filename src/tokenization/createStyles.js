@@ -115,9 +115,6 @@ const createTokenizationStyles = (theme) => {
     returnTextButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 16 },
     returnLabel: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: branding.textPrimary, ...fontStyle(branding.fontFamily), textAlign: 'center' },
     returnLinkLabel: { textDecorationLine: 'underline' },
-    selectionSuccessContainer: { paddingTop: layout.spacing.xxl, minHeight: 230 },
-    selectionSuccessCircle: { width: 68, height: 68, borderRadius: 34, backgroundColor: layout.colors.successBackground,
-      alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
     radio: {
       width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: layout.colors.textMuted,
       alignItems: 'center', justifyContent: 'center',

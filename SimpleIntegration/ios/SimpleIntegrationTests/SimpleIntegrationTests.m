@@ -23,6 +23,7 @@ static NSInteger cardTestStatus;
 static NSInteger cardTestRequestCount;
 static NSUInteger cardTestTokenCount;
 static NSUInteger cardTestResponseBytes;
+static NSString *cardTestListKey;
 @interface NativeCardStubProtocol : NSURLProtocol
 @end
 @implementation NativeCardStubProtocol
@@ -59,7 +60,7 @@ static NSUInteger cardTestResponseBytes;
             @"status": @"AWAIT_3DS", @"cvv": cardTestBody[@"card"][@"cvv"] ?: @""
         }];
         response = @{
-            @"tokens": tokens,
+            (cardTestListKey ?: @"advisedTokens"): tokens,
             @"tncUrl": @"https://terms.test/terms",
             @"page": @{ @"number": @0, @"size": @(tokens.count), @"totalElements": @(tokens.count),
                         @"totalPages": @1, @"private": @"fixture" },
@@ -183,6 +184,7 @@ static NSUInteger cardTestResponseBytes;
                 if (status == 200) {
                     XCTAssertTrue([result isEqualToString:@"Response"]);
                     NSArray<NSDictionary *> *tokens = response[@"tokens"];
+                    XCTAssertNil(response[@"advisedTokens"]);
                     XCTAssertEqual(tokens.count, tokenCount);
                     if (tokenCount > 2) XCTAssertGreaterThan(cardTestResponseBytes, 64 * 1024);
                     XCTAssertEqualObjects(tokens.firstObject[@"status"], @"VERIFIED");
@@ -311,6 +313,12 @@ static NSUInteger cardTestResponseBytes;
 
 - (void)testNativeCardAcceptsAnUpdatedListBeyondTheOldSingleTokenLimit {
     [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT" tokenCount:460];
+}
+
+- (void)testNativeCardReadsTheEarlierTokensFieldWhenAdvisedTokensIsAbsent {
+    cardTestListKey = @"tokens";
+    [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT" tokenCount:2];
+    cardTestListKey = nil;
 }
 
 - (void)runNativeCardBackWithRtl:(BOOL)rtl {

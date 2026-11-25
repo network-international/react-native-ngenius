@@ -64,7 +64,6 @@ const TokenizationScreen = ({
     [theme, isRtl]
   );
   const selectionPending = selectionStatus === 'submitting';
-  const selectionConfirmed = selectionStatus === 'confirmed';
   const isBusy = isBusyState(status) || selectionPending;
   const isFullscreen = modeConfig.presentation === 'fullscreen';
   const closeDisabled = isBusy || dismissDisabled;
@@ -95,7 +94,7 @@ const TokenizationScreen = ({
     show: t(language, 'SHOW_ORDER_SUMMARY'), hide: t(language, 'HIDE_ORDER_SUMMARY'),
   };
   const showMethods =
-    !selectionPending && !selectionConfirmed && (status === VERIFICATION_STATES.READY || status === VERIFICATION_STATES.FAILED);
+    !selectionPending && (status === VERIFICATION_STATES.READY || status === VERIFICATION_STATES.FAILED);
   const showLoadError = Boolean(loadError || savedTokens?.failed || importStatus === 'error');
   const showActionError = Boolean(errorMessage || selectionError ||
     status === VERIFICATION_STATES.FAILED || selectionStatus === 'failed');
@@ -159,21 +158,15 @@ const TokenizationScreen = ({
             <Text style={styles.securityLabel}>{t(language, 'SECURE_CHECKOUT')}</Text>
           </View>
         </View>
-        {!selectionConfirmed ? (
-          <Text testID="tokenization-page-title" accessibilityRole="header" style={styles.pageTitle}>
-            {showLoadError ? t(language, 'CHECKOUT_UNAVAILABLE') : labels.pageTitle || t(language, 'SELECT_PAYMENT_METHOD')}
-          </Text>
-        ) : null}
-        {!selectionConfirmed && !showLoadError && labels.pageSubtitle ? <Text testID="tokenization-page-subtitle" style={styles.pageSubtitle}>{labels.pageSubtitle}</Text> : null}
-        {!selectionConfirmed && !loadingTokens && !showLoadError && !showActionError ? <OrderSummary value={orderSummary} styles={styles} labels={orderLabels}
+        <Text testID="tokenization-page-title" accessibilityRole="header" style={styles.pageTitle}>
+          {showLoadError ? t(language, 'CHECKOUT_UNAVAILABLE') : labels.pageTitle || t(language, 'SELECT_PAYMENT_METHOD')}
+        </Text>
+        {!showLoadError && labels.pageSubtitle ? <Text testID="tokenization-page-subtitle" style={styles.pageSubtitle}>{labels.pageSubtitle}</Text> : null}
+        {!loadingTokens && !showLoadError && !showActionError ? <OrderSummary value={orderSummary} styles={styles} labels={orderLabels}
           initialExpanded={modeConfig.orderSummaryInitiallyExpanded} /> : null}
-        {selectionPending || selectionConfirmed ? (
-          <SelectionStatusView status={selectionStatus} styles={styles}
-            spinnerColor={theme.branding.focusColor}
-            successColor={theme.layout.colors.success}
-            loadingLabel={labels.selectionPending || t(language, 'SELECTING_PAYMENT_METHOD')}
-            confirmedLabel={labels.selectionSuccessTitle || t(language, 'PAYMENT_METHOD_SELECTED')}
-            confirmedMessage={labels.selectionSuccessMessage} />
+        {selectionPending ? (
+          <SelectionStatusView styles={styles} spinnerColor={theme.branding.focusColor}
+            loadingLabel={labels.selectionPending || t(language, 'SELECTING_PAYMENT_METHOD')} />
         ) : loadingTokens ? (
           <SavedTokensSkeleton styles={styles} label={t(language, 'SAVED_TOKENS_LOADING')} />
         ) : showLoadError ? (
@@ -230,7 +223,7 @@ const TokenizationScreen = ({
         </Text>
         </View>
       </ScrollView>
-      {!selectionConfirmed && (isFullscreen || (showContinueShopping && !showLoadError)) ? <View style={[styles.returnFooter, !isFullscreen && styles.sheetReturnFooter]}>
+      {isFullscreen || (showContinueShopping && !showLoadError) ? <View style={[styles.returnFooter, !isFullscreen && styles.sheetReturnFooter]}>
         {showContinueShopping && !showLoadError ? (
           <Pressable testID="tokenization-continue-shopping" accessibilityRole={returnStyle === 'link' ? 'link' : 'button'}
             accessibilityLabel={returnLabel} accessibilityState={{ disabled: closeDisabled }} disabled={closeDisabled}

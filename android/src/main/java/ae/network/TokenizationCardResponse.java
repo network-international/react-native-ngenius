@@ -17,12 +17,13 @@ import java.util.Map;
 final class TokenizationCardResponse {
     private TokenizationCardResponse() {}
 
-    // Add Card returns the updated session list. Parse directly from the response
-    // stream and only pass allowlisted values to the React Native bridge.
+    // Add Card returns the updated session list as advisedTokens. Parse directly from the
+    // response stream and only pass allowlisted values to the React Native bridge, as
+    // `tokens`. The earlier `tokens` field is read only when advisedTokens is absent.
     static Map<String, Object> read(InputStream input) {
         JsonObject source = JsonParser.parseReader(new InputStreamReader(input, StandardCharsets.UTF_8))
             .getAsJsonObject();
-        JsonElement tokens = source.get("tokens");
+        JsonElement tokens = source.has("advisedTokens") ? source.get("advisedTokens") : source.get("tokens");
         if (tokens == null || !tokens.isJsonArray()) {
             throw new JsonParseException("Add Card response requires a token list");
         }

@@ -38,9 +38,10 @@ let tree, props;
 const screen = () => tree.root.findByType('TokenizationScreen').props;
 const modal = () => tree.root.findByType('Modal').props;
 const session = () => createTokenizationSession.mock.results[createTokenizationSession.mock.results.length - 1].value;
+const sessionPaymentMethods = { card: ['VISA'], wallet: ['GOOGLE_PAY', 'APPLE_PAY'] };
 const defaultClient = () => ({
   createSession: jest.fn(),
-  getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/terms' }),
+  getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl: 'https://backend.example/terms', paymentMethods: sessionPaymentMethods }),
   supportsAddWallet: true,
   addWallet: jest.fn(async ({ walletType }) => ({ tokens: [wallet(walletType)] })),
   selectToken: jest.fn().mockResolvedValue({ status: 'SELECTED' }),
@@ -149,19 +150,18 @@ it.each([
   expect(native.initiateApplePay).not.toHaveBeenCalled();
 });
 
-it.each(['APPLE_PAY', 'GOOGLE_PAY'])('reports %s as backend-pending before recording consent or showing a sheet', async method => {
+it.each(['APPLE_PAY', 'GOOGLE_PAY'])('hides session-allowed %s while wallet tokenization is backend-pending', async method => {
   Platform.OS = method === 'APPLE_PAY' ? 'ios' : 'android';
   const tokenizationClient = { ...defaultClient(), supportsAddWallet: false };
   await open({ tokenizationClient });
-  expect(screen().methods).toContain(method);
+  expect(screen().methods).toEqual(['CARD']);
   await select(method);
   expect(modal().visible).toBe(true);
   expect(captureApplePayToken).not.toHaveBeenCalled();
   expect(native.initiateGooglePay).not.toHaveBeenCalled();
   expect(tokenizationClient.addWallet).not.toHaveBeenCalled();
-  expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({
-    method, code: 'ADD_WALLET_BACKEND_PENDING',
-  }));
+  expect(props.onError).not.toHaveBeenCalled();
+  expect(session().acceptanceTimestamp()).toBeUndefined();
 });
 
 it('keeps skipConsent NOT_COLLECTED with a request-time timestamp and no terms/locale', async () => {
@@ -181,7 +181,7 @@ it('keeps skipConsent NOT_COLLECTED with a request-time timestamp and no terms/l
 it.each([undefined, 'javascript:alert(1)'])('preserves the existing optional-URL contract without inventing terms (%p)', async tncUrl => {
   await open({ tokenizationClient: {
     ...defaultClient(),
-    getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl }),
+    getSession: jest.fn().mockResolvedValue({ tokens: [], tncUrl, paymentMethods: sessionPaymentMethods }),
   } });
   expect(screen().consent.url).toBeNull();
   await select('GOOGLE_PAY');
@@ -295,15 +295,17 @@ it('cancels the open iOS Card form when the host closes the session', async () =
   expect(session().acceptanceTimestamp()).toBeUndefined();
 });
 
-it('uses raw orderDetails for native context and displays the amount from Get Session', async () => {
-  const details = { language: 'ar', amount: { currencyCode: 'AED', value: '3910' }, paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] } };
+it('uses raw orderDetails for native context and takes the amount and methods from Get Session', async () => {
+  const details = { language: 'ar', amount: { currencyCode: 'AED', value: '3910' }, paymentMethods: { card: [], wallet: ['APPLE_PAY'] } };
   const client = defaultClient();
-  client.getSession.mockResolvedValue({ tokens: [], amount: { currencyCode: 'AED', value: '5490' } });
+  client.getSession.mockResolvedValue({
+    tokens: [], amount: { currencyCode: 'AED', value: '5490' }, paymentMethods: { card: ['VISA'], wallet: ['GOOGLE_PAY'] },
+  });
   await open({ orderDetails: details, order: { language: 'fr', amount: { currencyCode: 'USD', value: 100 } },
     paymentMethods: undefined, tokenizationClient: client });
   expect(screen().language).toBe('ar');
   expect(screen().orderSummary.amount).toMatchObject({ currencyCode: 'AED', value: '5490', formattedValue: '54.90' });
-  expect(screen().methods).toEqual(['GOOGLE_PAY']);
+  expect(screen().methods).toEqual(['CARD', 'GOOGLE_PAY']);
   await select('GOOGLE_PAY');
   expect(native.initiateGooglePay).toHaveBeenCalledWith({ ...details, amount: { ...details.amount, value: 0, formattedValue: '0.00' } }, undefined);
   expect(details.amount.value).toBe('3910');

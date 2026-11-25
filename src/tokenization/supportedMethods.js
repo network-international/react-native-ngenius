@@ -11,55 +11,42 @@ const EXCLUDED_TOKENIZATION_METHODS = Object.freeze([
   'CLICK_TO_PAY',
 ]);
 
-const hasCardMethods = (paymentMethods) => {
-  if (!paymentMethods) {
-    return true;
+// A Get Session response without paymentMethods keeps the card form available.
+// Once paymentMethods is supplied, only the listed methods are offered: a missing
+// list, an empty list and a malformed list all mean "not allowed".
+const sessionAllows = (sessionPaymentMethods, method) => {
+  if (sessionPaymentMethods == null) {
+    return method === 'CARD';
   }
-  if (!Array.isArray(paymentMethods.card)) {
-    return true;
+  const list = sessionPaymentMethods[method === 'CARD' ? 'card' : 'wallet'];
+  if (!Array.isArray(list)) {
+    return false;
   }
-  return paymentMethods.card.length > 0;
+  return method === 'CARD' ? list.length > 0 : list.includes(method);
 };
 
-const walletIncludes = (paymentMethods, wallet) => {
-  const wallets = paymentMethods && Array.isArray(paymentMethods.wallet) ? paymentMethods.wallet : [];
-  return wallets.includes(wallet);
-};
+const walletReady = (method, options) => options.walletTokenizationAvailable === true && (
+  (method === 'APPLE_PAY' && options.platform === 'ios' && options.applePaySupported === true) ||
+  (method === 'GOOGLE_PAY' && options.platform === 'android' && options.googlePaySupported === true)
+);
 
-const getTokenizationMethods = (order, options = {}) => {
-  const {
-    platform,
-    applePaySupported = false,
-    googlePaySupported = false,
-  } = options;
-  if (options.paymentMethods !== undefined) {
-    const requested = Array.isArray(options.paymentMethods) ? options.paymentMethods : [];
-    return TOKENIZATION_SUPPORTED_METHODS.filter((method) => requested.includes(method) && (
-      method === 'CARD' ||
-      (method === 'APPLE_PAY' && platform === 'ios' && applePaySupported) ||
-      (method === 'GOOGLE_PAY' && platform === 'android' && googlePaySupported)
-    ));
-  }
-  const paymentMethods = order && order.paymentMethods;
-  const methods = [];
+// Compatibility: CONTINUE_SHOPPING is a UI option carried by the legacy paymentMethods
+// prop. A prop that lists only CONTINUE_SHOPPING shows the return action without
+// narrowing the session methods.
+const UI_ONLY_ENTRIES = Object.freeze(['CONTINUE_SHOPPING']);
+const narrowsMethods = requested => requested !== undefined && !(
+  Array.isArray(requested) && requested.length > 0 &&
+  requested.every(entry => UI_ONLY_ENTRIES.includes(entry))
+);
 
-  if (hasCardMethods(paymentMethods)) {
-    methods.push('CARD');
-  }
-
-  if (platform === 'ios' && applePaySupported) {
-    if (!paymentMethods || !Array.isArray(paymentMethods.wallet) || walletIncludes(paymentMethods, 'APPLE_PAY')) {
-      methods.push('APPLE_PAY');
-    }
-  }
-
-  if (platform === 'android' && googlePaySupported) {
-    if (!paymentMethods || !Array.isArray(paymentMethods.wallet) || walletIncludes(paymentMethods, 'GOOGLE_PAY')) {
-      methods.push('GOOGLE_PAY');
-    }
-  }
-
-  return methods.filter((method) => TOKENIZATION_SUPPORTED_METHODS.includes(method));
+// The merchant's paymentMethods prop can only narrow what the session allows.
+const getTokenizationMethods = (sessionPaymentMethods, options = {}) => {
+  const requested = options.paymentMethods;
+  const narrowed = narrowsMethods(requested);
+  return TOKENIZATION_SUPPORTED_METHODS.filter(method =>
+    sessionAllows(sessionPaymentMethods, method) &&
+    (!narrowed || (Array.isArray(requested) && requested.includes(method))) &&
+    (method === 'CARD' || walletReady(method, options)));
 };
 
 const isTokenizationMethodSupported = (method) =>

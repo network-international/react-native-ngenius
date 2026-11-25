@@ -161,10 +161,11 @@ it('selects only the newly verified Card in the same session and closes after co
   });
   expect(props.onResult).not.toHaveBeenCalled();
   expect(props.onSelectionComplete).not.toHaveBeenCalled();
+  expect(screen().selectionStatus).toBe('submitting');
+  expect(modal().visible).toBe(true);
   await act(async () => { acknowledgement.resolve({ status: 'SELECTED' }); await flush(); });
-  expect(screen().selectionStatus).toBe('confirmed');
-  await advance(1800);
   expect(modal().visible).toBe(false);
+  expect(jest.getTimerCount()).toBe(0);
   expect(props.onResult).toHaveBeenCalledWith({
     statusCode: 200, message: 'Payment method confirmed.', sessionID: 'session-1',
   });
@@ -225,20 +226,28 @@ it('shows submitting state while persistence is pending, blocks duplicates, and 
   noTokenizationOrPayment();
 });
 
-it('confirms persistence, shows the success phase for 1800 ms, then closes with one opaque completion', async () => {
+it('closes without a success screen as soon as selected-token is acknowledged, with one opaque completion', async () => {
+  const selection = deferred();
   const client = defaultClient();
-  client.selectToken.mockResolvedValue({ status: 'SELECTED', savedToken: card, tokenRef: card.tokenRef });
+  client.selectToken.mockReturnValue(selection.promise);
   await open({ tokenizationClient: client });
   const handler = screen().onConfirmSavedToken;
   await confirm();
-  expect(screen().selectionStatus).toBe('confirmed');
+  expect(screen().selectionStatus).toBe('submitting');
   expect(modal().visible).toBe(true);
+  expect(props.onResult).not.toHaveBeenCalled();
   expect(props.onSelectionComplete).not.toHaveBeenCalled();
-  await advance(1799);
-  expect(modal().visible).toBe(true);
-  expect(props.onSelectionComplete).not.toHaveBeenCalled();
-  await advance(1);
+  await act(async () => {
+    selection.resolve({ status: 'SELECTED', savedToken: card, tokenRef: card.tokenRef });
+    await flush();
+  });
+  expect(screen().selectionStatus).not.toBe('confirmed');
   expect(modal().visible).toBe(false);
+  expect(jest.getTimerCount()).toBe(0);
+  expect(props.onResult).toHaveBeenCalledTimes(1);
+  expect(props.onResult).toHaveBeenCalledWith({
+    statusCode: 200, message: 'Payment method confirmed.', sessionID: 'session-1',
+  });
   expect(props.onSelectionComplete).toHaveBeenCalledTimes(1);
   expect(props.onSelectionComplete).toHaveBeenCalledWith({ flow: 'TOKENIZATION', status: 'SELECTED', canClose: true, sessionRef: 'session-1' });
   expect(JSON.stringify(props.onSelectionComplete.mock.calls)).not.toMatch(/8a880dc0|cardDetails|savedToken|selectedToken|1234/);
@@ -267,7 +276,6 @@ it('keeps a failed request open for retry or another selection without tokenizat
   expect(screen().selectionError).toBeUndefined();
   await confirm();
   expect(client.selectToken).toHaveBeenLastCalledWith({ outletRef: 'outlet', sessionRef: 'session-1', tokenRef: other.tokenRef });
-  await advance(1800);
   expect(props.onSelectionComplete).toHaveBeenCalledTimes(1);
   noTokenizationOrPayment();
 });
@@ -404,27 +412,26 @@ it.each(['close', 'unmount', 'outlet change', 'session change'])('ignores a late
   noTokenizationOrPayment();
 });
 
-it.each(['close', 'unmount', 'outlet change', 'session change'])('clears the confirmation timer on %s', async boundary => {
+it.each(['close', 'unmount', 'outlet change', 'session change'])('reports a confirmed selection once and nothing more on a later %s', async boundary => {
   await open();
   await confirm();
-  expect(screen().selectionStatus).toBe('confirmed');
-  await advance(500);
+  expect(modal().visible).toBe(false);
   await invalidate(boundary);
   await advance(3000);
-  // A host close after the server confirmed Pay must still report the success.
-  expect(props.onSelectionComplete).toHaveBeenCalledTimes(
-    ['close', 'unmount'].includes(boundary) ? 1 : 0,
-  );
+  expect(props.onSelectionComplete).toHaveBeenCalledTimes(1);
+  expect(props.onResult).toHaveBeenCalledTimes(1);
+  expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 200, sessionID: 'session-1' }));
+  expect(props.onCancel).not.toHaveBeenCalled();
   expect(jest.getTimerCount()).toBe(0);
   noTokenizationOrPayment();
 });
 
-it('rejects a stale native Add Card handler during the confirmed-selection animation', async () => {
+it('rejects a stale native Add Card handler after a confirmed selection', async () => {
   startNativeCardTokenization.mockReturnValue({ promise: new Promise(() => {}), cancel: jest.fn() });
   await open();
   const staleAddCard = screen().onSelectMethod;
   await confirm();
-  expect(screen().selectionStatus).toBe('confirmed');
+  expect(modal().visible).toBe(false);
   await act(async () => { staleAddCard('CARD'); await flush(); });
   expect(startNativeCardTokenization).not.toHaveBeenCalled();
 });
@@ -438,14 +445,15 @@ it('rejects a previous-session native Add Card handler after the merchant switch
   expect(startNativeCardTokenization).not.toHaveBeenCalled();
 });
 
-it.each(['outlet', 'reopen'])('replaces the order snapshot and clears old add feedback on a new %s context', async boundary => {
+it.each(['outlet', 'reopen'])('replaces the session methods and order snapshot and clears old add feedback on a new %s context', async boundary => {
+  // Init order paymentMethods contradict the session on purpose: only Get Session decides.
   const firstOrder = {
     action: 'VERIFY', amount: { currencyCode: 'AED', value: 100 },
-    paymentMethods: { card: ['VISA'], wallet: [] },
+    paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] },
   };
   const nextOrder = {
     action: 'VERIFY', amount: { currencyCode: 'USD', value: 200 },
-    paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] },
+    paymentMethods: { card: ['VISA'], wallet: [] },
   };
   native.isGooglePaySupported.mockResolvedValueOnce(true);
   if (boundary === 'reopen') native.isGooglePaySupported.mockResolvedValueOnce(true);
@@ -454,6 +462,9 @@ it.each(['outlet', 'reopen'])('replaces the order snapshot and clears old add fe
     promise: Promise.resolve({ state: 'FAILED', result: { status: 'FAILED' } }), cancel: jest.fn(),
   });
   const client = defaultClient();
+  client.getSession
+    .mockResolvedValueOnce({ tokens: [card], paymentMethods: { card: ['VISA'], wallet: [] } })
+    .mockResolvedValue({ tokens: [card], paymentMethods: { card: [], wallet: ['GOOGLE_PAY'] } });
   client.addWallet.mockResolvedValue({ tokens: [{ ...card, type: 'WALLET', walletType: 'GOOGLE_PAY' }] });
   await open({ order: firstOrder, tokenizationClient: client });
   expect(screen().methods).toEqual(['CARD']);
@@ -596,33 +607,128 @@ it('uses the explicit ONCE_OFF type for Card Pay and confirms the new card', asy
   expect(client.selectToken).toHaveBeenCalledWith({
     outletRef: 'outlet', sessionRef: 'session-1', tokenRef: card.tokenRef,
   });
-  expect(screen().selectionStatus).toBe('confirmed');
-  expect(modal().visible).toBe(true);
-  expect(props.onResult).not.toHaveBeenCalled();
-  await advance(1800);
   expect(modal().visible).toBe(false);
+  expect(jest.getTimerCount()).toBe(0);
+  expect(props.onResult).toHaveBeenCalledTimes(1);
   expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 200, sessionID: 'session-1' }));
+});
+
+it('keeps a new Card open with a recoverable error when selected-token fails after Add', async () => {
+  const client = defaultClient();
+  client.getSession.mockResolvedValue({ tokens: [] });
+  client.selectToken.mockRejectedValueOnce(new Error('private backend response')).mockResolvedValue({ status: 'SELECTED' });
+  startNativeCardTokenization.mockReturnValue({
+    promise: Promise.resolve({ state: 'SUCCESS', updatedTokenList: { tokens: [card] } }), cancel: jest.fn(),
+  });
+  await open({ tokenizationClient: client });
+  await act(async () => { screen().onSelectMethod('CARD'); await flush(); });
+  expect(client.selectToken).toHaveBeenCalledTimes(1);
+  expect(screen().selectionStatus).toBe('failed');
+  expect(screen().selectionError).not.toMatch(/private|backend response/);
+  expect(screen().savedTokens.tokens).toEqual([card]);
+  expect(modal().visible).toBe(true);
+  expect(props.onSelectionComplete).not.toHaveBeenCalled();
+  expect(props.onResult).not.toHaveBeenCalledWith(expect.objectContaining({ statusCode: 200 }));
+  act(() => screen().onSelectToken(card.tokenRef));
+  await confirm();
+  expect(client.getSession).toHaveBeenCalledTimes(1);
+  expect(modal().visible).toBe(false);
+  expect(props.onSelectionComplete).toHaveBeenCalledTimes(1);
 });
 
 it.each([
   ['listed schemes', { card: ['MASTERCARD', 'JCB', 'JCB', 'UNKNOWN', null], wallet: ['APPLE_PAY'] }, ['Mastercard', 'JCB']],
-  ['an empty scheme list', { card: [] }, []],
-  ['no scheme list', undefined, []],
-])('passes only Get Session card logos to the native form with %s', async (_case, paymentMethods, expected) => {
+  ['no paymentMethods', undefined, []],
+  ['a nested orderDetails.paymentMethods, which is not the contract', undefined, [], { orderDetails: { paymentMethods: { card: ['VISA'] } } }],
+])('passes only Get Session card logos to the native form with %s', async (_case, paymentMethods, expected, extra = {}) => {
   const client = createTokenizationClient({
     baseUrl: 'https://paypage.example',
     getAccessToken: async () => 'test-token',
-    transport: async () => ({ status: 200, text: JSON.stringify({ tokens: [], paymentMethods }) }),
+    transport: async () => ({ status: 200, text: JSON.stringify({ tokens: [], paymentMethods, ...extra }) }),
   });
   startNativeCardTokenization.mockReturnValue({
     promise: Promise.resolve({ state: 'READY' }),
     cancel: jest.fn(),
   });
-  await open({ tokenizationClient: client, order: { paymentMethods: { card: ['VISA'] } } });
+  await open({ tokenizationClient: client, order: { paymentMethods: { card: ['AMEX'] } } });
   await act(async () => { await screen().onSelectMethod('CARD'); await flush(); });
   expect(startNativeCardTokenization).toHaveBeenCalledWith(expect.objectContaining({
     presentation: expect.objectContaining({ acceptedSchemes: expected }),
   }));
+});
+
+it.each([
+  ['no paymentMethods prop', undefined, false],
+  ['only CONTINUE_SHOPPING', ['CONTINUE_SHOPPING'], true],
+])('takes card checkout context from Get Session without init business data (%s)', async (_case, paymentMethods, returnAction) => {
+  const client = createTokenizationClient({
+    baseUrl: 'https://paypage.example',
+    getAccessToken: async () => 'test-token',
+    transport: async () => ({ status: 200, text: JSON.stringify({
+      advisedTokens: [],
+      paymentMethods: { card: ['VISA', 'MASTERCARD'] },
+      orderDetails: { action: 'AUTH', amount: { currencyCode: 'AED', value: 1500 } },
+    }) }),
+  });
+  startNativeCardTokenization.mockReturnValue({ promise: Promise.resolve({ state: 'READY' }), cancel: jest.fn() });
+  await open({ tokenizationClient: client, order: undefined, paymentMethods });
+  expect(screen().methods).toEqual(['CARD']);
+  expect(screen().orderSummary.amount.text).toBe('AED 15.00');
+  expect(screen().showContinueShopping).toBe(returnAction);
+  await act(async () => { await screen().onSelectMethod('CARD'); await flush(); });
+  expect(startNativeCardTokenization).toHaveBeenCalledWith(expect.objectContaining({
+    presentation: expect.objectContaining({ acceptedSchemes: ['Visa', 'Mastercard'] }),
+  }));
+  expect(props.onError).not.toHaveBeenCalled();
+});
+
+it('does not open the card form when Get Session returns an explicitly empty card list', async () => {
+  const client = createTokenizationClient({
+    baseUrl: 'https://paypage.example',
+    getAccessToken: async () => 'test-token',
+    transport: async () => ({ status: 200, text: JSON.stringify({ advisedTokens: [card], paymentMethods: { card: [] }, orderDetails: { action: 'AUTH', amount: { currencyCode: 'AED', value: 1500 } } }) }),
+  });
+  await open({ tokenizationClient: client, order: { paymentMethods: { card: ['VISA'] } }, paymentMethods: ['CARD'] });
+  expect(screen().methods).toEqual([]);
+  expect(screen().savedTokens.tokens).toEqual([{ ...card, walletType: null }]);
+  await act(async () => { await screen().onSelectMethod('CARD'); await flush(); });
+  expect(startNativeCardTokenization).not.toHaveBeenCalled();
+  expect(props.onError).not.toHaveBeenCalled();
+});
+
+it.each(['ios', 'android'])('offers only the platform wallet that Get Session allows on %s', async platform => {
+  const { Platform } = require('react-native');
+  const originalPlatform = Platform.OS;
+  Platform.OS = platform;
+  try {
+    native.isApplePaySupported.mockResolvedValue(true);
+    native.isGooglePaySupported.mockResolvedValue(true);
+    const client = defaultClient();
+    client.getSession.mockResolvedValue({ tokens: [], paymentMethods: { card: ['VISA'], wallet: ['APPLE_PAY', 'GOOGLE_PAY'] } });
+    await open({ tokenizationClient: client, order: { paymentMethods: { wallet: [] } } });
+    expect(screen().methods).toEqual(['CARD', platform === 'ios' ? 'APPLE_PAY' : 'GOOGLE_PAY']);
+
+    client.getSession.mockResolvedValue({ tokens: [], paymentMethods: { card: ['VISA'], wallet: [] } });
+    await act(async () => { screen().onRetrySavedTokens(); await flush(); });
+    expect(screen().methods).toEqual(['CARD']);
+  } finally {
+    Platform.OS = originalPlatform;
+    native.isApplePaySupported.mockResolvedValue(false);
+    native.isGooglePaySupported.mockResolvedValue(false);
+  }
+});
+
+it.each([
+  ['loading', () => new Promise(() => {})],
+  ['an initialization error', () => Promise.reject({ status: 503 })],
+])('shows no amount or methods while %s, even with init order amounts', async (_case, getSession) => {
+  const client = defaultClient();
+  client.getSession.mockImplementation(getSession);
+  const initAmount = { currencyCode: 'AED', value: 1500 };
+  await open({ tokenizationClient: client, order: { amount: initAmount },
+    orderDetails: { amount: initAmount, orderSummary: { total: initAmount } } });
+  expect(screen().orderSummary).toBeNull();
+  expect(screen().methods).toEqual([]);
 });
 
 it.each([
@@ -681,7 +787,6 @@ it('adds two cards in one session and only confirms the card the shopper chooses
   expect(client.selectToken).toHaveBeenCalledWith({
     outletRef: 'outlet', sessionRef: 'session-1', tokenRef: other.tokenRef,
   });
-  await advance(1800);
   expect(modal().visible).toBe(false);
   expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 200, sessionID: 'session-1' }));
 });

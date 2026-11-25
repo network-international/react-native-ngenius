@@ -16,12 +16,25 @@ All notable changes to `@network-international/react-native-ngenius` are documen
   and optional factual NI security note.
 
 ### Changed
+- Split the demo into Settings and Merchant screens with a return-to-settings action. Live
+  connection fields start empty; synthetic data is confined to Offline UI preview. The demo
+  entry no longer imports the older direct-payment sample or its fixed payment defaults.
 - Compact hosted-preview-style chooser with green shield and NI footer. Card and wallet rows now
   lead with the masked funding card, a separate zero-padded expiry line and source tag.
 - Replace the consent checkbox with click-to-agree: each actionable Add Card/Wallet click records
   acceptance for that attempt. Existing selection, cancellation and legal links do not accept.
   `skipConsent=true` hides the notice and keeps `NOT_COLLECTED` semantics.
 - Remove successful-list loaded text; preserve native Card/wallet capture and legacy PAYMENT APIs.
+- Read Get Session and Add Card token lists from `advisedTokens` (iOS, Android and JS parsers);
+  responses without `advisedTokens` keep the earlier `tokens` field. Parsed lists stay `tokens`.
+- Read Get Session amount and order summary from `orderDetails` and payment methods from the top
+  level. Responses without `orderDetails` keep the legacy top-level amount and summary. Card schemes
+  and wallets shown come from the session. The `paymentMethods` prop only narrows them. Wallets also
+  need platform, device and `supportsAddWallet` support.
+- Close the SDK as soon as selected-token is acknowledged, with no success screen or delay.
+  `selectionSuccessTitle` and `selectionSuccessMessage` labels are no longer displayed.
+- Card setup needs no `order`, `orderDetails` or `paymentMethods`. A `paymentMethods` list that
+  contains only `CONTINUE_SHOPPING` shows the return action without narrowing the session methods.
 
 ### Integration notes
 - Install a compatible `react-native-svg` peer and rebuild the native app. SimpleIntegration uses

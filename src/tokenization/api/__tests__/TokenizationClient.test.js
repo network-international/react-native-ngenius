@@ -6,6 +6,7 @@ const { TokenizationApiError } = require('../errors');
 const { HEADER_ACCESS_TOKEN, HEADER_CONTENT_TYPE } = require('../headers');
 const { TOKENIZATION_PATHS } = require('../endpoints');
 const { parseSavedCardResponse } = require('../models');
+const spec = require('../../__tests__/fixtures/tokenizationApiSpec');
 
 const BASE_URL = 'https://tokenization.test';
 const ACCESS_TOKEN = 'test-access-token';
@@ -241,6 +242,99 @@ describe('TokenizationClient', () => {
         tokens: [],
         amount,
         orderSummary: { items: [{ description: 'Tickets', quantity: 2, totalPrice: amount }], total: amount },
+      });
+    });
+
+    it('reads the specification Get Session response into the internal session shape', async () => {
+      const client = createClient({ respond: () => jsonResponse(200, spec.getSessionResponse) });
+      const { orderDetails } = spec.getSessionResponse;
+      await expect(client.getSession({ sessionRef: SESSION, outletRef: OUTLET })).resolves.toEqual({
+        tokens: [{
+          tokenRef: '019a8f3c-6d2e-7b41-9c5a-3e8d1f2a4b6c',
+          type: 'CARD',
+          walletType: null,
+          status: 'VERIFIED',
+          cardDetails: { scheme: 'VISA', last4: '1111', expiry: '2030-12', cardholderName: 'John Doe' },
+        }],
+        tncUrl: 'https://example.com/terms-and-conditions',
+        paymentMethods: { card: ['VISA', 'MASTERCARD'], wallet: ['GOOGLE_PAY'] },
+        amount: orderDetails.amount,
+        orderSummary: orderDetails.orderSummary,
+      });
+    });
+
+    describe('token list compatibility', () => {
+      const getSession = body => createClient({ respond: () => jsonResponse(200, body) })
+        .getSession({ sessionRef: SESSION, outletRef: OUTLET });
+
+      it('reads the earlier tokens field when advisedTokens is absent', async () => {
+        await expect(getSession({ tokens: [verifiedCard] })).resolves.toMatchObject({
+          tokens: [{ tokenRef: verifiedCard.tokenRef }],
+        });
+      });
+
+      it('prefers advisedTokens over the earlier tokens field', async () => {
+        await expect(getSession({ advisedTokens: [], tokens: [verifiedCard] })).resolves.toEqual({ tokens: [] });
+      });
+
+      it.each([null, {}, 'tok_1'])('does not fall back to tokens when advisedTokens is %p', async advisedTokens => {
+        await expect(getSession({ advisedTokens, tokens: [verifiedCard] }))
+          .rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+      });
+
+      it('rejects a response with neither list', async () => {
+        await expect(getSession({ orderDetails: spec.getSessionResponse.orderDetails }))
+          .rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+      });
+    });
+
+    describe('checkout context', () => {
+      const { orderDetails } = spec.getSessionResponse;
+      const getSession = body => createClient({ respond: () => jsonResponse(200, { advisedTokens: [], ...body }) })
+        .getSession({ sessionRef: SESSION, outletRef: OUTLET });
+
+      it('reads paymentMethods from the top level and ignores a nested orderDetails.paymentMethods', async () => {
+        await expect(getSession({
+          paymentMethods: { card: ['VISA'] },
+          orderDetails: { ...orderDetails, paymentMethods: { card: ['AMEX'], wallet: ['APPLE_PAY'] } },
+        })).resolves.toEqual({
+          tokens: [], paymentMethods: { card: ['VISA'] }, amount: orderDetails.amount, orderSummary: orderDetails.orderSummary,
+        });
+        await expect(getSession({ orderDetails: { amount: orderDetails.amount, paymentMethods: { card: ['VISA'] } } }))
+          .resolves.toEqual({ tokens: [], amount: orderDetails.amount });
+      });
+
+      it('keeps an explicit empty card list empty', async () => {
+        await expect(getSession({ paymentMethods: { card: [], wallet: [] }, orderDetails }))
+          .resolves.toMatchObject({ paymentMethods: { card: [], wallet: [] } });
+      });
+
+      it('takes amount and orderSummary from orderDetails and never mixes in top-level ones', async () => {
+        const legacy = { amount: { currencyCode: 'USD', value: 999 }, orderSummary: { total: { currencyCode: 'USD', value: 999 } } };
+        await expect(getSession({ ...legacy, orderDetails })).resolves.toEqual({
+          tokens: [], amount: orderDetails.amount, orderSummary: orderDetails.orderSummary,
+        });
+        await expect(getSession({ ...legacy, orderDetails: { amount: orderDetails.amount } })).resolves.toEqual({
+          tokens: [], amount: orderDetails.amount,
+        });
+        for (const invalid of [null, [], 'invalid']) {
+          await expect(getSession({ ...legacy, orderDetails: invalid })).resolves.toEqual({ tokens: [] });
+        }
+      });
+
+      it('keeps the legacy top-level amount only when orderDetails is absent', async () => {
+        await expect(getSession({ amount: orderDetails.amount, paymentMethods: { card: ['VISA'] } })).resolves.toEqual({
+          tokens: [], amount: orderDetails.amount, paymentMethods: { card: ['VISA'] },
+        });
+      });
+
+      it.each([
+        ['a missing wallet list', { card: ['VISA'] }, { card: ['VISA'] }],
+        ['malformed lists', { card: 'VISA', wallet: { APPLE_PAY: true } }, {}],
+        ['a malformed paymentMethods', ['VISA'], {}],
+        ['non-string entries', { card: ['VISA', 7, null], wallet: [false, 'GOOGLE_PAY'] }, { card: ['VISA'], wallet: ['GOOGLE_PAY'] }],
+      ])('keeps a supplied paymentMethods with %s without inventing defaults', async (_case, paymentMethods, expected) => {
+        await expect(getSession({ paymentMethods })).resolves.toEqual({ tokens: [], paymentMethods: expected });
       });
     });
 

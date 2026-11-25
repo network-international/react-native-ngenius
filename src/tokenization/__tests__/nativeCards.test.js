@@ -3,6 +3,7 @@ const { NativeModules, DeviceEventEmitter } = require('react-native');
 const { startNativeCardTokenization } = require('../nativeCards');
 const { createTokenizationClient } = require('../api/TokenizationClient');
 const { skipped } = require('./fixtures/consent');
+const { addCardResponse } = require('./fixtures/tokenizationApiSpec');
 const { UsageType } = require('../usageType');
 const action = { outletRef: 'outlet', sessionRef: 'session-1', usageType: UsageType.PERMANENT };
 const url = 'https://sandbox.test/api/outlets/outlet/payment-tokenization-sessions/session-1/cards';
@@ -99,6 +100,20 @@ it('returns the updated list directly, preserving unverified rows without select
     },
   });
   expect(attempt.getAccessToken).toHaveBeenCalledTimes(1);
+});
+
+it('normalizes the specification Add Card advisedTokens list to tokens, newest first', async () => {
+  const attempt = create();
+  await ready(id);
+  result('Response', addCardResponse);
+  const outcome = await attempt.promise;
+  expect(outcome.state).toBe('SUCCESS');
+  expect(outcome.updatedTokenList).not.toHaveProperty('advisedTokens');
+  expect(outcome.updatedTokenList.tokens.map(token => [token.tokenRef, token.cardDetails.last4])).toEqual([
+    ['019a9a25-7e8f-7a90-8b1c-2d3e4f5a6b7c', '1111'],
+    ['019a8f3c-6d2e-7b41-9c5a-3e8d1f2a4b6c', '4444'],
+  ]);
+  expect(outcome.updatedTokenList.tokens[0]).not.toHaveProperty('usageType');
 });
 
 it('rejects the old single-token response without returning its contents', async () => {

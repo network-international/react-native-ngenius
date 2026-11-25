@@ -729,8 +729,10 @@ static NSURL *NICardTermsURL(id value) {
     }];
     [self.task resume];
 }
+// Add Card returns advisedTokens; the bridge always receives allowlisted `tokens`.
+// The earlier `tokens` field is read only when advisedTokens is absent.
 - (NSDictionary *)safeResponse:(NSDictionary *)body {
-    NSArray *tokens = body[@"tokens"];
+    NSArray *tokens = body[@"advisedTokens"] ?: body[@"tokens"];
     if (![tokens isKindOfClass:NSArray.class]) return nil;
     NSMutableArray *safeTokens = [NSMutableArray arrayWithCapacity:tokens.count];
     for (id token in tokens) {

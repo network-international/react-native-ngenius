@@ -46,7 +46,6 @@ const {
 
 // Card capture stays native so PAN/CVV never cross the React Native bridge.
 const FLOW = 'TOKENIZATION';
-const SELECTION_CONFIRMATION_MS = 1800;
 const LOADING_TOKENS = { loading: true, tokens: [], failed: false };
 
 const NgeniusTokenization = ({
@@ -88,7 +87,6 @@ const NgeniusTokenization = ({
   const [actionsDisabled, setActionsDisabled] = useState(false);
   const [selectionClosed, setSelectionClosed] = useState(false);
   const selectionAttemptRef = useRef(null);
-  const selectionTimerRef = useRef(null);
   const terminalOutcomeRef = useRef(false);
   const onResultRef = useRef(onResult);
   const onSelectionCompleteRef = useRef(onSelectionComplete);
@@ -171,7 +169,6 @@ const NgeniusTokenization = ({
       }
       setSelectedTokenRef(null);
       selectionAttemptRef.current = null;
-      clearTimeout(selectionTimerRef.current);
       setSelectionStatus('idle');
       setSelectionError(undefined);
       setLoadFailure(null);
@@ -194,7 +191,6 @@ const NgeniusTokenization = ({
       terminalOutcomeRef.current = false;
       setSelectedTokenRef(null);
       selectionAttemptRef.current = null;
-      clearTimeout(selectionTimerRef.current);
       setSelectionStatus('idle');
       setSelectionError(undefined);
       setLoadFailure(null);
@@ -222,7 +218,6 @@ const NgeniusTokenization = ({
       const confirmed = selectionAttemptRef.current?.confirmed;
       nativeCardCancelRef.current?.();
       selectionAttemptRef.current = null;
-      clearTimeout(selectionTimerRef.current);
       nativeCardCancelRef.current = null;
       sessionRef.current.close();
       wasVisibleRef.current = false;
@@ -241,7 +236,6 @@ const NgeniusTokenization = ({
     terminalOutcomeRef.current = false;
     backendSessionRef.current = null;
     selectionAttemptRef.current = null;
-    clearTimeout(selectionTimerRef.current);
     nativeCardCancelRef.current?.();
     nativeCardCancelRef.current = null;
     nativeGateRef.current = null;
@@ -309,11 +303,14 @@ const NgeniusTokenization = ({
         const response = await client.getSession({ outletRef, sessionRef: tokenizationSessionRef, skipConsent });
         if (!isCurrent() || journey.listRevision !== revision) return;
         if (!Array.isArray(response?.tokens)) throw new Error('Session token list is unavailable');
-        const { tokens, page, tncUrl, amount, orderSummary, maskPaymentInfo } = response;
-        const acceptedSchemes = acceptedCardSchemes(response.paymentMethods?.card);
+        const { tokens, page, tncUrl, amount, orderSummary, paymentMethods: sessionPaymentMethods, maskPaymentInfo } = response;
+        const acceptedSchemes = acceptedCardSchemes(sessionPaymentMethods?.card);
         journey.client = client;
         setTnc({ loaded: true, url: tncUrl });
-        setSavedTokens({ loading: false, tokens, page, failed: false, amount, orderSummary, acceptedSchemes, maskPaymentInfo });
+        setSavedTokens({
+          loading: false, tokens, page, failed: false, amount, orderSummary,
+          paymentMethods: sessionPaymentMethods, acceptedSchemes, maskPaymentInfo,
+        });
         setSelectedTokenRef(current => revision === 0 && !addCardsBeforePay
           ? defaultSelectedTokenRef(tokens, current)
           : savedPaymentMethodSelection(tokens, current) ? current : null);
@@ -379,13 +376,6 @@ const NgeniusTokenization = ({
     return () => clearTimeout(timer);
   }, [hideForNative]);
 
-  const methods = getTokenizationMethods(sessionOrderRef.current, {
-    paymentMethods,
-    platform: Platform.OS,
-    applePaySupported,
-    googlePaySupported,
-  });
-
   const handleDismiss = useCallback((reason = 'cancel') => {
     if (selectionAttemptRef.current) return;
     if (sessionRef.current.emitCancel()) {
@@ -421,6 +411,13 @@ const NgeniusTokenization = ({
     ? null
     : normalizeOrderDetails({ orderDetails: { amount, orderSummary }, language }),
   [loading, failed, amount, orderSummary, language]);
+  const methods = loading || failed ? [] : getTokenizationMethods(visibleTokens.paymentMethods, {
+    paymentMethods,
+    platform: Platform.OS,
+    applePaySupported,
+    googlePaySupported,
+    walletTokenizationAvailable: isWalletTokenizationAvailable(sessionClient),
+  });
   const selectionUiRef = useRef(null);
   selectionUiRef.current = {
     savedTokens: visibleTokens, selectedTokenRef, status, visible, selectionStatus,
@@ -458,7 +455,7 @@ const NgeniusTokenization = ({
     }
   }, [language, reportResult, restoreRnModal, tokenizationSessionRef]);
 
-  const persistSelection = useCallback(async (tokenRef, { showConfirmation = true } = {}) => {
+  const persistSelection = useCallback(async tokenRef => {
     if (!isCurrentJourney() || selectionAttemptRef.current) return;
     const client = backendSessionRef.current?.client;
     const attempt = {};
@@ -478,20 +475,10 @@ const NgeniusTokenization = ({
     if (!isCurrent()) return;
     sessionRef.current.endNative();
     attempt.confirmed = tokenizationSessionRef;
-    const close = () => {
-      if (!isCurrent()) return;
-      selectionAttemptRef.current = null;
-      setSelectionClosed(true);
-      sessionRef.current.close();
-      reportSelectionComplete(tokenizationSessionRef);
-    };
-    if (!showConfirmation) {
-      close();
-    } else {
-      selectionUiRef.current = { ...selectionUiRef.current, selectionStatus: 'confirmed' };
-      setSelectionStatus('confirmed');
-      selectionTimerRef.current = setTimeout(close, SELECTION_CONFIRMATION_MS);
-    }
+    selectionAttemptRef.current = null;
+    setSelectionClosed(true);
+    sessionRef.current.close();
+    reportSelectionComplete(tokenizationSessionRef);
   }, [handleActionFailure, isCurrentJourney, outletRef, reportSelectionComplete, tokenizationSessionRef]);
 
   const applyAddOutcome = useCallback(({ state, result, updatedTokenList, error }, previous, method) => {
@@ -526,7 +513,7 @@ const NgeniusTokenization = ({
       if (tokenRef) {
         // The native Pay action already chose this new method. Persist the choice
         // before returning control to the merchant, and never select a prior card.
-        return persistSelection(tokenRef, { showConfirmation: method === 'CARD' });
+        return persistSelection(tokenRef);
       }
     }
     handleActionFailure({ stage: 'add', error: error || result, legacyResult: result, method });

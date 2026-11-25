@@ -160,14 +160,26 @@ export const UsageType: Readonly<{ ONCE_OFF: 'ONCE_OFF'; PERMANENT: 'PERMANENT' 
 export type UsageType = (typeof UsageType)[keyof typeof UsageType];
 
 export interface TokenizationTokenList {
+  /**
+   * Parsed from the response `advisedTokens`. A response without `advisedTokens` falls back to
+   * the earlier `tokens` field.
+   */
   tokens: SavedCardResponse[];
   page?: { number: number; size: number; totalElements: number; totalPages: number };
   tncUrl?: string;
 }
 
+/**
+ * Get Session `amount` and `orderSummary` are read from `orderDetails` in the response; responses
+ * without `orderDetails` fall back to the legacy top-level fields. `paymentMethods` is read from
+ * the top level of the response.
+ */
 export interface TokenizationSession extends TokenizationTokenList {
-  /** Card schemes enabled for the outlet, supplied by Get Session. */
-  paymentMethods?: { card?: string[] };
+  /**
+   * Methods allowed by Get Session (top-level `paymentMethods`). When omitted, only the card form is offered.
+   * When supplied, only listed methods are offered; an empty or missing list allows none.
+   */
+  paymentMethods?: { card?: string[]; wallet?: string[] };
   /** When explicitly false, show the entered card number on the native form. */
   maskPaymentInfo?: boolean;
   /** Optional checkout amount supplied by Get Session. */
@@ -228,10 +240,18 @@ export interface TokenizationResult {
 
 export interface NgeniusTokenizationProps {
   visible?: boolean;
+  /**
+   * Legacy context, not needed for Card. Used for language, consent wording and native wallet
+   * capture. Its amount, orderSummary and paymentMethods are ignored; Get Session supplies them.
+   */
   order?: NGeniusOrder;
-  /** Optional language, consent and native wallet context. Checkout amounts come from Get Session. */
+  /** Legacy language, consent and native wallet context. Checkout amounts and methods come from Get Session. */
   orderDetails?: TokenizationOrderDetails;
-  /** Include CONTINUE_SHOPPING to display the optional return action. */
+  /**
+   * Can only narrow the methods allowed by Get Session; it never enables a method.
+   * Include CONTINUE_SHOPPING to display the optional return action. A list containing only
+   * CONTINUE_SHOPPING shows that action without narrowing the session methods.
+   */
   paymentMethods?: Array<'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY' | 'CONTINUE_SHOPPING'>;
   branding?: Record<string, unknown>;
   language?: string;
@@ -311,6 +331,10 @@ export interface TokenizationModeConfig {
   orderSummaryInitiallyExpanded?: boolean;
   /** Omitted when absent/invalid. No placeholder policy link is generated. */
   privacyPolicyUrl?: string;
+  /**
+   * `selectionSuccessTitle` and `selectionSuccessMessage` are accepted but not displayed:
+   * the SDK closes as soon as the selection is acknowledged.
+   */
   labels?: Partial<Record<
     'pageTitle' | 'pageSubtitle' | 'savedMethodsTitle' | 'payByCard' | 'pay' | 'addCard' |
     'addAnotherCard' | 'usePaymentMethod' | 'selectionPending' |

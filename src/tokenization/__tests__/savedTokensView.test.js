@@ -125,24 +125,20 @@ it('provides optional selection confirmation and keeps save-new consent separate
   expect(byId('tokenization-confirm-saved')).toHaveLength(0);
 });
 
-it('keeps submit progress, confirmed selection, and recoverable errors distinct', async () => {
+it('keeps submit progress and recoverable errors distinct without a success screen', async () => {
   const props = await renderScreen({ savedTokens: { tokens: [verified] }, onSelectToken: jest.fn(), selectedTokenRef: verified.tokenRef,
     onConfirmSavedToken: jest.fn(), selectionStatus: 'submitting', modeConfig: { presentation: 'fullscreen' } });
   expect(byId('selection-submitting-spinner')).toHaveLength(1);
+  expect(byId('selection-submitting-spinner')[0].props.animating).toBe(false); // Reduced motion.
   expect(byId('saved-token')).toHaveLength(0);
   expect(byId('tokenization-cancel')[0].props.disabled).toBe(true);
-  expect(byId('selection-status-confirmed')).toHaveLength(0);
   act(() => tree.update(React.createElement(TokenizationScreen, { ...props, selectionStatus: 'failed' })));
   expect(byId('selection-inline-error')).toHaveLength(1);
   expect(byId('saved-token')[0].props.disabled).toBe(false);
   expect(byId('tokenization-confirm-saved')[0].props.disabled).toBe(false);
-  expect(byId('selection-status-confirmed')).toHaveLength(0);
-  await act(async () => { tree.update(React.createElement(TokenizationScreen, { ...props, selectionStatus: 'confirmed' })); await flush(); });
-  expect(byId('selection-status-confirmed')).toHaveLength(1);
-  expect(JSON.stringify(tree.toJSON())).toContain('Payment method selected');
-  expect(JSON.stringify(tree.toJSON())).not.toContain('Payment method saved');
+  expect(JSON.stringify(tree.toJSON())).not.toMatch(/Payment method selected|successful/i);
   expect(props.onCancel).not.toHaveBeenCalled();
-  expect(Animated.timing).not.toHaveBeenCalled(); // Reduced motion gives a static check.
+  expect(Animated.timing).not.toHaveBeenCalled();
 });
 
 it('applies configured selection copy only to its matching status', async () => {
@@ -150,22 +146,9 @@ it('applies configured selection copy only to its matching status', async () => 
   const props = await renderScreen({ savedTokens: { tokens: [verified] }, onSelectToken: jest.fn(), selectedTokenRef: verified.tokenRef,
     modeConfig, selectionStatus: 'submitting' });
   expect(JSON.stringify(tree.toJSON())).toContain('Checking selection');
-  expect(JSON.stringify(tree.toJSON())).not.toContain('Choice confirmed');
   act(() => tree.update(React.createElement(TokenizationScreen, { ...props, selectionStatus: 'failed' })));
   expect(JSON.stringify(tree.toJSON())).toContain('Choose a different saved method.');
-  expect(JSON.stringify(tree.toJSON())).not.toContain('Returning to the merchant.');
-  await act(async () => { tree.update(React.createElement(TokenizationScreen, { ...props, selectionStatus: 'confirmed' })); await flush(); });
-  expect(JSON.stringify(tree.toJSON())).toContain('Choice confirmed');
-  expect(JSON.stringify(tree.toJSON())).toContain('Returning to the merchant.');
-});
-
-it('cleans up the selection confirmation animation on close', async () => {
-  AccessibilityInfo.isReduceMotionEnabled.mockResolvedValue(false);
-  const stop = jest.fn();
-  Animated.timing.mockReturnValueOnce({ start: jest.fn(), stop });
-  await renderScreen({ selectionStatus: 'confirmed' });
-  act(() => tree.unmount()); tree = undefined;
-  expect(stop).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(tree.toJSON())).not.toMatch(/Choice confirmed|Returning to the merchant/);
 });
 
 it.each(['button', 'link', 'text'])('shows an explicit configurable return control with a sufficient hit area as %s', async returnButtonStyle => {

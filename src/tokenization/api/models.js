@@ -177,13 +177,17 @@ const parseSavedCardResponse = (
   return result;
 };
 
+// Get Session and Add Card return advisedTokens; the parsed list is always `tokens`.
+// The earlier `tokens` field is read only when advisedTokens is absent.
+const responseTokens = value => (value.advisedTokens !== undefined ? value.advisedTokens : value.tokens);
+
 // Pagination is response metadata only.
 const parseSavedTokensResponse = value => {
-  if (!value || typeof value !== 'object' || !Array.isArray(value.tokens)) {
+  if (!value || typeof value !== 'object' || !Array.isArray(responseTokens(value))) {
     throw new Error('Saved tokens response is invalid');
   }
   const result = {
-    tokens: value.tokens.map(token => parseSavedCardResponse(token)),
+    tokens: responseTokens(value).map(token => parseSavedCardResponse(token)),
   };
   if (value.page != null) {
     const fields = ['number', 'size', 'totalElements', 'totalPages'];
@@ -214,20 +218,26 @@ const copySessionAmount = amount => {
   return undefined;
 };
 
-const parseTokenizationSession = value => {
-  const session = parseSavedTokensResponse(value);
-  const cardSchemes = value.paymentMethods?.card;
-  if (Array.isArray(cardSchemes)) {
-    session.paymentMethods = { card: cardSchemes.filter(scheme => typeof scheme === 'string') };
+const isRecord = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+// A supplied but malformed paymentMethods stays present with no usable lists,
+// so it never widens to the defaults used when the field is absent.
+const copyPaymentMethods = value => {
+  const methods = {};
+  if (!isRecord(value)) return methods;
+  for (const kind of ['card', 'wallet']) {
+    if (Array.isArray(value[kind])) methods[kind] = value[kind].filter(entry => typeof entry === 'string');
   }
-  const maskPaymentInfo = value.maskPaymentInfo ?? value.order?.merchantAttributes?.maskPaymentInfo;
-  if (maskPaymentInfo === true || maskPaymentInfo === 'true') session.maskPaymentInfo = true;
-  if (maskPaymentInfo === false || maskPaymentInfo === 'false') session.maskPaymentInfo = false;
-  const amount = copySessionAmount(value.amount);
+  return methods;
+};
+
+const copyOrderContext = (source, session) => {
+  if (!isRecord(source)) return;
+  const amount = copySessionAmount(source.amount);
   if (amount) session.amount = amount;
 
-  const summary = value.orderSummary;
-  if (summary && typeof summary === 'object' && !Array.isArray(summary)) {
+  const summary = source.orderSummary;
+  if (isRecord(summary)) {
     const orderSummary = {};
     for (const field of ['shipping', 'tax', 'total']) {
       const money = copySessionAmount(summary[field]);
@@ -248,6 +258,17 @@ const parseTokenizationSession = value => {
     }
     if (Object.keys(orderSummary).length) session.orderSummary = orderSummary;
   }
+};
+
+const parseTokenizationSession = value => {
+  const session = parseSavedTokensResponse(value);
+  const maskPaymentInfo = value.maskPaymentInfo ?? value.order?.merchantAttributes?.maskPaymentInfo;
+  if (maskPaymentInfo === true || maskPaymentInfo === 'true') session.maskPaymentInfo = true;
+  if (maskPaymentInfo === false || maskPaymentInfo === 'false') session.maskPaymentInfo = false;
+  if (value.paymentMethods !== undefined) session.paymentMethods = copyPaymentMethods(value.paymentMethods);
+  // Amount and orderSummary come from orderDetails. Top-level amount and orderSummary
+  // are a legacy UAT shape, read only when orderDetails is absent.
+  copyOrderContext(value.orderDetails !== undefined ? value.orderDetails : value, session);
   return session;
 };
 
