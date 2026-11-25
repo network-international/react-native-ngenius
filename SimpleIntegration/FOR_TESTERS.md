@@ -1,249 +1,40 @@
-# Quick Testing Guide - For QA Team
+# React Native Tokenization POC - QA Testing Guide
 
-## Prerequisites
+Record the build SHA and artifact name. This guide covers SDK 3.2.9 for NINGG-34386 (PR #75).
 
-**Before running the script, make sure you have:**
+Record the environment and backend deployment when testing Add Card and selected-token persistence.
 
-1. **Node.js and npm** (or yarn)
-   - Check if installed: `node --version` and `npm --version`
-   - If not installed:
-     - **macOS:** `brew install node`
-     - **Or download:** https://nodejs.org/ (LTS version recommended)
-     - **Or use nvm:** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`
-   - After installing, restart your terminal
+The SDK opens at **Select payment method**, as a bottom sheet by default. The card list uses masked numbers and shows `MM/YY` when available. An empty list still offers **Pay by card**. Use a build matching the current PR SHA. Offline screenshots use synthetic cards and fixture responses.
 
-2. **Java Development Kit (JDK)**
-   - React Native 0.70.x requires Java 17
-   - Check your Java version: `java -version`
-   - If you have Java 17 or newer, you're good to go
-   - The script will use your system's default Java
-   - If you get Java version errors, see troubleshooting section below
+1. Android: install the SHA-named APK with `adb install -r <apk>`, then open SimpleIntegration. It includes the JS bundle; Metro is not needed.
+2. iOS Simulator: extract the SHA-named ZIP, run `xcrun simctl install booted <app>`, then `xcrun simctl launch booted org.reactjs.native.example.SimpleIntegration`. This app cannot be installed on a physical iPhone. A device build requires existing signing; no Team/profile/certificates were changed.
+3. Create the session from the merchant backend, or use authorized API tooling for UAT QA. Send `POST https://api-gateway-uat.ngenius-payments.com/payment-tokenization/outlets/{outletRef}/sessions` with `Authorization: Bearer {{createSessionAccessToken}}` and `Content-Type` and `Accept` both set to `application/vnd.ni-payment-tokenization.v1+json`. The JSON body follows the Tokenization API Specification v28: `{ "advisedTokens": [], "orderDetails": { "action": "AUTH", "amount": { "currencyCode": "AED", "value": 1500 } } }`, plus an optional `orderSummary`. The response `session_id` is the `sessionRef`. Use the Bearer credential approved for this gateway route; the specification requires role `CREATE_PAYMENT_TOKEN` with outlet access. Confirm which service account type carries it with the backend team and keep this credential outside the app.
+4. On the demo **Settings** screen, turn off **Offline UI preview**. The PayPage base URL, outlet reference, SDK Access-Token and session reference fields start empty. Enter the URL for the environment being tested, the configured Anzhelika merchant’s outlet, a fresh `TOKENIZATION_SDK` Access-Token scoped to that outlet, and the returned `sessionRef`; do not paste an API key into the Access-Token field. Use the Anzhelika outlet after its payment configuration is ready. Tap **Open merchant demo** to continue to the separate **Merchant** screen, then open tokenization using its payment button. Use **‹ Settings** on Merchant to return and correct the configuration; the fields remain editable. The demo does not open the older fixed-amount direct-payment sample. The provider rejects the token after five minutes. Live QA uses **skipConsent=true**. The SDK calls `GET /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}?consentOff=true` with the SDK Access-Token. An empty list with no `tncUrl` is valid. If credentials expire, return to Settings and enter a fresh authorized token and a valid session reference.
+5. Enable **Offline UI preview** to run without credentials or backend calls. Tap **Scenario** to cycle through saved cards, a new shopper with successful Card verification, Card verification failure, expiry at Pay, invalid Access-Token and missing outlet/session. Pay by card uses a deterministic native bridge fixture in this preview. Use sandbox QA for the actual native form and server requests.
 
-3. **Android Studio** with Android SDK
-   - Download: https://developer.android.com/studio
-   - Make sure Android SDK is installed
+**Presentation and branding.** Switch between **Harbour Travel** and **Citrus Market** to compare the PayPage-style `branding` palettes. Check the default bottom sheet, blur opt-in on a platform that supports it, and fullscreen. Dismiss the sheet by tapping outside or swiping down. Fullscreen has a Cancel control. Enable **Pay by card first** to test a custom section order. Enable **Show Continue Shopping** to pass `paymentMethods={['CONTINUE_SHOPPING']}`; the card and saved methods must stay available. The demo passes no `order` or method list, so methods and schemes come only from the session. Enable **Show card security note** to display the card safety line. Cycle EN, FR and AR to check localized labels and RTL.
 
-4. **Android Emulator** created in Android Studio
-   - Open Android Studio → Tools → Device Manager
-   - Create a new virtual device (recommended: Pixel 5, API 35)
+**Card.** **Pay by card** opens the native form on both platforms. Check invalid or expired fields and Back, then use approved sandbox test data and a fresh Access-Token. Keep PAN and CVV inside the native form. A successful verification returns the updated list in the same session. The SDK confirms the new method with `PUT selected-token`, shows progress, and closes after acknowledgment with no separate success screen. The card form shows only the scheme logos listed in Get Session `paymentMethods.card` (top level of the response); an explicit empty list hides Pay by card. On failure, the chooser reappears with an actionable message and no failed card in the list.
 
----
+**Token type.** The live QA screen uses `ONCE_OFF` to match the Card handover. The SDK still supports both `ONCE_OFF` and `PERMANENT`. Get Session carries no usage type.
 
-## TL;DR - One Command Launch
+**Selection and merchant result.** Choose a saved method and tap **Pay**. Rapid taps should submit only once. After acknowledged selection the SDK reports `200` with the session ID. The merchant backend uses it for payment with a Merchant Service Account. Preview shows the status and message on the host after close. Dismissal reports `499` if no terminal outcome was already reported. Check invalid credentials and missing session on opening, then simulate mid-flow expiry and verify `402` with the SDK expiry message. The host starts a new session after expiry.
 
-### Android (Google Pay Integration)
-```bash
-cd SimpleIntegration
-./start-android.sh
-```
+**Wallets.** The Add Wallet backend endpoint is pending. A wallet button appears only when Get Session lists the wallet, on its platform (Apple Pay on iOS, Google Pay on Android), with device support and a client that supports Add Wallet. The built-in client does not, so wallet buttons stay hidden. Live wallet E2E requires the deployed endpoint, a physical Android device or iPhone, approved UAT configuration, and Apple Pay merchant entitlements and signing where applicable.
 
-That's it! The script handles everything automatically.
+**Consent.** Turn off **Skip consent in preview** to review the consent-enabled actions. Card consent applies to native submission and wallet consent to its Pay action. Opening legal links, selecting a saved method and cancelling leave consent unchanged. Missing or invalid T&C URLs leave plain text. With `skipConsent=true` the notice is hidden and Add uses `NOT_COLLECTED` with `skippedByMerchant: true`.
 
-**Note:** The script will automatically check if npm/yarn is installed and show an error message with installation instructions if not found.
+Optional order display: check absent details (no invented amount/summary), amount only, partial supplied items/fees and a complete summary. It starts collapsed; modeConfig.orderSummaryInitiallyExpanded=true opens it initially. Header total must prefer supplied orderSummary.total, then amount. Money value uses nonnegative integer minor units and accepts digit strings; check AED '3910' as 39.10, a currency with different precision, and invalid/incomplete money omitted. No quantity multiplication, total calculation, guessed currency or FX should occur. Amount and summary come only from Get Session `orderDetails` and methods from its top-level `paymentMethods`, never from init props, and stay hidden while loading or after an error. The offline previews use the specification shape (`advisedTokens`, top-level `paymentMethods`, `orderDetails` with `action`). The **Legacy top-level Get Session fields** scenario checks the fallback for the earlier shape (`tokens`, no `orderDetails`). Check language fallback: supported language prop, orderDetails.language, legacy order.language, then English; region tags resolve to EN/FR/AR.
 
----
+Configuration: verify `modeConfig.labels.pageTitle` and `pageSubtitle`, optional return-button variants and localized labels. The optional security note reads “Card details are sent securely to Network International.” and requires `modeConfig.showSecurityNote=true`. Confirm the merchant payment result separately after the SDK reports successful selection.
 
-## What to Expect
+Defects must include build SHA, device/model, OS, language, theme, steps and expected/actual behavior. Never include PAN, CVV, API key, Access-Token or wallet payload in screenshots, logs or tickets.
 
-1. **Script starts** (takes 2-3 minutes total)
-2. **Emulator launches** (if not running)
-3. **Metro bundler starts** (development server)
-4. **App builds and installs**
-5. **App opens automatically**
+Developer build: copy `src/config.example.js` to ignored `src/config.js` (public defaults, credentials blank), install the demo dependencies and run `pod install` from `ios`. The legacy Android demo requires JDK 17 and a modern D8 compiler: set `NI_QA_D8_JAR` to an installed Android Build Tools `lib/d8.jar`, then run `./gradlew -Pandroid.aapt2FromMavenOverride=<installed-build-tools>/aapt2 :app:assembleRelease`. No compiler binary is committed.
 
----
 
-## Test Scenarios
-
-### Basic Functionality
-1. App launches without crashes
-2. Payment form is visible
-3. Can enter card details
-
-### Google Pay Integration (Primary Test)
-1. Google Pay button appears
-2. Can initiate Google Pay flow
-3. Payment processes successfully
-
-### Card Payment
-1. Can enter card number
-2. Validation works
-3. Payment submission works
-
----
-
-## Pre-configured Test Data
-
-The app is already configured with valid test credentials:
-- **API Key:** Already set
-- **Outlet ID:** Already set
-- **Environment:** TEST
-
-You don't need to configure anything.
-
----
-
-## Capturing Test Evidence
-
-### Screenshots
-
-**Android:**
-```bash
-adb exec-out screencap -p > screenshot.png
-```
-
-### Screen Recording
-
-**Android:**
-```bash
-adb shell screenrecord /sdcard/test-video.mp4
-# Press Ctrl+C when done
-adb pull /sdcard/test-video.mp4
-```
-
----
-
-## Common Issues & Quick Fixes
-
-### "Node.js is not installed"
-**This means Node.js is not installed on your system.**
-
-**Solution:**
-1. **Install Node.js:**
-   - **macOS:** `brew install node`
-   - **Or download:** https://nodejs.org/ (LTS version recommended)
-   - **Or use nvm:** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`
-2. **Restart your terminal** (important!)
-3. **Verify installation:** 
-   ```bash
-   node --version
-   npm --version
-   ```
-4. **Run the script again:** `./start-android.sh`
-
-### "npm or yarn is not installed"
-**This means Node.js is installed, but package manager is missing (unusual).**
-
-**Solution:**
-1. **Reinstall Node.js** (npm comes with Node.js):
-   - **macOS:** `brew install node`
-   - **Or download:** https://nodejs.org/
-2. **Restart your terminal**
-3. **Verify:** `npm --version`
-4. **Run the script again:** `./start-android.sh`
-
-### "Java home supplied is invalid" or "Gradle can not use Java X"
-**This means the Java path in gradle.properties is incorrect or Java version is incompatible.**
-
-**Solution:**
-1. **Check your Java version:**
-   ```bash
-   java -version
-   ```
-2. **React Native 0.70.x requires Java 17**
-3. **If you have Java 17 or newer:**
-   - The `gradle.properties` file is already configured to use system default Java
-   - If you still see errors, make sure `org.gradle.java.home` is commented out in `SimpleIntegration/android/gradle.properties`
-4. **If you need to install Java 17:**
-   - **macOS:** `brew install openjdk@17`
-   - **Or download:** https://adoptium.net/temurin/releases/?version=17
-   - **Set JAVA_HOME:**
-     ```bash
-     export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-     ```
-   - **Add to your `~/.zshrc` or `~/.bash_profile`** to make it permanent
-   - **Restart terminal** and run script again
-
-### "react-native: command not found"
-**This means dependencies are not installed.**
-
-**Solution:**
-```bash
-cd SimpleIntegration
-npm install
-```
-
-Then run the script again:
-```bash
-./start-android.sh
-```
-
-**Note:** The script now automatically checks and installs dependencies, but if you see this error, run `npm install` manually first.
-
-### "Script permission denied"
-```bash
-chmod +x start-android.sh
-```
-
-### "Metro bundler not starting"
-```bash
-killall node
-lsof -ti:8081 | xargs kill -9
-```
-
-### "Emulator not found"
-Create emulator in Android Studio (Tools → Device Manager)
-
-### Red error screen in app
-Press `R` twice on keyboard
-
-### "Build failed"
-```bash
-# Clean and reinstall
-rm -rf node_modules
-npm install
-```
-
----
-
-## Expected Test Results
-
-### Success Criteria
-- App launches without errors
-- Google Pay button is visible
-- Can interact with payment form
-- No crashes during normal use
-- Metro bundler shows "Ready"
-
-### Test Report Template
-
-```
-Test Date: _______
-Platform: Android
-Device/Emulator: _______
-
-Launch Time: _____ seconds
-Crashes: [ ] Yes [ ] No
-Google Pay Visible: [ ] Yes [ ] No
-Payment Form Works: [ ] Yes [ ] No
-
-Notes:
-_______________________________
-```
-
----
-
-## Emergency Contacts
-
-If scripts don't work after trying quick fixes:
-1. Check full documentation: `QUICK_START.md`
-2. Verify prerequisites (Node.js, Android Studio)
-3. Check logs: `/tmp/metro-android.log`
-
----
-
-## Video Tutorial (Recommended Workflow)
-
-1. **Start recording** before running script
-2. **Run script:** `./start-android.sh`
-3. **Show app launch**
-4. **Demonstrate Google Pay** button
-5. **Test payment form**
-6. **Stop recording**
-7. **Save video** as test evidence
-
----
-
-**Estimated Testing Time:** 15-20 minutes  
-**Total Setup Time:** 3-5 minutes  
-**Last Updated:** January 2026
+**Slow selection preview (offline mock).** Enable Offline UI preview, tap Scenario until
+**Slow selection · offline mock**, then open the preview, choose a saved card and tap Pay.
+The selected-token fixture waits two seconds: progress must remain visible and repeat Pay/dismissal
+must be blocked until acknowledgement. Then the SDK closes with result 200, without a happy screen.
+This scenario uses the specification-shaped session fixture and makes no UAT request. Live timing is unchanged.

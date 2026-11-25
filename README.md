@@ -1,6 +1,6 @@
-# react-native-ni-sdk
+# React Native N-Genius SDK
 
-![Banner](assets/banner.jpg)
+React Native bindings for N-Genius card and wallet payments, with a tokenization POC for the add-card and wallet UI.
 
 ## Requirements
 - iOS `15.0+` (NISdk 6.1.6)
@@ -10,9 +10,14 @@
 
 ## Getting started
 ```bash
-npm i @network-international/react-native-ngenius
+npm i @network-international/react-native-ngenius 'react-native-svg@>=9.13.6 <16'
 cd ios && pod install
 ```
+
+`react-native-svg` is a required peer for the PayPage scheme artwork. Choose a version in that
+range that also supports your app's React Native version, then rebuild the native app. This
+also applies to payment-only consumers because the package exports load the tokenization UI.
+The React Native 0.70.3 SimpleIntegration example pins `react-native-svg` 13.4.0.
 
 If `pod install` reports that no spec satisfies `NISdk`, your local CocoaPods index is older than
 the release: run `pod install --repo-update` instead.
@@ -26,63 +31,231 @@ to 15.0 or later.
 
 **Android:** no extra setup is needed. The Android SDK is downloaded from JitPack automatically.
 
-## Basic usage example
-```javascript
+
+## Usage
+
+```jsx
 import {
-  initiateCardPayment,
-  initiateSamsungPay,
-  initiateApplePay,
-  initiateGooglePay,
+  createTokenizationClient,
+  NgeniusTokenization,
 } from '@network-international/react-native-ngenius';
 
-// order is the order response received from NGenius create order API
-const makeCardPayment = async () => {
-    try {
-      const resp = await initiateCardPayment(order);
-    } catch (err) {
-      console.log({ err });
-    }
-};
+const tokenizationClient = createTokenizationClient({
+  baseUrl: tokenizationBaseUrl,
+  getAccessToken: () => merchantBackend.getTokenizationAccessToken(),
+});
 
-// order is the order response received from NGenius create order API
-// merchantName is the name of merchant's establishment
-// serviceId is the serviceId that is generated in the Samsung Pay developer portal
-const makeSamsungPayPayment = async () => {
-    try {
-      const resp = await initiateSamsungPay(order, merchantName, serviceId);
-    } catch (err) {
-      console.log({ err });
-    }
-};
+<NgeniusTokenization
+  visible={showTokenization}
+  tokenizationClient={tokenizationClient}
+  outletRef={outletRef}
+  sessionRef={sessionRef}
+  branding={merchantBranding}
+  onResult={result => {
+    if (result.statusCode === 200 && result.sessionID) handleSelectedSession(result.sessionID);
+    else if (result.statusCode === 499) setShowTokenization(false);
+    else handleTokenizationIssue(result);
+  }}
+/>
+```
 
-// order is the order response received from NGenius create order API
-// mid is the merchant ID that is generated in the Apple developer portal
-// countryCode is the country code of the transaction country Eg: AE for UAE
-const makeApplePayPayment = async () => {
-    try {
-      const resp = await initiateApplePay(order, { // order is the order response after creating an order
-        merchantIdentifier: '', // Merchant ID created in Apple's portal
-        countryCode: '', // Country code of the order Eg, AE
-        merchantName: '', // name of the merchant to be shown in Apple Pay button
-      });
-    } catch (err) {
-      console.log({ err });
-    }
-};
+This is the complete Card setup. The amount, order summary and allowed methods and card schemes
+come from Get Session for `sessionRef`; do not repeat them in the props. `branding` is optional and
+accepts PayPage branding fields. Register custom fonts in the host app.
 
-const makeGooglePayPayment = async () => {
-    try {
-      const resp = await initiateGooglePay(order, {
-        merchantName: '', // name of the merchant
-        gateway: '', // gateway name
-        gatewayMerchantId: '', // gateway merchant ID
-        environment: 'TEST', // 'TEST' or 'PRODUCTION'
-      });
-    } catch (err) {
-      console.log({ err });
-    }
+To show the optional return action, pass `paymentMethods={['CONTINUE_SHOPPING']}`. A list that
+contains only `CONTINUE_SHOPPING` does not narrow the session methods.
+
+`order` and `orderDetails` are optional legacy context for language, consent wording and native
+wallet capture. Their amount, summary and methods are ignored. Wallet capture uses
+`order.amount.currencyCode`. Native Card tokenization does not need them.
+
+Pass wallet configuration as optional props when opening `NgeniusTokenization`:
+
+- `APPLE_PAY` uses `applePayConfig` with `merchantIdentifier` and `countryCode`, plus optional
+  `merchantName`. The merchant ID must be in the iOS app's Apple Pay entitlements.
+- `GOOGLE_PAY` uses `googlePayConfig` with `merchantName`, `gateway`, `gatewayMerchantId`
+  and `environment` (`TEST` or `PRODUCTION`). Provide `merchantId` in production.
+
+Get Session decides which methods are offered (see [Order details and methods](#order-details-and-methods)).
+The `paymentMethods` prop can only narrow that set. A wallet is shown only when Get Session lists it,
+on its platform (Apple Pay on iOS, Google Pay on Android), when the device supports it, and when the
+client declares `supportsAddWallet: true` with a working `addWallet`. The built-in client still
+depends on the session-based Add Wallet endpoint, so it currently offers cards only.
+
+The merchant backend creates the tokenization session with any returning shopper token references
+in `advisedTokens` and, for order context, `orderDetails` with the required `action` and `amount`,
+and passes the returned `session_id` to the app as `sessionRef`. Open the chooser with that
+reference. The SDK starts with Get Session to load the saved methods, `tncUrl` and optional order details. Add and Select
+reuse the same reference, and Add updates the list directly from its response.
+
+Omit `modeConfig.tokenType` to use `PERMANENT`. For a one-time token, pass
+`modeConfig={{ tokenType: 'ONCE_OFF' }}`. The SDK sends this value as `usageType` on Add Card
+or Add Wallet and rejects an invalid explicit value with `INVALID_USAGE_TYPE`.
+
+Set `modeConfig.addCardsBeforePay` to enable **Add new card**. Each verified card returns
+the shopper to the method list in the same session. The shopper can add another card,
+choose a card from the list, and tap **Pay** to confirm the selection.
+
+With `skipConsent={false}` (default), the native Card form displays Terms and Conditions below
+the card form's submit button and records acceptance after valid input. Wallet actions display
+terms below the wallet buttons and record acceptance on the wallet tap. `skipConsent={true}` sends `?consentOff=true`
+on Get Session and `NOT_COLLECTED` with `skippedByMerchant: true` on Add. A valid terms URL
+makes the terms label a link.
+
+The default **Select payment method** chooser slides up as a bottom sheet. While the session loads,
+it shows placeholders for the payment methods. If initialization fails, the SDK closes and
+reports the error to the host via `onResult`. Tap outside or swipe down to dismiss the sheet.
+In fullscreen, use **Cancel** or **Close**. Saved methods show masked funding details and
+`MM/YY` when supplied. Failed methods are hidden. The native Card form follows the chooser's
+presentation mode. In bottom-sheet mode it opens at the same height as the chooser on iOS
+and Android. The form scrolls inside the sheet when the keyboard is open.
+
+```jsx
+modeConfig={{
+  presentation: 'bottomSheet', // or 'fullscreen'
+  backdropBlur: true, // use blur where supported, dim the backdrop otherwise
+  sectionOrder: ['tokens', 'wallets', 'card'],
+  showSecurityNote: true, // opt in to the card security note
+  returnButtonName: 'Continue shopping', // with CONTINUE_SHOPPING in paymentMethods
+  returnButtonStyle: 'button',
+  labels: {
+    pageTitle: 'Select payment method',
+    payByCard: 'Pay by card',
+    pay: 'Pay',
+  },
+}}
+```
+
+### Order details and methods
+
+The checkout shows the order details and methods returned by **Get Session** once loading
+completes. The SDK reads the saved methods from `advisedTokens`, the allowed methods from the
+top-level `paymentMethods`, and `amount` and `orderSummary` from `orderDetails`. Each is optional
+except the token list.
+
+```js
+const getSessionResponse = {
+  advisedTokens: [],
+  tncUrl: 'https://merchant.example/terms',
+  paymentMethods: {
+    card: ['VISA', 'MASTERCARD'],
+    wallet: ['APPLE_PAY', 'GOOGLE_PAY'],
+  },
+  orderDetails: {
+    action: 'AUTH',
+    amount: { currencyCode: 'AED', value: 3910 },
+    orderSummary: {
+      items: [{
+        description: 'General admission',
+        quantity: 2,
+        category: 'Tickets',
+        totalPrice: { currencyCode: 'AED', value: 3000 },
+      }],
+      shipping: { currencyCode: 'AED', value: 500 },
+      tax: { currencyCode: 'AED', value: 410 },
+      total: { currencyCode: 'AED', value: 3910 },
+    },
+  },
 };
 ```
+
+For compatibility with earlier UAT responses, a response without `advisedTokens` reads `tokens`,
+and a response without `orderDetails` reads top-level `amount` and `orderSummary`. If
+`orderDetails` is present, the top-level amount and summary are ignored. A `paymentMethods`
+object inside `orderDetails` is not part of the contract and is ignored. Add Card responses
+follow the same `advisedTokens` rule.
+
+`paymentMethods.card` lists the schemes shown on the card form, and the card form is offered
+only when the list is not empty. `paymentMethods.wallet` lists the allowed wallets. If the response
+omits `paymentMethods`, only the card form is offered, without scheme logos. If `paymentMethods` is
+supplied, a missing, empty or malformed list allows nothing for that method.
+
+Money accepts `{ currencyCode, value }`, where `value` is a nonnegative integer in minor units,
+as a safe integer number or a digit string. For example, AED `'3910'` displays as AED 39.10;
+currency precision follows the supplied ISO currency. If `value` is absent, `formattedValue`
+may supply a canonical major-unit decimal string such as `'39.10'`, without currency text or
+grouping. When both are supplied, `value` wins. Invalid or incomplete money is omitted.
+
+The summary starts collapsed; `modeConfig.orderSummaryInitiallyExpanded: true` opens its details
+initially. Its header prefers the supplied summary total, then amount. Missing amounts, currency,
+items, quantities, fees and totals are never inferred, summed or converted. The summary stays hidden
+during loading, while a checkout error is shown, and when Get Session returns no usable order details.
+Language resolves from supported `language`, then
+`orderDetails.language`, then `order.language`, then English (EN/FR/AR, including region tags).
+
+### Confirm a method and hand off to the merchant
+
+The shopper selects an existing token and taps **Pay**, or completes the native Card form and taps
+**Pay** there. For a new method, the SDK verifies that the Add response identifies one new eligible
+token by comparing the complete before and after lists. It submits
+`PUT /api/outlets/{outletRef}/payment-tokenization-sessions/{sessionRef}/selected-token`
+with `{ tokenRef }` and shows progress while it waits for acknowledgement. For both new and
+saved cards, the SDK closes and reports the result as soon as the selection is acknowledged,
+with no separate success screen. Payment itself happens later through the merchant backend.
+If verification or selection fails, the chooser shows the error and remains available when the
+session can still be used. The merchant backend uses the confirmed session reference to start payment.
+
+`onResult` receives `{ statusCode, message, sessionID? }`. `sessionID` is the merchant session reference
+and is omitted if the session could not be initialized. `200` means token selection is confirmed.
+`499` means the shopper or host dismissed the SDK, with a message identifying how it closed.
+`401` means authentication failed during initialization and `402` means authentication expired
+after opening. Other failure codes report the failed operation. Recoverable errors are emitted
+while the SDK is still open and can be followed by a successful result or dismissal. Start payment
+only on `200`. Use either `onResult` or the existing `onSelectionComplete` for the payment handoff.
+
+## Supported methods
+
+- Payments: `initiateCardPayment(order)`, `initiateSamsungPay(order, merchantName, serviceId)`, `initiateApplePay(order, applePayConfig)`, `initiateGooglePay(order, googlePayConfig)`.
+- Helpers: `isSamsungPaySupported(serviceId)`, `isApplePaySupported()`, `isGooglePaySupported(googlePayConfig)`, `configureSDK(config)`, `executeThreeDSTwo(paymentResponse)`.
+- Tokenization UI: `CARD`, `APPLE_PAY` (iOS), `GOOGLE_PAY` (Android).
+- Tokenization client: `getSession`, `selectToken`, and the backend-pending `addWallet` contract. `authenticateThreeDS` and `submitThreeDSChallengeResponse` are experimental.
+
+## Authentication
+
+`createTokenizationClient({ baseUrl, getAccessToken })` creates the HTTP adapter for the session
+routes. `getAccessToken` is your provider of the short-lived Tokenization SDK token: your backend
+uses its API key to issue the token, and the app returns it from this function. The SDK calls the
+provider for each request and sends the token in `Access-Token`. It does not store, refresh or log the token.
+Keep API keys, Basic credentials and token issuance on your backend. An unavailable token fails
+with `ACCESS_TOKEN_UNAVAILABLE` before sending a request.
+
+## POC status
+
+- SimpleIntegration has a short-lived Access-Token input and an offline UI preview. Sandbox QA uses
+  `skipConsent=true`. An empty Get Session token list or an omitted `tncUrl` is valid.
+- iOS and Android submit Add Card from the native form. PAN and CVV remain native. The SDK receives
+  allowlisted token list fields. Custom JS transports support the offline chooser, where the native
+  form can open, cancel, and preview verification and selection without sending HTTP.
+  Card 3DS remains outside this POC.
+- The Add Wallet mapper preserves the original encrypted payload. The built-in client reports
+  `ADD_WALLET_BACKEND_PENDING` before wallet capture until the session-based backend endpoint is
+  available. Legacy payment wallet APIs remain separate.
+- The [tokenization contract](docs/tokenization-contract.md) lists the session routes and consent fields.
+
+## Test and demo
+
+SimpleIntegration opens **Settings** first. Enter the environment base URL, outlet ID, SDK
+Access-Token and session reference, then tap **Open merchant demo**. The separate Merchant
+screen has **Choose payment method** and **‹ Settings** to return and correct the configuration.
+Live fields have no prefilled merchant values. Offline UI preview uses explicitly labelled
+synthetic cards and order data; it sends no payment requests. The older direct-payment sample
+is not part of this demo entry.
+
+```sh
+npm install
+npm test -- --runInBand --watchman=false
+npm pack --dry-run
+
+cd SimpleIntegration
+npm install
+(cd ios && pod install)
+npm start
+```
+
+With Metro running, use `npm run ios` or `npm run android` from `SimpleIntegration` in another terminal. Android also has `./start-android.sh`. Use the approved test environment configuration and follow [the manual checklist](SimpleIntegration/FOR_TESTERS.md).
+
+[Canonical documentation in Confluence](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5451218947/React+Native+Tokenization+-+POC+Architecture+Implementation+Notes).
 
 ## Customising the payment page
 

@@ -1,0 +1,8 @@
+<resources>
+    <!-- The legacy RN 0.70 demo predates edge-to-edge insets. Keep its modal
+         surface above the system navigation bar on Android 15. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

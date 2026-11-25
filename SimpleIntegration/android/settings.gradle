@@ -1,3 +1,12 @@
+// Optional compiler override for this legacy RN 0.70 QA demo.
+// Use a recent installed Android Build Tools d8.jar; never check in a compiler binary.
+pluginManagement {
+    buildscript {
+        def qaCompiler = System.getenv("NI_QA_D8_JAR")
+        if (qaCompiler) { dependencies { classpath(files(qaCompiler)) } }
+    }
+}
+
 rootProject.name = 'SimpleIntegration'
 apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
 include ':app'
