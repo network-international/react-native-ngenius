@@ -797,6 +797,85 @@ it.each(['ios', 'android'])('adds and explicitly selects a card with empty sessi
   }
 });
 
+it.each([
+  ['ios', 204], ['android', 204], ['ios', 500], ['android', 500],
+])('automatically selects only the new card after Add and waits for the backend on %s (selection HTTP %s)', async (platform, selectionStatus) => {
+  const { Platform } = require('react-native');
+  const originalPlatform = Platform.OS;
+  Platform.OS = platform;
+  try {
+    const creation = deferred();
+    const acknowledgement = deferred();
+    const transport = jest.fn(request => {
+      if (request.method === 'GET') return Promise.resolve({ status: 200, text: JSON.stringify({
+        advisedTokens: [card], paymentMethods: {},
+        orderDetails: { action: 'AUTH', amount: { currencyCode: 'AED', value: 1500 } },
+      }) });
+      if (request.method === 'PUT') return acknowledgement.promise;
+      throw new Error('Unexpected request');
+    });
+    const client = createTokenizationClient({
+      baseUrl: 'https://paypage.example',
+      getAccessToken: async () => 'test-token',
+      transport,
+    });
+    jest.spyOn(client, 'addWallet');
+    startNativeCardTokenization.mockReturnValue({ promise: creation.promise, cancel: jest.fn() });
+    await open({ tokenizationClient: client, modeConfig: { addCardsBeforePay: false, tokenType: UsageType.ONCE_OFF } });
+    expect(screen().methods).toEqual(['CARD']);
+    expect(screen().selectedTokenRef).toBe(card.tokenRef);
+    await act(async () => { await screen().onSelectMethod('CARD'); await flush(); });
+    expect(startNativeCardTokenization).toHaveBeenCalledWith(expect.objectContaining({
+      sessionRef: 'session-1', usageType: UsageType.ONCE_OFF,
+      presentation: expect.objectContaining({ acceptedSchemes: [] }),
+    }));
+    await act(async () => {
+      creation.resolve({ state: 'SUCCESS', updatedTokenList: { tokens: [card, other] } });
+      await flush();
+    });
+    const selections = () => transport.mock.calls.map(([request]) => request).filter(request => request.method === 'PUT');
+    expect(selections()).toHaveLength(1);
+    expect(selections()[0]).toMatchObject({
+      url: 'https://paypage.example/api/outlets/outlet/payment-tokenization-sessions/session-1/selected-payment-data',
+      body: { tokenRef: other.tokenRef },
+    });
+    expect(selections()[0].body.tokenRef).not.toBe(card.tokenRef);
+    expect(screen().selectionStatus).toBe('submitting');
+    expect(modal().visible).toBe(true);
+    expect(props.onResult).not.toHaveBeenCalled();
+    expect(props.onSelectionComplete).not.toHaveBeenCalled();
+    await act(async () => {
+      screen().onConfirmSavedToken(card.tokenRef);
+      await screen().onSelectMethod('CARD');
+      await flush();
+    });
+    expect(selections()).toHaveLength(1);
+    expect(startNativeCardTokenization).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      acknowledgement.resolve({ status: selectionStatus, get text() { throw new Error('Selection response body must stay unread'); } });
+      await flush();
+    });
+    expect(transport.mock.calls.map(([request]) => request.method)).toEqual(['GET', 'PUT']);
+    expect(selections()).toHaveLength(1);
+    if (selectionStatus === 204) {
+      expect(modal().visible).toBe(false);
+      expect(props.onResult).toHaveBeenCalledTimes(1);
+      expect(props.onResult).toHaveBeenCalledWith({ statusCode: 200, message: 'Payment method confirmed.', sessionID: 'session-1' });
+      expect(props.onSelectionComplete).toHaveBeenCalledTimes(1);
+      noTokenizationOrPayment();
+    } else {
+      expect(modal().visible).toBe(true);
+      expect(screen().selectionStatus).toBe('failed');
+      expect(screen().savedTokens.tokens).toEqual([card, other]);
+      expect(props.onResult).not.toHaveBeenCalledWith(expect.objectContaining({ statusCode: 200 }));
+      expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 500, sessionID: 'session-1' }));
+      expect(props.onSelectionComplete).not.toHaveBeenCalled();
+    }
+  } finally {
+    Platform.OS = originalPlatform;
+  }
+});
+
 it.each(['ios', 'android'])('offers only the platform wallet that Get Session allows on %s', async platform => {
   const { Platform } = require('react-native');
   const originalPlatform = Platform.OS;

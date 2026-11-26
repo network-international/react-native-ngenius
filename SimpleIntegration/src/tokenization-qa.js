@@ -19,6 +19,7 @@ import {
   createTokenizationClient,
 } from '@network-international/react-native-ngenius';
 const { registerCardContext } = require('../../src/tokenization/cardContext');
+const { t } = require('../../src/tokenization/strings');
 
 const PREVIEW_SESSION_REF = 'preview-session';
 const PREVIEW_BASE = 'https://offline-preview.invalid';
@@ -799,10 +800,8 @@ export default function TokenizationQA() {
           branding={preview ? brand.branding : undefined}
           modeConfig={{
             tokenType: preview ? undefined : 'ONCE_OFF',
-            addCardsBeforePay: !(
-              preview &&
-              ['new', ...NATIVE_CARD_PREVIEW_SCENARIOS].includes(scenario.id)
-            ),
+            addCardsBeforePay: false,
+            labels: { payByCard: t(language, 'ADD_NEW_CARD') },
             presentation: fullscreen ? 'fullscreen' : 'bottomSheet',
             backdropBlur,
             sectionOrder: cardFirst ? ['card', 'tokens', 'wallets'] : undefined,

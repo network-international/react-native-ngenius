@@ -94,9 +94,14 @@ Omit `modeConfig.tokenType` to use `PERMANENT`. For a one-time token, pass
 `modeConfig={{ tokenType: 'ONCE_OFF' }}`. The SDK sends this value as `usageType` on Add Card
 or Add Wallet and rejects an invalid explicit value with `INVALID_USAGE_TYPE`.
 
-Set `modeConfig.addCardsBeforePay` to enable **Add new card**. Each verified card returns
-the shopper to the method list in the same session. The shopper can add another card,
-choose a card from the list, and tap **Pay** to confirm the selection.
+By default, submitting a new card selects the newly verified token in the same session.
+The SDK confirms it through `selected-payment-data`, waits for acknowledgement, then closes
+and reports `200` to the merchant. No second selection or Pay tap is required. The demo uses
+this flow and labels the card entry **Add new card**.
+
+For an optional flow that adds several cards before choosing one, set
+`modeConfig.addCardsBeforePay: true`. Each verified card then returns the shopper to the
+method list, where they can add another card, choose one and tap **Pay**.
 
 With `skipConsent={false}` (default), the native Card form displays Terms and Conditions below
 the card form's submit button and records acceptance after valid input. Wallet actions display

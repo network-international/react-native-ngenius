@@ -39,6 +39,8 @@ it('opens preview without a credential exchange or network and supports all demo
     expect(screen.props.language).toBe(language);
     expect(screen.props.sessionRef).toBe('preview-session');
     expect(screen.props.skipConsent).toBe(true);
+    expect(screen.props.modeConfig.addCardsBeforePay).toBe(false);
+    expect(screen.props.modeConfig.labels.payByCard).toBe(require('../strings').t(language, 'ADD_NEW_CARD'));
     act(() => screen.props.onCancel());
     press('qa-edit-settings');
     press('qa-language');
@@ -60,6 +62,8 @@ it('keeps the runtime token out of props/storage and clears its provider on clos
   expect(screen.props.skipConsent).toBe(true);
   expect(screen.props.sessionRef).toBe('merchant-session');
   expect(screen.props.modeConfig.tokenType).toBe('ONCE_OFF');
+  expect(screen.props.modeConfig.addCardsBeforePay).toBe(false);
+  expect(screen.props.modeConfig.labels.payByCard).toBe('Add new card');
   expect(screen.props.outletRef).toBe('merchant-outlet');
   expect(screen.props.branding).toBeUndefined();
   expect(JSON.stringify(screen.props)).not.toContain('fixture-short-lived');
