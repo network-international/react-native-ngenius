@@ -202,7 +202,7 @@ static NSUInteger NICardCVVLength(NSString *pan) {
     if (NSMaxRange(range) > current.length) return NO;
     if (field == self.pan) {
         NSString *digits = self.panDigits ?: @"";
-        BOOL masked = ![self.config[@"maskPaymentInfo"] isEqual:@NO];
+        BOOL masked = [self.config[@"maskPaymentInfo"] isEqual:@YES];
         NSString *replacement = NICardNumber(text);
         if (!NICardMatch(replacement, @"[0-9]*") || ![current isEqualToString:NIFormattedPAN(digits, masked)]) return NO;
         NSUInteger start = NIPANDigitIndex(current, range.location);

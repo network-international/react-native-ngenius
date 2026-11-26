@@ -834,9 +834,14 @@ it.each([
 
 it.each([
   [{ maskPaymentInfo: false }, false],
+  [{ maskPaymentInfo: 'false' }, false],
   [{ order: { merchantAttributes: { maskPaymentInfo: 'false' } } }, false],
   [{ maskPaymentInfo: true }, true],
-  [{}, true],
+  [{ maskPaymentInfo: 'true' }, true],
+  [{ order: { merchantAttributes: { maskPaymentInfo: 'true' } } }, true],
+  [{ maskPaymentInfo: null }, false],
+  [{ maskPaymentInfo: 'invalid' }, false],
+  [{}, false],
 ])('passes the session masking setting %j to the card form', async (sessionFields, expected) => {
   const client = createTokenizationClient({
     baseUrl: 'https://paypage.example',

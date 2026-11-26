@@ -177,7 +177,7 @@ final class TokenizationCard {
         String panLabel = labels.optString("pan", "Card number");
         pan = groupedField(activity, cardGroup, panLabel, labels.optString("panPlaceholder", "•••• •••• •••• 1234"),
             textColor, hintColor, groupOutline, border, focus);
-        configureNumericField(pan, " ", new PrivateDigitsTransformation(!Boolean.FALSE.equals(config.opt("maskPaymentInfo"))));
+        configureNumericField(pan, " ", new PrivateDigitsTransformation(Boolean.TRUE.equals(config.opt("maskPaymentInfo"))));
         Drawable cardIcon = new CardIcon(hintColor, density, false);
         pan.setCompoundDrawablePadding(Math.round(8 * density));
         pan.setCompoundDrawablesWithIntrinsicBounds(null, null, cardIcon, null);

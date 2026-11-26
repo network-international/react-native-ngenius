@@ -152,7 +152,7 @@ static NSString *cardTestListKey;
             @"device": @{ @"platform": @"IOS", @"osVersion": @"26.0", @"timezoneOffsetMinutes": @0 }
         };
         card = [[NiTokenizationCard alloc] initWithConfig:@{
-            @"requestId": @"native-fixture", @"labels": @{}, @"acceptedSchemes": @[@"Visa"]
+            @"requestId": @"native-fixture", @"labels": @{}, @"acceptedSchemes": @[@"Visa"], @"maskPaymentInfo": @YES
         }
           ready:^(NSString *requestId) {
             XCTAssertTrue([requestId isEqualToString:@"native-fixture"]);
@@ -283,28 +283,34 @@ static NSString *cardTestListKey;
 }
 - (void)testNativeCardVerifiedRequestAndSafeBridgeResponse { [self runNativeCardWithStatus:200 cancel:NO usageType:@"PERMANENT" tokenCount:2]; }
 
-- (void)testNativeCardShowsGroupedDigitsWhenMaskingIsOff {
+- (void)assertNativeCardShowsGroupedDigitsWithConfig:(NSDictionary *)configuration {
     XCTestExpectation *done = [self expectationWithDescription:@"Card number visibility"];
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *parent = [[UIApplication.sharedApplication.delegate window] rootViewController];
-        NiTokenizationCard *card = [[NiTokenizationCard alloc] initWithConfig:@{
-            @"requestId": @"pan-visibility-fixture", @"maskPaymentInfo": @NO
-        }
+        NSMutableDictionary *config = [configuration mutableCopy];
+        config[@"requestId"] = @"pan-visibility-fixture";
+        NiTokenizationCard *card = [[NiTokenizationCard alloc] initWithConfig:config
             ready:^(NSString *requestId) { XCTFail(@"This test only edits the card form"); }
             result:^(NSString *result, NSDictionary *response) { XCTAssertEqualObjects(result, @"Aborted"); [done fulfill]; }];
         [card presentFrom:parent];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UITextField *pan = [card valueForKey:@"pan"];
             [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"4242424242424242"];
-            XCTAssertEqualObjects(pan.text, @"4242 4242 4242 4242");
+            XCTAssertTrue([pan.text isEqualToString:@"4242 4242 4242 4242"]);
             [pan.delegate textField:pan shouldChangeCharactersInRange:NSMakeRange(4, 1) replacementString:@""];
-            XCTAssertEqualObjects(pan.text, @"4244 2424 2424 242");
+            XCTAssertTrue([pan.text isEqualToString:@"4244 2424 2424 242"]);
             XCTAssertFalse([pan canPerformAction:@selector(copy:) withSender:nil]);
             XCTAssertTrue([(UITextField *)[card valueForKey:@"cvv"] isSecureTextEntry]);
             [card cancel];
         });
     });
     [self waitForExpectations:@[done] timeout:10];
+}
+- (void)testNativeCardShowsGroupedDigitsWhenMaskingIsOff {
+    [self assertNativeCardShowsGroupedDigitsWithConfig:@{ @"maskPaymentInfo": @NO }];
+}
+- (void)testNativeCardShowsGroupedDigitsByDefault {
+    [self assertNativeCardShowsGroupedDigitsWithConfig:@{}];
 }
 - (void)testNativeCardErrorDoesNotExposeResponseBody { [self runNativeCardWithStatus:401 cancel:NO usageType:@"ONCE_OFF" tokenCount:2]; }
 - (void)testNativeCardCancelClearsFieldsWithoutSubmitting { [self runNativeCardWithStatus:200 cancel:YES usageType:@"PERMANENT" tokenCount:2]; }

@@ -173,6 +173,11 @@ scheme logos. An explicit `card: []` still disables adding a card. In a nonempty
 a missing or malformed list allows nothing for that method. `paymentMethods.wallet` lists the
 allowed wallets; an empty configuration does not enable wallets.
 
+The card-entry form shows grouped digits by default, matching PayPage. Get Session
+can explicitly enable PAN masking with `maskPaymentInfo: true` (or `'true'`), also
+read from the legacy `order.merchantAttributes.maskPaymentInfo` setting. An absent
+setting or `false` keeps entered digits visible. Saved-card details and CVV remain masked.
+
 Money accepts `{ currencyCode, value }`, where `value` is a nonnegative integer in minor units,
 as a safe integer number or a digit string. For example, AED `'3910'` displays as AED 39.10;
 currency precision follows the supplied ISO currency. If `value` is absent, `formattedValue`

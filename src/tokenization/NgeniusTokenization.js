@@ -605,7 +605,7 @@ const NgeniusTokenization = ({
               colors: mapNativeCardColors(theme),
               rtl: language === 'ar',
               acceptedSchemes: current.savedTokens.acceptedSchemes,
-              maskPaymentInfo: current.savedTokens.maskPaymentInfo !== false,
+              maskPaymentInfo: current.savedTokens.maskPaymentInfo === true,
               ...(showSecurityNote ? { securityNote: t(language, 'CARD_DETAILS_SECURE') } : {}),
               labels: {
                 title: t(language, addCardsBeforePay ? 'ADD_NEW_CARD' : 'PAY_BY_CARD'),
