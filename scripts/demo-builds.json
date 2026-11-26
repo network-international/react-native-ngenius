@@ -1,0 +1,17 @@
+{
+  "commit": "f5faf9a9aa916cf49bd2d395ebba5882efbbb2c8",
+  "date": "2026-11-26",
+  "guide": "https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5713658046#demo-builds-2026-11-26",
+  "android": {
+    "filenames": ["rn-tokenization-demo-f5faf9a-2026-11-26-android.apk", "RN-Tokenization-Demo-f5faf9a-Android.apk"],
+    "sha256": "1ba716717d54c6ee529a0b0918cd08fe54451bf80433608e361506c00636767a",
+    "activity": "com.simpleintegration/.MainActivity"
+  },
+  "ios": {
+    "filenames": ["rn-tokenization-demo-f5faf9a-2026-11-26-ios-simulator.zip", "RN-Tokenization-Demo-f5faf9a-iOS-Simulator.zip"],
+    "sha256": "3ed4e47c63b8f3711c7d7ae5b1edf4df07653cd203c94aabe9d4bdec6f3fc9c6",
+    "bundleId": "org.reactjs.native.example.SimpleIntegration",
+    "architecture": "arm64",
+    "minimumOS": "15.0"
+  }
+}

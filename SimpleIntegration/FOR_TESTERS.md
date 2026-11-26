@@ -2,7 +2,9 @@
 
 Use the canonical `demo/rn-tokenization` branch and record the build SHA and artifact name. This guide covers the SDK 3.2.9 Card demo. Wallet flows are deferred until after this demo.
 
-For presenting the demo, use the Android APK or iOS Simulator ZIP in the [QA Guide's current demo builds](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5713658046#demo-builds-2026-11-26). These Release builds include the JavaScript bundle and do not need Metro. The current artifacts are built from `f8d807c`; later documentation-only commits do not change those binaries.
+For presenting the demo, use the Android APK or iOS Simulator ZIP in the [QA Guide's current demo builds](https://networkinternational.atlassian.net/wiki/spaces/NING/pages/5713658046#demo-builds-2026-11-26). These Release builds include the JavaScript bundle and do not need Metro. The current artifacts are built from `f5faf9a`, including Add Card for `paymentMethods: {}`; later launcher or documentation-only commits do not change those binaries.
+
+**Quick launch:** after downloading both builds into Downloads, run `bash scripts/launch-demo.sh both --artifacts "$HOME/Downloads" --tools` from the repository root. The launcher verifies the downloads, selects/starts devices and installs/opens the demo. See [launcher setup and single-platform commands](../scripts/README.md). It does not handle credentials or execute UAT requests.
 
 To update an existing source checkout before building:
 
