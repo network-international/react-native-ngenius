@@ -704,7 +704,8 @@ static NSURL *NICardTermsURL(id value) {
     NSData *payload = [NSJSONSerialization dataWithJSONObject:@{
         @"card": self.card, @"usageType": usageType, @"consentData": options[@"consentData"]
     } options:0 error:nil];
-    self.card = nil; [self clearFields];
+    // Keep the disabled form filled while the request is pending; finish clears it.
+    self.card = nil;
     if (!payload) { [self fail]; return; }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:components.URL];
     request.HTTPMethod = @"POST"; request.HTTPBody = payload; request.timeoutInterval = 30;

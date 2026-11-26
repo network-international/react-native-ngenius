@@ -784,7 +784,8 @@ final class TokenizationCard {
                 .put("consentData", consent)
                 .toString().getBytes(StandardCharsets.UTF_8);
         } catch (Exception ignored) { finish("Failed", null); return; }
-        card = null; pan.setText(""); cvv.setText(""); expiry.setText(""); name.setText("");
+        // Keep the disabled form filled while the request is pending; finish clears it.
+        card = null;
         worker.execute(() -> {
             Map<String, Object> safeResponse = null;
             int httpStatus = 0;

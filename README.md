@@ -182,6 +182,9 @@ The card-entry form shows grouped digits by default, matching PayPage. Get Sessi
 can explicitly enable PAN masking with `maskPaymentInfo: true` (or `'true'`), also
 read from the legacy `order.merchantAttributes.maskPaymentInfo` setting. An absent
 setting or `false` keeps entered digits visible. Saved-card details and CVV remain masked.
+After Pay, the disabled native fields keep their entered values while the request is pending.
+The form clears them when the attempt finishes or the form closes; the current PAN masking
+setting and CVV masking still apply during loading.
 
 Money accepts `{ currencyCode, value }`, where `value` is a nonnegative integer in minor units,
 as a safe integer number or a digit string. For example, AED `'3910'` displays as AED 39.10;
