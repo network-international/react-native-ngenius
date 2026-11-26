@@ -17,7 +17,7 @@ Do not merge the demo branch into `master` for the presentation. Follow the deve
 
 Record the environment and backend deployment when testing Add Card and selected-payment-data persistence.
 
-The SDK opens at **Select payment method**, as a bottom sheet by default. The card list uses masked numbers and shows `MM/YY` when available. An empty saved-method list can still offer **Add new card** when Get Session permits card schemes. An explicit empty `paymentMethods` object or empty `paymentMethods.card` list does not permit the card form. If `paymentMethods` is omitted, the compatibility fallback offers the card form without scheme logos. Offline screenshots use synthetic cards and fixture responses.
+The SDK opens at **Select payment method**, as a bottom sheet by default. The card list uses masked numbers and shows `MM/YY` when available. An empty saved-method list can still offer **Add new card**. If Get Session omits `paymentMethods` or returns `paymentMethods: {}`, the card form stays available without scheme logos. An explicit empty `paymentMethods.card` list still disables adding a card. Offline screenshots use synthetic cards and fixture responses.
 
 1. Android: install the SHA-named APK with `adb install -r <apk>`, then open SimpleIntegration. It includes the JS bundle; Metro is not needed.
 2. iOS Simulator: extract the SHA-named ZIP, run `xcrun simctl install booted <app>`, then `xcrun simctl launch booted org.reactjs.native.example.SimpleIntegration`. This app cannot be installed on a physical iPhone. A device build requires existing signing; no Team/profile/certificates were changed.

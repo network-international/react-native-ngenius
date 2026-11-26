@@ -11,11 +11,14 @@ const EXCLUDED_TOKENIZATION_METHODS = Object.freeze([
   'CLICK_TO_PAY',
 ]);
 
-// A Get Session response without paymentMethods keeps the card form available.
-// Once paymentMethods is supplied, only the listed methods are offered: a missing
-// list, an empty list and a malformed list all mean "not allowed".
+// An absent or empty paymentMethods configuration keeps the card form available
+// without scheme logos. A nonempty configuration still restricts each method;
+// in particular, an explicit card: [] does not allow adding a card.
 const sessionAllows = (sessionPaymentMethods, method) => {
-  if (sessionPaymentMethods == null) {
+  if (sessionPaymentMethods == null || (
+    typeof sessionPaymentMethods === 'object' && !Array.isArray(sessionPaymentMethods) &&
+    Object.keys(sessionPaymentMethods).length === 0
+  )) {
     return method === 'CARD';
   }
   const list = sessionPaymentMethods[method === 'CARD' ? 'card' : 'wallet'];

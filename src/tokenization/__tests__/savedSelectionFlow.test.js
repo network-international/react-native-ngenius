@@ -691,6 +691,7 @@ it('keeps a new Card open with a recoverable error when selected-token fails aft
 it.each([
   ['listed schemes', { card: ['MASTERCARD', 'JCB', 'JCB', 'UNKNOWN', null], wallet: ['APPLE_PAY'] }, ['Mastercard', 'JCB']],
   ['no paymentMethods', undefined, []],
+  ['an empty paymentMethods object', {}, []],
   ['a nested orderDetails.paymentMethods, which is not the contract', undefined, [], { orderDetails: { paymentMethods: { card: ['VISA'] } } }],
 ])('passes only Get Session card logos to the native form with %s', async (_case, paymentMethods, expected, extra = {}) => {
   const client = createTokenizationClient({
@@ -734,11 +735,16 @@ it.each([
   expect(props.onError).not.toHaveBeenCalled();
 });
 
-it('does not open the card form when Get Session returns an explicitly empty card list', async () => {
+it.each([
+  ['an explicitly empty card list', { card: [] }],
+  ['malformed method lists', { card: 'VISA', wallet: 'APPLE_PAY' }],
+  ['a malformed configuration', ['VISA']],
+  ['unknown methods only', { apm: ['TABBY'] }],
+])('does not open the card form when Get Session returns %s', async (_case, paymentMethods) => {
   const client = createTokenizationClient({
     baseUrl: 'https://paypage.example',
     getAccessToken: async () => 'test-token',
-    transport: async () => ({ status: 200, text: JSON.stringify({ advisedTokens: [card], paymentMethods: { card: [] }, orderDetails: { action: 'AUTH', amount: { currencyCode: 'AED', value: 1500 } } }) }),
+    transport: async () => ({ status: 200, text: JSON.stringify({ advisedTokens: [card], paymentMethods, orderDetails: { action: 'AUTH', amount: { currencyCode: 'AED', value: 1500 } } }) }),
   });
   await open({ tokenizationClient: client, order: { paymentMethods: { card: ['VISA'] } }, paymentMethods: ['CARD'] });
   expect(screen().methods).toEqual([]);
@@ -746,6 +752,49 @@ it('does not open the card form when Get Session returns an explicitly empty car
   await act(async () => { await screen().onSelectMethod('CARD'); await flush(); });
   expect(startNativeCardTokenization).not.toHaveBeenCalled();
   expect(props.onError).not.toHaveBeenCalled();
+});
+
+it.each(['ios', 'android'])('adds and explicitly selects a card with empty session paymentMethods on %s', async platform => {
+  const { Platform } = require('react-native');
+  const originalPlatform = Platform.OS;
+  Platform.OS = platform;
+  try {
+    const parser = createTokenizationClient({
+      baseUrl: 'https://paypage.example',
+      getAccessToken: async () => 'test-token',
+      transport: async () => ({ status: 200, text: JSON.stringify({
+        advisedTokens: [], paymentMethods: {},
+        orderDetails: { action: 'AUTH', amount: { currencyCode: 'AED', value: 1500 } },
+      }) }),
+    });
+    const client = defaultClient();
+    client.getSession.mockImplementation(options => parser.getSession(options));
+    const creation = deferred();
+    startNativeCardTokenization.mockReturnValue({ promise: creation.promise, cancel: jest.fn() });
+    await open({ tokenizationClient: client, modeConfig: { addCardsBeforePay: true, tokenType: UsageType.ONCE_OFF } });
+    expect(screen().methods).toEqual(['CARD']);
+    expect(screen().orderSummary.amount.text).toBe('AED 15.00');
+    await act(async () => { await screen().onSelectMethod('CARD'); await flush(); });
+    expect(startNativeCardTokenization).toHaveBeenCalledWith(expect.objectContaining({
+      sessionRef: 'session-1',
+      usageType: UsageType.ONCE_OFF,
+      presentation: expect.objectContaining({
+        acceptedSchemes: [], labels: expect.objectContaining({ title: 'Add new card', submit: 'Add Card' }),
+      }),
+    }));
+    await act(async () => { creation.resolve({ state: 'SUCCESS', updatedTokenList: { tokens: [card] } }); await flush(); });
+    expect(screen().savedTokens.tokens).toEqual([card]);
+    expect(screen().methods).toEqual(['CARD']);
+    expect(screen().selectedTokenRef).toBeNull();
+    expect(client.selectToken).not.toHaveBeenCalled();
+    expect(props.onResult).not.toHaveBeenCalled();
+    act(() => screen().onSelectToken(card.tokenRef));
+    await confirm();
+    expect(client.selectToken).toHaveBeenCalledWith({ outletRef: 'outlet', sessionRef: 'session-1', tokenRef: card.tokenRef });
+    expect(props.onResult).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 200, sessionID: 'session-1' }));
+  } finally {
+    Platform.OS = originalPlatform;
+  }
 });
 
 it.each(['ios', 'android'])('offers only the platform wallet that Get Session allows on %s', async platform => {

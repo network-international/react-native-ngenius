@@ -338,9 +338,12 @@ describe('TokenizationClient', () => {
       });
 
       it.each([
+        ['an empty configuration', {}, {}],
         ['a missing wallet list', { card: ['VISA'] }, { card: ['VISA'] }],
-        ['malformed lists', { card: 'VISA', wallet: { APPLE_PAY: true } }, {}],
-        ['a malformed paymentMethods', ['VISA'], {}],
+        ['malformed lists', { card: 'VISA', wallet: { APPLE_PAY: true } }, { card: [], wallet: [] }],
+        ['a malformed paymentMethods', ['VISA'], { card: [], wallet: [] }],
+        ['a null paymentMethods', null, { card: [], wallet: [] }],
+        ['unknown methods only', { apm: ['TABBY'] }, { card: [], wallet: [] }],
         ['non-string entries', { card: ['VISA', 7, null], wallet: [false, 'GOOGLE_PAY'] }, { card: ['VISA'], wallet: ['GOOGLE_PAY'] }],
       ])('keeps a supplied paymentMethods with %s without inventing defaults', async (_case, paymentMethods, expected) => {
         await expect(getSession({ paymentMethods })).resolves.toEqual({ tokens: [], paymentMethods: expected });

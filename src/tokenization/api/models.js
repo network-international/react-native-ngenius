@@ -220,14 +220,19 @@ const copySessionAmount = amount => {
 
 const isRecord = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-// A supplied but malformed paymentMethods stays present with no usable lists,
-// so it never widens to the defaults used when the field is absent.
+// Preserve a genuinely empty configuration for the card-form fallback, while
+// keeping malformed configurations explicitly restricted after normalization.
 const copyPaymentMethods = value => {
   const methods = {};
-  if (!isRecord(value)) return methods;
+  if (!isRecord(value)) return { card: [], wallet: [] };
   for (const kind of ['card', 'wallet']) {
-    if (Array.isArray(value[kind])) methods[kind] = value[kind].filter(entry => typeof entry === 'string');
+    if (Object.prototype.hasOwnProperty.call(value, kind)) {
+      methods[kind] = Array.isArray(value[kind])
+        ? value[kind].filter(entry => typeof entry === 'string')
+        : [];
+    }
   }
+  if (Object.keys(value).length > 0 && Object.keys(methods).length === 0) return { card: [], wallet: [] };
   return methods;
 };
 

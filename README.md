@@ -167,10 +167,11 @@ and a response without `orderDetails` reads top-level `amount` and `orderSummary
 object inside `orderDetails` is not part of the contract and is ignored. Add Card responses
 follow the same `advisedTokens` rule.
 
-`paymentMethods.card` lists the schemes shown on the card form, and the card form is offered
-only when the list is not empty. `paymentMethods.wallet` lists the allowed wallets. If the response
-omits `paymentMethods`, only the card form is offered, without scheme logos. If `paymentMethods` is
-supplied, a missing, empty or malformed list allows nothing for that method.
+`paymentMethods.card` lists the schemes shown on the card form. If the response omits
+`paymentMethods` or returns `paymentMethods: {}`, the card form remains available without
+scheme logos. An explicit `card: []` still disables adding a card. In a nonempty configuration,
+a missing or malformed list allows nothing for that method. `paymentMethods.wallet` lists the
+allowed wallets; an empty configuration does not enable wallets.
 
 Money accepts `{ currencyCode, value }`, where `value` is a nonnegative integer in minor units,
 as a safe integer number or a digit string. For example, AED `'3910'` displays as AED 39.10;

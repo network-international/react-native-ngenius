@@ -25,8 +25,8 @@ describe('getTokenizationMethods', () => {
     expect(getTokenizationMethods(sessionMethods, { platform: 'ios', ...walletReady })).toEqual(['APPLE_PAY']);
   });
 
-  it('offers nothing for a supplied paymentMethods without usable lists', () => {
-    expect(getTokenizationMethods({}, { platform: 'ios', ...walletReady })).toEqual([]);
+  it.each(['ios', 'android'])('keeps the card form without enabling wallets for an empty configuration on %s', platform => {
+    expect(getTokenizationMethods({}, { platform, ...walletReady })).toEqual(['CARD']);
   });
 
   it('includes Apple Pay only on iOS and Google Pay only on Android', () => {
@@ -86,6 +86,8 @@ describe('merchant paymentMethods prop', () => {
       .toEqual(['CARD', 'APPLE_PAY']);
     expect(getTokenizationMethods({ card: [], wallet: [] }, { paymentMethods: ['CONTINUE_SHOPPING'], platform: 'ios', ...walletReady }))
       .toEqual([]);
+    expect(getTokenizationMethods({}, { paymentMethods: ['CONTINUE_SHOPPING'], platform: 'ios', ...walletReady }))
+      .toEqual(['CARD']);
     expect(getTokenizationMethods(sessionMethods, { paymentMethods: ['CARD', 'CONTINUE_SHOPPING'], platform: 'ios', ...walletReady }))
       .toEqual(['CARD']);
   });
@@ -96,5 +98,7 @@ describe('merchant paymentMethods prop', () => {
       .toEqual([]);
     expect(getTokenizationMethods(undefined, { paymentMethods: requested, platform: 'ios', ...walletReady }))
       .toEqual(['CARD']);
+    expect(getTokenizationMethods({}, { paymentMethods: [], platform: 'ios', ...walletReady }))
+      .toEqual([]);
   });
 });
